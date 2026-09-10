@@ -1,5 +1,7 @@
 # setup-cli
 
+> **Note:** This is a prototype and may change in future releases.
+
 Grafana Cloud's interactive setup wizard, powered by Assistant.
 
 Configures gcx, installs agent skills, and sets up Grafana products in your project.

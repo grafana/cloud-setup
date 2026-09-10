@@ -11,6 +11,7 @@ import { SmApiError, SmClient, type Probe } from "../api.js";
 import { plan as buildPlan } from "../reconcile.js";
 import { writeCredentials } from "../credentials.js";
 import { candidatesFor, type Candidate } from "../discover.js";
+import { detectFramework } from "../framework.js";
 import { isGcxInstalled, installGcx, GCX_INSTALL_COMMAND, loginGcx } from "../gcx.js";
 import { getSkillStatus, installSkill } from "../skills.js";
 import { CheckboxList } from "./CheckboxList.js";
@@ -38,23 +39,9 @@ function formatFolder(cwd: string): string {
   return cwd === home || cwd.startsWith(`${home}${path.sep}`) ? `~${cwd.slice(home.length)}` : cwd;
 }
 
-// Best-effort, cheap: just reads package.json if present — no framework
-// probing beyond checking for a `next` dependency.
-function detectProjectType(cwd: string): string {
-  try {
-    const raw = readFileSync(path.join(cwd, "package.json"), "utf8");
-    const pkg = JSON.parse(raw) as { dependencies?: Record<string, string>; devDependencies?: Record<string, string> };
-    const deps = { ...pkg.dependencies, ...pkg.devDependencies };
-    if (deps.next) return "Next.js project";
-    return "Node.js project";
-  } catch {
-    return "Unknown project";
-  }
-}
-
 // Computed once — the working directory doesn't change during a run.
 const PROJECT_FOLDER = formatFolder(process.cwd());
-const PROJECT_TYPE = detectProjectType(process.cwd());
+const PROJECT_TYPE = detectFramework(process.cwd());
 
 // Read from package.json rather than hardcoded, so the two can't drift.
 function readPackageVersion(): string {
