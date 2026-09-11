@@ -107,6 +107,15 @@ export async function candidatesFor(url: string): Promise<Candidate[]> {
 }
 
 const MAX_AI_ENDPOINT_CANDIDATES = 3;
+// The prompts ask the model to keep descriptions this short too, but a
+// hard cap here is the only thing that actually guarantees it — a prompt
+// is a request, not a constraint.
+const MAX_AI_DESCRIPTION_LENGTH = 60;
+
+function truncateDescription(description: string): string {
+  const trimmed = description.trim();
+  return trimmed.length > MAX_AI_DESCRIPTION_LENGTH ? `${trimmed.slice(0, MAX_AI_DESCRIPTION_LENGTH - 1).trimEnd()}…` : trimmed;
+}
 
 // Candidate labels double as SM job names (and must stay unique across the
 // whole list), so each AI-discovered endpoint needs its own label rather
@@ -148,7 +157,7 @@ export async function aiEndpointCandidatesFor(
       key: `ai-${slug}`,
       label: `ai-${slug}`,
       title: pathname,
-      description: endpoint.description,
+      description: truncateDescription(endpoint.description),
       selectedByDefault: false,
       target,
       settings: { http: { method: "GET" } },

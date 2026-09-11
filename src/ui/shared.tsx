@@ -53,17 +53,18 @@ export function checkNodeVersion(): void {
   }
 }
 
-// Same phrasing as the intro screens' "press enter to continue" — spelling
-// out the actual key rather than a bare "(Y/n)" reads more like an
-// instruction than a notation to decode.
-export function ContinueHint() {
+// The one "press ⏎ enter to continue" phrasing, shared by the intro
+// screens, every y/n confirm (with the "or n to skip" suffix), and the
+// select step's footer — spelling out the actual key rather than a bare
+// "(Y/n)" reads more like an instruction than a notation to decode.
+export function EnterHint({ suffix }: { suffix?: string } = {}) {
   return (
     <Text color={muted}>
       press{" "}
       <Text color={accent} bold>
         ⏎ enter
       </Text>{" "}
-      to continue, or n to skip
+      to continue{suffix ? `, ${suffix}` : ""}
     </Text>
   );
 }

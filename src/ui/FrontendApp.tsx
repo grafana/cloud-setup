@@ -17,7 +17,7 @@ import {
 import type { FaroInstrumentation } from "../products/frontendO11y/instrument.js";
 import { instrumentNextjs } from "../products/frontendO11y/nextjs.js";
 import { instrumentReact } from "../products/frontendO11y/react.js";
-import { accent, bad, ContinueHint, Header, MIN_SPINNER_MS, muted, ok, Working } from "./shared.js";
+import { accent, bad, EnterHint, Header, MIN_SPINNER_MS, muted, ok, Working } from "./shared.js";
 import { useGcxStep } from "./steps/useGcxStep.js";
 import { useAuthStep } from "./steps/useAuthStep.js";
 
@@ -310,7 +310,7 @@ export function FrontendApp({ initialStackUrl, forceGcxInstall }: Props) {
       return (
         <Box flexDirection="column">
           <Text>Instrument this project with Frontend O11y?</Text>
-          <ContinueHint />
+          <EnterHint suffix="or n to skip" />
         </Box>
       );
     if (frontendSubPhase === "checking") return <Working label="Looking for an existing Frontend O11y app…" />;
@@ -340,13 +340,7 @@ export function FrontendApp({ initialStackUrl, forceGcxInstall }: Props) {
           Let's set up <Text bold>Frontend Observability</Text> for this project.
         </Text>
         <Box marginTop={1}>
-          <Text color={muted}>
-            press{" "}
-            <Text color={accent} bold>
-              ⏎ enter
-            </Text>{" "}
-            to continue
-          </Text>
+          <EnterHint />
         </Box>
       </Box>
     );

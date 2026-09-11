@@ -12,17 +12,93 @@ import { getSkillStatus, installSkill } from "../skills.js";
 import { tryAutoSmSession } from "../products/syntheticMonitoring/smAuth.js";
 import { writeTerraformExport } from "../products/syntheticMonitoring/terraform.js";
 import { CheckboxList } from "./CheckboxList.js";
-import { accent, bad, ContinueHint, Header, MIN_SPINNER_MS, muted, ok, Working } from "./shared.js";
+import { accent, bad, EnterHint, Header, MIN_SPINNER_MS, muted, ok, Working } from "./shared.js";
 import { useGcxStep } from "./steps/useGcxStep.js";
 import { useAuthStep } from "./steps/useAuthStep.js";
 import type { SyntheticConfig } from "../products/syntheticMonitoring/types.js";
 
 const ANALYZE_MIN_MS = 5000;
-// Purely theatrical pause between the two post-browser status lines
-// ("reviewing captured requests" / "matching against suggested checks") —
-// the real work is already done by then, this just avoids jump-cutting
-// straight from "opening browser" to the next step.
-const ANALYZE_STAGE_MS = 900;
+
+// Purely decorative — there's no real progress signal to show across the
+// whole "Analyze target" step (local generation, the confirm question,
+// then one opaque discovery await), so this fakes one, paced against a
+// wall-clock target rather than random step sizes so it reads as roughly
+// "on schedule" instead of jittery. Real work almost always finishes
+// before that target — finish() is the deliberate "speed up" for when it
+// does, sprinting the number up to 100 instead of letting it jump there.
+const ANALYZE_PROGRESS_TARGET_MS = 60_000;
+
+interface FakeProgress {
+  pause: () => void;
+  resume: () => void;
+  stop: () => void;
+  finish: () => Promise<void>;
+}
+
+function startFakeProgress(onProgress: (percent: number) => void, isCancelled: () => boolean): FakeProgress {
+  const startedAt = Date.now();
+  // Time spent paused doesn't count toward elapsed — otherwise resuming
+  // after, say, a slow answer to the browser-confirm question would jump
+  // the number ahead to "catch up" to real elapsed time, which is exactly
+  // the jump this is meant to avoid.
+  let pausedMs = 0;
+  let pauseStartedAt: number | undefined;
+  let percent = 0;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let stopped = false;
+
+  function tick() {
+    if (stopped || pauseStartedAt !== undefined || isCancelled()) return;
+    const elapsed = Date.now() - startedAt - pausedMs;
+    // Small jitter so it doesn't read as a perfectly straight line, but
+    // never lets it fall behind its own previous value.
+    const paced = (elapsed / ANALYZE_PROGRESS_TARGET_MS) * 100 + (Math.random() * 4 - 2);
+    percent = Math.max(percent, Math.min(99, Math.round(paced)));
+    onProgress(percent);
+    timer = setTimeout(tick, 250 + Math.random() * 250);
+  }
+  tick();
+
+  function pause() {
+    if (stopped || pauseStartedAt !== undefined) return;
+    pauseStartedAt = Date.now();
+    if (timer) clearTimeout(timer);
+  }
+
+  function resume() {
+    if (stopped || pauseStartedAt === undefined) return;
+    pausedMs += Date.now() - pauseStartedAt;
+    pauseStartedAt = undefined;
+    tick();
+  }
+
+  function stop() {
+    stopped = true;
+    if (timer) clearTimeout(timer);
+  }
+
+  function finish(): Promise<void> {
+    stop();
+    return new Promise((resolve) => {
+      function burst() {
+        if (isCancelled()) {
+          resolve();
+          return;
+        }
+        percent = Math.min(100, percent + Math.max(2, Math.round((100 - percent) * 0.35)));
+        onProgress(percent);
+        if (percent >= 100) {
+          resolve();
+          return;
+        }
+        setTimeout(burst, 40 + Math.random() * 40);
+      }
+      burst();
+    });
+  }
+
+  return { pause, resume, stop, finish };
+}
 // This step lands right after "sign in"'s own real-world wait (the OAuth
 // browser flow) — a bare MIN_SPINNER_MS here reads as an abrupt jump cut
 // right after that, rather than a natural next step.
@@ -106,7 +182,7 @@ function previousEditableStep(from: StepId): StepId | undefined {
 // to open a real (visible, not headless) browser against the target URL
 // for AI-powered live endpoint discovery. Declining just leaves only the
 // standard candidates.
-type AnalyzeSubPhase = "analyzing" | "browser-confirm" | "opening-browser" | "reviewing-requests" | "matching-checks";
+type AnalyzeSubPhase = "analyzing" | "browser-confirm" | "discovering";
 const ANALYZE_WAITING_SUBPHASES: AnalyzeSubPhase[] = ["browser-confirm"];
 
 // "export": ask once, up front, whether to write a Terraform export of the
@@ -148,6 +224,7 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
   // analyze step
   const [candidates, setCandidates] = useState<Candidate[]>();
   const [analyzeSubPhase, setAnalyzeSubPhase] = useState<AnalyzeSubPhase>("analyzing");
+  const [analyzeProgress, setAnalyzeProgress] = useState(0);
 
   // gcx/auth steps — shared with FrontendApp via src/ui/steps.
   const gcx = useGcxStep(forceGcxInstall, currentStep === "gcx");
@@ -297,10 +374,20 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
     }
 
     async function runAnalyze() {
+      // Starts right away — before we even know whether the browser step
+      // will run — so the percent is already moving during local
+      // generation and the confirm question, not just once discovery
+      // itself starts.
       setAnalyzeSubPhase("analyzing");
+      setAnalyzeProgress(0);
+      const progress = startFakeProgress(setAnalyzeProgress, () => cancelled);
+
       const targetUrl = /^https?:\/\//.test(initialTargetUrl) ? initialTargetUrl : `https://${initialTargetUrl}`;
       const [list] = await Promise.all([candidatesFor(targetUrl), sleep(ANALYZE_MIN_MS)]);
-      if (cancelled) return;
+      if (cancelled) {
+        progress.stop();
+        return;
+      }
       setCandidates(list);
       setSelectedKeys(list.filter((c) => c.selectedByDefault).map((c) => c.key));
 
@@ -308,18 +395,28 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
       // signed-in assistant to judge what it finds — skip straight through,
       // same as if the user had declined.
       if (auth.error) {
+        await progress.finish();
+        if (cancelled) return;
         advance();
         return;
       }
 
       setAnalyzeSubPhase("browser-confirm");
+      // Paused for the question itself — how long you take to answer
+      // shouldn't count against the pace, or the number would leap ahead
+      // to "catch up" the moment you do.
+      progress.pause();
       const allow = await new Promise<boolean>((resolve) => {
         browserPermissionResolver.current = resolve;
       });
-      if (cancelled) return;
+      progress.resume();
+      if (cancelled) {
+        progress.stop();
+        return;
+      }
 
       if (allow) {
-        setAnalyzeSubPhase("opening-browser");
+        setAnalyzeSubPhase("discovering");
         try {
           // Permission was already granted above via this step's own
           // prompt — the harness's own gate is a pass-through here, not a
@@ -328,22 +425,22 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
             aiEndpointCandidatesFor(targetUrl, initialStackUrl, () => true),
             sleep(MIN_SPINNER_MS),
           ]);
-          if (cancelled) return;
+          if (cancelled) {
+            progress.stop();
+            return;
+          }
           if (aiCandidates.length > 0) {
             setCandidates((prev) => [...(prev ?? []), ...aiCandidates]);
           }
-          // The browser's already closed by this point — these two are
-          // purely theatrical, narrating what happens with the capture
-          // rather than jump-cutting straight to the next step.
-          setAnalyzeSubPhase("reviewing-requests");
-          await sleep(ANALYZE_STAGE_MS);
-          if (cancelled) return;
-          setAnalyzeSubPhase("matching-checks");
-          await sleep(ANALYZE_STAGE_MS);
         } catch {
           // Nice-to-have — never blocks setup on a failed discovery pass.
         }
       }
+      if (cancelled) {
+        progress.stop();
+        return;
+      }
+      await progress.finish();
       if (cancelled) return;
       advance();
     }
@@ -565,10 +662,16 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
           // showing a spinner even after everything finished.
           let row;
           if (completed.has(step)) {
+            // analyzeProgress is guaranteed 100 by the time this step is
+            // marked completed (advance() only runs after progress.finish()
+            // resolves) — keep showing it rather than dropping the number
+            // the moment the checkmark appears.
+            const suffix = step === "analyze" ? analyzeStatusSuffix() : undefined;
             row = (
               <Text>
                 {" "}
                 <Text color={ok}>✓</Text> {STEP_LABELS[step]}
+                {suffix && <Text color={muted}> — {suffix}</Text>}
               </Text>
             );
           } else if (step === currentStep) {
@@ -618,14 +721,17 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
     );
   }
 
-  function Footer({ primary }: { primary?: string }) {
-    if (!primary) return null;
+  function Footer() {
+    if (currentStep !== "select") return null;
     // No marginTop here on purpose — the blank line above the prompt
     // already comes from the Box wrapping it in the main render; hints sit
-    // directly beneath the prompt they describe, with no gap.
+    // directly beneath the prompt they describe, with no gap. "continue"
+    // gets its own line via EnterHint, same as everywhere else it appears,
+    // rather than being crammed onto the navigation-hint line.
     return (
       <Box flexDirection="column">
-        <Text color={muted}>{primary}</Text>
+        <Text color={muted}>space toggle   ↑↓ move</Text>
+        <EnterHint />
       </Box>
     );
   }
@@ -635,7 +741,7 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
       return (
         <Box flexDirection="column">
           <Text>Open a real browser to see which live endpoints {initialTargetUrl} actually calls?</Text>
-          <ContinueHint />
+          <EnterHint suffix="or n to skip" />
         </Box>
       );
     return null;
@@ -646,7 +752,7 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
       return (
         <Box flexDirection="column">
           <Text>Export these checks as Terraform too?</Text>
-          <ContinueHint />
+          <EnterHint suffix="or n to skip" />
         </Box>
       );
     return null;
@@ -739,22 +845,13 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
   }
 
   // Purely decorative — the step list otherwise just sits on "Analyze
-  // target" with a spinner for several real seconds (local generation,
-  // then a live browser pass) with nothing to say about what's actually
-  // happening. Text is truthful to the two real phases, not invented.
-  function analyzeStatusSuffix(): string | undefined {
-    // Nothing during local candidate generation or the confirm question
-    // itself — only once a real browser is actually about to open is
-    // there something worth narrating.
-    if (analyzeSubPhase === "opening-browser") return "opening browser";
-    if (analyzeSubPhase === "reviewing-requests") return "reviewing captured requests";
-    if (analyzeSubPhase === "matching-checks") return "matching against suggested checks";
-    return undefined;
-  }
-
-  function footerPrimary(): string | undefined {
-    if (currentStep === "select") return "space toggle   ↑↓ move   ↵ continue";
-    return undefined;
+  // target" with a spinner for up to a real minute (local generation, the
+  // confirm question, then a live browser pass) with nothing to show for
+  // it. A fake percent (see startFakeProgress) reads cleaner here than a
+  // string of status words, and runs for the step's whole duration rather
+  // than only once discovery itself starts.
+  function analyzeStatusSuffix(): string {
+    return `${analyzeProgress}%`;
   }
 
   if (!started) {
@@ -769,13 +866,7 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
           We'll also configure everything you need to continue iterating on them later on, e.g. Agent Skills.
         </Text>
         <Box marginTop={1}>
-          <Text color={muted}>
-            press{" "}
-            <Text color={accent} bold>
-              ⏎ enter
-            </Text>{" "}
-            to continue
-          </Text>
+          <EnterHint />
         </Box>
       </Box>
     );
@@ -842,7 +933,7 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
           </>
         )}
       </Box>
-      {!failureSummary && Footer({ primary: footerPrimary() })}
+      {!failureSummary && Footer()}
       {failureSummary && (
         <Box marginTop={1}>
           <Text color={muted}>Resolve the issue, then run `npx @grafana/setup-cli` again.</Text>

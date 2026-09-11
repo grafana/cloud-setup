@@ -17,13 +17,11 @@ interface Props {
   onSelectionChange?: (selectedKeys: string[]) => void;
 }
 
-// A long description used to be padded out to the longest description
-// among *all* items, then followed by its interval — on any row with a
-// shorter description that padding pushed the interval far to the right,
-// away from the check name it describes. Not padding the description (and
-// not wrapping it into a fixed column either — each row just takes the
-// width its own text needs) keeps the interval right after the text it
-// belongs to, on every row.
+// Descriptions are padded to the longest one actually present so the
+// interval lines up in its own column — reasonable now that AI-discovered
+// descriptions are capped at a short length (see MAX_AI_DESCRIPTION_LENGTH
+// in discover.ts); when nothing bounded that length, one long outlier
+// dragged every row's interval far to the right along with it.
 const PREFIX_WIDTH = 2; // "› " or "  "
 const CHECKBOX_WIDTH = 4; // "[x] " or "[ ] "
 const COLUMN_GUTTER = 2;
@@ -56,6 +54,8 @@ export function CheckboxList({ items, initialSelected, accentColor, onSubmit, on
 
   const labelWidth = Math.max(...items.map((item) => item.label.length));
   const labelColWidth = PREFIX_WIDTH + CHECKBOX_WIDTH + labelWidth;
+  const hasMeta = items.some((item) => item.meta);
+  const descWidth = hasMeta ? Math.max(...items.map((item) => item.description.length)) : 0;
 
   return (
     <Box flexDirection="column">
@@ -70,7 +70,7 @@ export function CheckboxList({ items, initialSelected, accentColor, onSubmit, on
             </Box>
             <Text color={focused ? undefined : muted}>
               {" ".repeat(COLUMN_GUTTER)}
-              {item.description}
+              {hasMeta ? item.description.padEnd(descWidth) : item.description}
               {item.meta ? ` ${item.meta}` : ""}
             </Text>
           </Box>
