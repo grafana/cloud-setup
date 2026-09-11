@@ -1,8 +1,8 @@
 import { existsSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import ts from "typescript";
-import { fileToolsWithWrite, runTask } from "./harness/index.js";
-import type { FaroInstrumentation } from "./frontendO11y.js";
+import { fileToolsWithWrite, runTask } from "../../harness/index.js";
+import type { FaroInstrumentation } from "./instrument.js";
 
 const IGNORED_DIRS = new Set(["node_modules", ".git", "dist", "build", ".turbo", ".next"]);
 const SOURCE_EXTENSIONS = new Set([".ts", ".tsx", ".js", ".jsx"]);

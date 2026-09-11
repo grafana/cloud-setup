@@ -4,31 +4,18 @@ import React, { useEffect, useRef, useState } from "react";
 import { Box, render, Text, useApp, useInput } from "ink";
 import Spinner from "ink-spinner";
 import TextInput from "ink-text-input";
-import { SmApiError, SmClient, type Probe } from "../api.js";
-import { plan as buildPlan } from "../reconcile.js";
-import { writeCredentials } from "../credentials.js";
-import { aiEndpointCandidatesFor, candidatesFor, type Candidate } from "../discover.js";
-import { tryFaroClient } from "../faroAuth.js";
-import {
-  detectFrontendTarget,
-  insertFaroSnippet,
-  installFaroPackages,
-  openFrontendO11ySetupPage,
-  readPkgName,
-  JAVASCRIPT_FARO_PACKAGES,
-  REACT_FARO_PACKAGES,
-  type FaroInstrumentation,
-} from "../frontendO11y.js";
-import { isGcxInstalled, installGcx, GCX_INSTALL_COMMAND } from "../gcx.js";
-import { ensureAssistantAuth } from "../harness/index.js";
-import { instrumentNextjs } from "../nextjsInstrument.js";
-import { instrumentReact } from "../reactInstrument.js";
+import { SmApiError, SmClient, type Probe } from "../products/syntheticMonitoring/api.js";
+import { plan as buildPlan } from "../products/syntheticMonitoring/reconcile.js";
+import { writeCredentials } from "../products/syntheticMonitoring/credentials.js";
+import { aiEndpointCandidatesFor, candidatesFor, type Candidate } from "../products/syntheticMonitoring/discover.js";
 import { getSkillStatus, installSkill } from "../skills.js";
-import { tryAutoSmSession } from "../smAuth.js";
-import { writeTerraformExport } from "../terraform.js";
+import { tryAutoSmSession } from "../products/syntheticMonitoring/smAuth.js";
+import { writeTerraformExport } from "../products/syntheticMonitoring/terraform.js";
 import { CheckboxList } from "./CheckboxList.js";
-import { accent, bad, checkNodeVersion, Header, MIN_SPINNER_MS, muted, ok, Working } from "./shared.js";
-import type { SyntheticConfig } from "../types.js";
+import { accent, bad, Header, MIN_SPINNER_MS, muted, ok, Working } from "./shared.js";
+import { useGcxStep } from "./steps/useGcxStep.js";
+import { useAuthStep } from "./steps/useAuthStep.js";
+import type { SyntheticConfig } from "../products/syntheticMonitoring/types.js";
 
 const ANALYZE_MIN_MS = 5000;
 // This step lands right after "sign in"'s own real-world wait (the OAuth
@@ -79,16 +66,17 @@ interface CreationItem {
   id?: number;
 }
 
-// The eight macro-steps shown in the persistent step list. "select"/"create"
+// The seven macro-steps shown in the persistent step list. "select"/"create"
 // are editable (can be a `b` back-navigation target); "gcx", "skills",
-// "analyze", "auth", "export", and "frontend" are fully automatic — once
-// done, they stay done even if you navigate back past them, since there's
-// nothing to reconfirm. "analyze" covers both local candidate generation
-// and (if authenticated) AI-powered live endpoint discovery — one step,
-// not two.
-type StepId = "gcx" | "skills" | "analyze" | "auth" | "select" | "create" | "export" | "frontend";
+// "analyze", "auth", and "export" are fully automatic — once done, they
+// stay done even if you navigate back past them, since there's nothing to
+// reconfirm. "analyze" covers both local candidate generation and (if
+// authenticated) AI-powered live endpoint discovery — one step, not two.
+// Frontend O11y instrumentation is a separate concern, not chained onto
+// this flow — see the standalone `frontend-o11y` subcommand (FrontendApp.tsx).
+type StepId = "gcx" | "skills" | "analyze" | "auth" | "select" | "create" | "export";
 
-const STEP_ORDER: StepId[] = ["gcx", "auth", "skills", "analyze", "select", "create", "export", "frontend"];
+const STEP_ORDER: StepId[] = ["gcx", "auth", "skills", "analyze", "select", "create", "export"];
 const EDITABLE_STEPS: StepId[] = ["select", "create"];
 const STEP_LABELS: Record<StepId, string> = {
   gcx: "Install Grafana Cloud CLI (gcx)",
@@ -98,7 +86,6 @@ const STEP_LABELS: Record<StepId, string> = {
   select: "Review Synthetic Checks",
   create: "Create Synthetic Checks",
   export: "Export Synthetic Checks as Terraform",
-  frontend: "Instrument Frontend O11y",
 };
 
 function previousEditableStep(from: StepId): StepId | undefined {
@@ -108,17 +95,6 @@ function previousEditableStep(from: StepId): StepId | undefined {
   }
   return undefined;
 }
-
-// "gcx": just installing the CLI itself — nothing in this tool authenticates
-// it (nothing downstream needs gcx auth), it's just handy to have locally.
-type GcxSubPhase = "checking-gcx" | "gcx-install-confirm" | "gcx-installing";
-const GCX_WAITING_SUBPHASES: GcxSubPhase[] = ["gcx-install-confirm"];
-
-// "auth": ask once, up front, whether it's OK to open a browser to sign in
-// to Grafana Assistant — declining just skips "analyze"'s AI-discovery
-// half, same as a failed sign-in would.
-type AuthSubPhase = "browser-confirm" | "authenticating";
-const AUTH_WAITING_SUBPHASES: AuthSubPhase[] = ["browser-confirm"];
 
 // "analyze": runs local candidate generation first (no confirmation
 // needed), then — unless "auth" already failed — asks once whether it's OK
@@ -133,21 +109,6 @@ const ANALYZE_WAITING_SUBPHASES: AnalyzeSubPhase[] = ["browser-confirm"];
 // export would.
 type ExportSubPhase = "export-confirm" | "exporting";
 const EXPORT_WAITING_SUBPHASES: ExportSubPhase[] = ["export-confirm"];
-
-// "frontend": ask whether to instrument this project with Frontend O11y —
-// only asked at all when the project matches one of the few shapes this
-// tool actually knows how to instrument (see detectFrontendTarget);
-// anything else skips straight through with no question, same as a
-// declined or failed attempt would.
-// "checking": list existing Faro apps and reuse one whose name matches
-// this project — creating a new one isn't possible through this OAuth
-// session (verified live: Frontend Observability's plugin-proxy route
-// only accepts a real Service Account token for writes, unlike
-// Synthetic Monitoring's datasource-proxy route). When no match is
-// found, opens the Frontend Observability app page for the user to
-// create one there instead, then asks for its collector URL.
-type FrontendSubPhase = "frontend-confirm" | "checking" | "collector-url-input" | "instrumenting";
-const FRONTEND_WAITING_SUBPHASES: FrontendSubPhase[] = ["frontend-confirm", "collector-url-input"];
 
 // "create": connecting to the SM API and authenticating with a token lives
 // here (not in "gcx") since it's unrelated to the gcx CLI — it only needs to
@@ -179,20 +140,16 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
   const [done, setDone] = useState(false);
   const [failureSummary, setFailureSummary] = useState<string>();
 
-  // gcx step
-  const [gcxSubPhase, setGcxSubPhase] = useState<GcxSubPhase>("checking-gcx");
-  const [gcxReinstalling, setGcxReinstalling] = useState(false);
-
-
   // analyze step
   const [candidates, setCandidates] = useState<Candidate[]>();
   const [analyzeSubPhase, setAnalyzeSubPhase] = useState<AnalyzeSubPhase>("analyzing");
 
-  // auth step — a set "error" (declined, timed out, or failed) just means
-  // "analyze" skips its AI-discovery half, but the real reason is still
-  // shown rather than swallowed.
-  const [authSubPhase, setAuthSubPhase] = useState<AuthSubPhase>("browser-confirm");
-  const [authError, setAuthError] = useState<string>();
+  // gcx/auth steps — shared with FrontendApp via src/ui/steps.
+  const gcx = useGcxStep(forceGcxInstall, currentStep === "gcx");
+  const auth = useAuthStep(
+    "Sign in to Grafana Cloud to enable AI-powered endpoint suggestions? This will open a browser.",
+    currentStep === "auth"
+  );
 
   // select step — seeded once (in runAnalyze), then kept live via
   // CheckboxList's onSelectionChange so a back-then-forward round trip
@@ -216,12 +173,6 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
   const [exportPath, setExportPath] = useState<string>();
   const [exportError, setExportError] = useState<string>();
 
-  // frontend step — same "error shown, never swallowed" pattern.
-  const [frontendSubPhase, setFrontendSubPhase] = useState<FrontendSubPhase>("frontend-confirm");
-  const [frontendFile, setFrontendFile] = useState<string>();
-  const [frontendError, setFrontendError] = useState<string>();
-  const [collectorUrlInput, setCollectorUrlInput] = useState("");
-
   const session = useRef<Session>(undefined as unknown as Session);
   // The exact config "create" built (target/probes/settings/frequency per
   // check) — kept here rather than recomputed, so "export" emits Terraform
@@ -230,20 +181,15 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
   const baseUrlResolver = useRef<((url: string) => void) | undefined>(undefined);
   const tokenResolver = useRef<((token: string) => void) | undefined>(undefined);
   const selectResolver = useRef<((keys: string[]) => void) | undefined>(undefined);
-  const gcxInstallResolver = useRef<((install: boolean) => void) | undefined>(undefined);
-  const authPermissionResolver = useRef<((allow: boolean) => void) | undefined>(undefined);
   const browserPermissionResolver = useRef<((allow: boolean) => void) | undefined>(undefined);
   const exportPermissionResolver = useRef<((allow: boolean) => void) | undefined>(undefined);
-  const frontendPermissionResolver = useRef<((allow: boolean) => void) | undefined>(undefined);
-  const collectorUrlResolver = useRef<((url: string) => void) | undefined>(undefined);
 
   const backTarget = previousEditableStep(currentStep);
   const isWaiting =
-    (currentStep === "gcx" && GCX_WAITING_SUBPHASES.includes(gcxSubPhase)) ||
-    (currentStep === "auth" && AUTH_WAITING_SUBPHASES.includes(authSubPhase)) ||
+    (currentStep === "gcx" && gcx.isWaiting) ||
+    (currentStep === "auth" && auth.isWaiting) ||
     (currentStep === "analyze" && ANALYZE_WAITING_SUBPHASES.includes(analyzeSubPhase)) ||
     (currentStep === "export" && EXPORT_WAITING_SUBPHASES.includes(exportSubPhase)) ||
-    (currentStep === "frontend" && FRONTEND_WAITING_SUBPHASES.includes(frontendSubPhase)) ||
     currentStep === "select" ||
     (currentStep === "create" && (createSubPhase === "base-url-input" || createSubPhase === "token-input"));
   const backAllowed =
@@ -280,9 +226,7 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
 
   // Quit is disabled while free text is being typed (a token or URL could
   // legitimately contain the letter q) — Ctrl+C still works there.
-  const quittingBlocked =
-    (currentStep === "create" && (createSubPhase === "base-url-input" || createSubPhase === "token-input")) ||
-    (currentStep === "frontend" && frontendSubPhase === "collector-url-input");
+  const quittingBlocked = currentStep === "create" && (createSubPhase === "base-url-input" || createSubPhase === "token-input");
   useInput(
     (input) => {
       if (input.toLowerCase() === "q") exit();
@@ -294,26 +238,6 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
       if (input.toLowerCase() === "b") goBack();
     },
     { isActive: backAllowed }
-  );
-
-  useInput(
-    (input, key) => {
-      if (currentStep === "gcx" && gcxSubPhase === "gcx-install-confirm") {
-        if (key.return || input.toLowerCase() === "y") gcxInstallResolver.current?.(true);
-        else if (input.toLowerCase() === "n") gcxInstallResolver.current?.(false);
-      }
-    },
-    { isActive: currentStep === "gcx" && gcxSubPhase === "gcx-install-confirm" }
-  );
-
-  useInput(
-    (input, key) => {
-      if (currentStep === "auth" && authSubPhase === "browser-confirm") {
-        if (key.return || input.toLowerCase() === "y") authPermissionResolver.current?.(true);
-        else if (input.toLowerCase() === "n") authPermissionResolver.current?.(false);
-      }
-    },
-    { isActive: currentStep === "auth" && authSubPhase === "browser-confirm" }
   );
 
   useInput(
@@ -336,16 +260,6 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
     { isActive: currentStep === "export" && exportSubPhase === "export-confirm" }
   );
 
-  useInput(
-    (input, key) => {
-      if (currentStep === "frontend" && frontendSubPhase === "frontend-confirm") {
-        if (key.return || input.toLowerCase() === "y") frontendPermissionResolver.current?.(true);
-        else if (input.toLowerCase() === "n") frontendPermissionResolver.current?.(false);
-      }
-    },
-    { isActive: currentStep === "frontend" && frontendSubPhase === "frontend-confirm" }
-  );
-
   // Drives whichever step is current. Re-runs whenever currentStep changes —
   // including on back-navigation, since the effect cleanup (`cancelled`)
   // orphans the previous step's in-flight promise harmlessly (it's just
@@ -356,35 +270,7 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
     let cancelled = false;
 
     async function runGcx() {
-      checkNodeVersion();
-      setGcxSubPhase("checking-gcx");
-      let gcxAvailable = isGcxInstalled();
-      await sleep(MIN_SPINNER_MS);
-      if (cancelled) return;
-
-      // The flag only surfaces this path when gcx is already there (so you
-      // get offered a reinstall instead of nothing happening) — it never
-      // skips the confirmation itself.
-      if (forceGcxInstall || !gcxAvailable) {
-        setGcxReinstalling(gcxAvailable);
-        setGcxSubPhase("gcx-install-confirm");
-        const shouldInstall = await new Promise<boolean>((resolve) => {
-          gcxInstallResolver.current = resolve;
-        });
-        if (cancelled) return;
-        if (shouldInstall) {
-          setGcxSubPhase("gcx-installing");
-          try {
-            await Promise.all([installGcx(), sleep(MIN_SPINNER_MS)]);
-            gcxAvailable = isGcxInstalled();
-          } catch {
-            gcxAvailable = false;
-          }
-        }
-      }
-      // Not required for anything downstream (nothing in this tool calls
-      // gcx itself) — it's just handy to have locally, so a failed or
-      // declined install isn't fatal.
+      await gcx.run(() => cancelled);
       if (cancelled) return;
       advance();
     }
@@ -416,7 +302,7 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
       // No point asking to open a browser for live discovery if there's no
       // signed-in assistant to judge what it finds — skip straight through,
       // same as if the user had declined.
-      if (authError) {
+      if (auth.error) {
         advance();
         return;
       }
@@ -450,28 +336,7 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
     }
 
     async function runAuth() {
-      setAuthSubPhase("browser-confirm");
-      setAuthError(undefined);
-      const allow = await new Promise<boolean>((resolve) => {
-        authPermissionResolver.current = resolve;
-      });
-      if (cancelled) return;
-
-      if (!allow) {
-        setAuthError("declined");
-        advance();
-        return;
-      }
-
-      setAuthSubPhase("authenticating");
-      try {
-        await Promise.all([ensureAssistantAuth(initialStackUrl), sleep(MIN_SPINNER_MS)]);
-      } catch (err) {
-        // AI-powered endpoint suggestions are additive — a declined, timed
-        // out, or failed sign-in just means "analyze" skips that half.
-        // Still surfaced (not swallowed) so a real failure is diagnosable.
-        setAuthError(err instanceof Error ? err.message : String(err));
-      }
+      await auth.run(initialStackUrl, () => cancelled);
       if (cancelled) return;
       advance();
     }
@@ -645,111 +510,6 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
       }
       if (cancelled) return;
       advance();
-    }
-
-    async function runFrontend() {
-      setFrontendError(undefined);
-      setFrontendFile(undefined);
-
-      const target = detectFrontendTarget(process.cwd());
-      if (target.kind === "unsupported") {
-        // Nothing this tool knows how to instrument automatically — skip
-        // the question entirely rather than ask about something that'd
-        // just fail.
-        advance();
-        setDone(true);
-        return;
-      }
-
-      setFrontendSubPhase("frontend-confirm");
-      const allow = await new Promise<boolean>((resolve) => {
-        frontendPermissionResolver.current = resolve;
-      });
-      if (cancelled) return;
-
-      if (allow) {
-        try {
-          const appName = readPkgName(process.cwd()) ?? path.basename(process.cwd());
-
-          setFrontendSubPhase("checking");
-          const [faro] = await Promise.all([tryFaroClient(initialStackUrl), sleep(MIN_SPINNER_MS)]);
-          if (cancelled) return;
-          const existing = await faro?.findExisting(appName);
-
-          let instrumentation: FaroInstrumentation;
-          if (existing) {
-            instrumentation = { name: existing.name, collectorUrl: `${existing.collectEndpointURL}/${existing.appKey}` };
-          } else {
-            // Creating a new app isn't possible through this OAuth session
-            // (see FaroClient.findExisting) — open the real setup page and
-            // ask for the collector URL it shows once the user creates one.
-            openFrontendO11ySetupPage(initialStackUrl);
-            setFrontendSubPhase("collector-url-input");
-            const pastedUrl = await new Promise<string>((resolve) => {
-              collectorUrlResolver.current = resolve;
-            });
-            if (cancelled) return;
-            instrumentation = { name: appName, collectorUrl: pastedUrl };
-          }
-
-          setFrontendSubPhase("instrumenting");
-          if (target.kind === "javascript") {
-            insertFaroSnippet(process.cwd(), target, instrumentation);
-            await Promise.all([installFaroPackages(process.cwd(), JAVASCRIPT_FARO_PACKAGES), sleep(MIN_SPINNER_MS)]);
-            if (cancelled) return;
-            setFrontendFile(target.file);
-          } else if (target.kind === "react") {
-            // Run separately from installFaroPackages (not bundled into
-            // one Promise.all) — a failed install would otherwise reject
-            // the whole thing and discard a perfectly good instrumentation
-            // result. Same pattern for the nextjs branch below.
-            const [result] = await Promise.all([
-              instrumentReact(process.cwd(), initialStackUrl, target.file, instrumentation),
-              sleep(MIN_SPINNER_MS),
-            ]);
-            if (cancelled) return;
-
-            let installError: string | undefined;
-            try {
-              await installFaroPackages(process.cwd(), REACT_FARO_PACKAGES);
-            } catch (err) {
-              installError = err instanceof Error ? err.message : String(err);
-            }
-            if (cancelled) return;
-
-            const base = result.routerFile ? `${result.entryFile}, router wrapped in ${result.routerFile}` : result.entryFile;
-            setFrontendFile(installError ? `${base} (package install failed: ${installError})` : base);
-          } else {
-            const [result] = await Promise.all([instrumentNextjs(process.cwd(), initialStackUrl, instrumentation), sleep(MIN_SPINNER_MS)]);
-            if (cancelled) return;
-
-            let installError: string | undefined;
-            try {
-              await installFaroPackages(process.cwd(), JAVASCRIPT_FARO_PACKAGES);
-            } catch (err) {
-              installError = err instanceof Error ? err.message : String(err);
-            }
-            if (cancelled) return;
-
-            if (result.layoutFile) {
-              setFrontendFile(
-                installError
-                  ? `${result.componentFile}, wired into ${result.layoutFile} (package install failed: ${installError})`
-                  : `${result.componentFile}, wired into ${result.layoutFile}`
-              );
-            } else if (result.componentFile) {
-              setFrontendError(`created ${result.componentFile}, but couldn't wire it into the layout automatically — add <FrontendObservability /> yourself`);
-            } else {
-              setFrontendError(result.detail ?? "the agent couldn't complete the Next.js instrumentation");
-            }
-          }
-        } catch (err) {
-          if (cancelled) return;
-          setFrontendError(err instanceof Error ? err.message : String(err));
-        }
-      }
-      if (cancelled) return;
-      advance();
       setDone(true);
     }
 
@@ -762,7 +522,6 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
         else if (currentStep === "select") await runSelect();
         else if (currentStep === "create") await runCreate();
         else if (currentStep === "export") await runExport();
-        else if (currentStep === "frontend") await runFrontend();
       } catch (err) {
         if (cancelled) return;
         setFailureSummary(err instanceof Error ? err.message : String(err));
@@ -830,20 +589,14 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
             <Box key={step} flexDirection="column">
               {row}
               {step === "create" && items.length > 0 && <Box flexDirection="column">{ItemsList()}</Box>}
-              {step === "auth" && completed.has(step) && authError && (
-                <Text color={muted}> Skipping AI-powered suggestions ({authError})</Text>
+              {step === "auth" && completed.has(step) && auth.error && (
+                <Text color={muted}> Skipping AI-powered suggestions ({auth.error})</Text>
               )}
               {step === "export" && completed.has(step) && exportPath && (
                 <Text color={muted}>{"     "}Wrote {exportPath}</Text>
               )}
               {step === "export" && completed.has(step) && exportError && (
                 <Text color={muted}>{"     "}Skipped Terraform export ({exportError})</Text>
-              )}
-              {step === "frontend" && completed.has(step) && frontendFile && (
-                <Text color={muted}>{"     "}Instrumented {frontendFile}</Text>
-              )}
-              {step === "frontend" && completed.has(step) && frontendError && (
-                <Text color={muted}>{"     "}Skipped Frontend O11y setup ({frontendError})</Text>
               )}
             </Box>
           );
@@ -859,32 +612,6 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
         <Text color={muted}>{primary}</Text>
       </Box>
     );
-  }
-
-  // Pure spinner sub-phases render nothing here — the step list's own
-  // spinner next to "Install and configure the Grafana Cloud CLI" already
-  // says something's happening; only the confirm prompts need extra text.
-  function GcxBody() {
-    if (gcxSubPhase === "gcx-install-confirm")
-      return (
-        <Box flexDirection="column">
-          <Text>{gcxReinstalling ? "Reinstall the Grafana Cloud CLI (gcx)?" : "gcx isn't installed. Install it now?"}</Text>
-          <Text color={muted}>{GCX_INSTALL_COMMAND}</Text>
-          <Text color={muted}>(y/n)</Text>
-        </Box>
-      );
-    return null;
-  }
-
-  function AuthBody() {
-    if (authSubPhase === "browser-confirm")
-      return (
-        <Box flexDirection="column">
-          <Text>Sign in to Grafana Cloud to enable AI-powered endpoint suggestions? This will open a browser.</Text>
-          <Text color={muted}>(y/n)</Text>
-        </Box>
-      );
-    return null;
   }
 
   function AnalyzeBody() {
@@ -906,33 +633,6 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
           <Text color={muted}>(y/n)</Text>
         </Box>
       );
-    return null;
-  }
-
-  function FrontendBody() {
-    if (frontendSubPhase === "frontend-confirm")
-      return (
-        <Box flexDirection="column">
-          <Text>Instrument this project with Frontend O11y too?</Text>
-          <Text color={muted}>(y/n)</Text>
-        </Box>
-      );
-    if (frontendSubPhase === "checking") return <Working label="Looking for an existing Frontend O11y app…" />;
-    if (frontendSubPhase === "collector-url-input")
-      return (
-        <Box flexDirection="column">
-          <Text>A browser window just opened — create a new app there, then paste its collector URL here.</Text>
-          <Box>
-            <Text>Faro collector URL: </Text>
-            <TextInput
-              value={collectorUrlInput}
-              onChange={setCollectorUrlInput}
-              onSubmit={(v) => collectorUrlResolver.current?.(v.trim())}
-            />
-          </Box>
-        </Box>
-      );
-    if (frontendSubPhase === "instrumenting") return <Working label="Instrumenting your project…" />;
     return null;
   }
 
@@ -1085,11 +785,10 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
           failureSummary ||
           currentStep === "select" ||
           (currentStep === "create" && createSubPhase !== "connecting") ||
-          (currentStep === "gcx" && gcxSubPhase === "gcx-install-confirm") ||
-          (currentStep === "auth" && authSubPhase === "browser-confirm") ||
+          (currentStep === "gcx" && gcx.subPhase === "gcx-install-confirm") ||
+          (currentStep === "auth" && auth.subPhase === "browser-confirm") ||
           (currentStep === "analyze" && analyzeSubPhase === "browser-confirm") ||
-          (currentStep === "export" && exportSubPhase === "export-confirm") ||
-          currentStep === "frontend"
+          (currentStep === "export" && exportSubPhase === "export-confirm")
             ? 1
             : 0
         }
@@ -1101,13 +800,12 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
           </Text>
         ) : (
           <>
-            {currentStep === "gcx" && GcxBody()}
-            {currentStep === "auth" && AuthBody()}
+            {currentStep === "gcx" && gcx.body}
+            {currentStep === "auth" && auth.body}
             {currentStep === "analyze" && AnalyzeBody()}
             {currentStep === "select" && SelectBody()}
             {currentStep === "create" && CreateBody()}
             {currentStep === "export" && ExportBody()}
-            {currentStep === "frontend" && FrontendBody()}
           </>
         )}
       </Box>

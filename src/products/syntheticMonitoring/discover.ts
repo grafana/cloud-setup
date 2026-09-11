@@ -1,4 +1,4 @@
-import { authorChecks } from "./checks/authoring.js";
+import { authorChecks } from "./authoring.js";
 import type { CheckSettings } from "./types.js";
 
 export interface Candidate {

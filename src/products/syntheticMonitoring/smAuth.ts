@@ -1,4 +1,4 @@
-import { ensureAssistantAuth } from "./harness/index.js";
+import { ensureAssistantAuth } from "../../harness/index.js";
 import { SmClient, type Probe } from "./api.js";
 
 export interface AutoSmSession {

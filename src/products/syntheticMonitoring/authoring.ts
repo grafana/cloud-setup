@@ -1,4 +1,4 @@
-import { browserTools, ensureAssistantAuth, fileTools, runTask } from "../harness/index.js";
+import { browserTools, ensureAssistantAuth, fileTools, runTask } from "../../harness/index.js";
 
 export interface DiscoveredEndpoint {
   path: string;

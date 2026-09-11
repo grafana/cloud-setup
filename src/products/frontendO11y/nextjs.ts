@@ -1,8 +1,8 @@
 import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import ts from "typescript";
-import { fileToolsWithWrite, runTask } from "./harness/index.js";
-import type { FaroInstrumentation } from "./frontendO11y.js";
+import { fileToolsWithWrite, runTask } from "../../harness/index.js";
+import type { FaroInstrumentation } from "./instrument.js";
 
 // Root layout candidates (App Router and Pages Router, with or without
 // src/) — existing ones get snapshotted before the agent runs, so a

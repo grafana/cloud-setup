@@ -4,7 +4,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { Box, render, Text, useApp, useInput } from "ink";
 import Spinner from "ink-spinner";
 import TextInput from "ink-text-input";
-import { tryFaroClient } from "../faroAuth.js";
+import { tryFaroClient } from "../products/frontendO11y/faroAuth.js";
 import {
   detectFrontendTarget,
   insertFaroSnippet,
@@ -13,13 +13,13 @@ import {
   readPkgName,
   JAVASCRIPT_FARO_PACKAGES,
   REACT_FARO_PACKAGES,
-} from "../frontendO11y.js";
-import type { FaroInstrumentation } from "../frontendO11y.js";
-import { isGcxInstalled, installGcx, GCX_INSTALL_COMMAND } from "../gcx.js";
-import { ensureAssistantAuth } from "../harness/index.js";
-import { instrumentNextjs } from "../nextjsInstrument.js";
-import { instrumentReact } from "../reactInstrument.js";
-import { accent, bad, checkNodeVersion, Header, MIN_SPINNER_MS, muted, ok, Working } from "./shared.js";
+} from "../products/frontendO11y/instrument.js";
+import type { FaroInstrumentation } from "../products/frontendO11y/instrument.js";
+import { instrumentNextjs } from "../products/frontendO11y/nextjs.js";
+import { instrumentReact } from "../products/frontendO11y/react.js";
+import { accent, bad, Header, MIN_SPINNER_MS, muted, ok, Working } from "./shared.js";
+import { useGcxStep } from "./steps/useGcxStep.js";
+import { useAuthStep } from "./steps/useAuthStep.js";
 
 // The standalone `frontend-o11y` subcommand — just the pieces of the main
 // wizard that Frontend O11y actually needs (gcx, sign-in), without any of
@@ -33,12 +33,6 @@ const STEP_LABELS: Record<StepId, string> = {
   auth: "Authenticate with OAuth",
   frontend: "Instrument Frontend O11y",
 };
-
-type GcxSubPhase = "checking-gcx" | "gcx-install-confirm" | "gcx-installing";
-const GCX_WAITING_SUBPHASES: GcxSubPhase[] = ["gcx-install-confirm"];
-
-type AuthSubPhase = "browser-confirm" | "authenticating";
-const AUTH_WAITING_SUBPHASES: AuthSubPhase[] = ["browser-confirm"];
 
 // "checking": list existing Faro apps and reuse one whose name matches
 // this project — creating a new one isn't possible through this OAuth
@@ -64,25 +58,24 @@ export function FrontendApp({ initialStackUrl, forceGcxInstall }: Props) {
   const [done, setDone] = useState(false);
   const [failureSummary, setFailureSummary] = useState<string>();
 
-  const [gcxSubPhase, setGcxSubPhase] = useState<GcxSubPhase>("checking-gcx");
-  const [gcxReinstalling, setGcxReinstalling] = useState(false);
-
-  const [authSubPhase, setAuthSubPhase] = useState<AuthSubPhase>("browser-confirm");
-  const [authError, setAuthError] = useState<string>();
-
   const [frontendSubPhase, setFrontendSubPhase] = useState<FrontendSubPhase>("frontend-confirm");
   const [frontendFile, setFrontendFile] = useState<string>();
   const [frontendError, setFrontendError] = useState<string>();
   const [collectorUrlInput, setCollectorUrlInput] = useState("");
 
-  const gcxInstallResolver = useRef<((install: boolean) => void) | undefined>(undefined);
-  const authPermissionResolver = useRef<((allow: boolean) => void) | undefined>(undefined);
+  // gcx/auth steps — shared with SetupApp via src/ui/steps.
+  const gcx = useGcxStep(forceGcxInstall, currentStep === "gcx");
+  const auth = useAuthStep(
+    "Sign in to Grafana Cloud to look up an existing Frontend O11y app automatically? This will open a browser.",
+    currentStep === "auth"
+  );
+
   const frontendPermissionResolver = useRef<((allow: boolean) => void) | undefined>(undefined);
   const collectorUrlResolver = useRef<((url: string) => void) | undefined>(undefined);
 
   const isWaiting =
-    (currentStep === "gcx" && GCX_WAITING_SUBPHASES.includes(gcxSubPhase)) ||
-    (currentStep === "auth" && AUTH_WAITING_SUBPHASES.includes(authSubPhase)) ||
+    (currentStep === "gcx" && gcx.isWaiting) ||
+    (currentStep === "auth" && auth.isWaiting) ||
     (currentStep === "frontend" && FRONTEND_WAITING_SUBPHASES.includes(frontendSubPhase));
 
   function advance() {
@@ -112,26 +105,6 @@ export function FrontendApp({ initialStackUrl, forceGcxInstall }: Props) {
 
   useInput(
     (input, key) => {
-      if (currentStep === "gcx" && gcxSubPhase === "gcx-install-confirm") {
-        if (key.return || input.toLowerCase() === "y") gcxInstallResolver.current?.(true);
-        else if (input.toLowerCase() === "n") gcxInstallResolver.current?.(false);
-      }
-    },
-    { isActive: currentStep === "gcx" && gcxSubPhase === "gcx-install-confirm" }
-  );
-
-  useInput(
-    (input, key) => {
-      if (currentStep === "auth" && authSubPhase === "browser-confirm") {
-        if (key.return || input.toLowerCase() === "y") authPermissionResolver.current?.(true);
-        else if (input.toLowerCase() === "n") authPermissionResolver.current?.(false);
-      }
-    },
-    { isActive: currentStep === "auth" && authSubPhase === "browser-confirm" }
-  );
-
-  useInput(
-    (input, key) => {
       if (currentStep === "frontend" && frontendSubPhase === "frontend-confirm") {
         if (key.return || input.toLowerCase() === "y") frontendPermissionResolver.current?.(true);
         else if (input.toLowerCase() === "n") frontendPermissionResolver.current?.(false);
@@ -145,56 +118,13 @@ export function FrontendApp({ initialStackUrl, forceGcxInstall }: Props) {
     let cancelled = false;
 
     async function runGcx() {
-      checkNodeVersion();
-      setGcxSubPhase("checking-gcx");
-      let gcxAvailable = isGcxInstalled();
-      await sleep(MIN_SPINNER_MS);
-      if (cancelled) return;
-
-      if (forceGcxInstall || !gcxAvailable) {
-        setGcxReinstalling(gcxAvailable);
-        setGcxSubPhase("gcx-install-confirm");
-        const shouldInstall = await new Promise<boolean>((resolve) => {
-          gcxInstallResolver.current = resolve;
-        });
-        if (cancelled) return;
-        if (shouldInstall) {
-          setGcxSubPhase("gcx-installing");
-          try {
-            await Promise.all([installGcx(), sleep(MIN_SPINNER_MS)]);
-          } catch {
-            // Not required for anything downstream — a failed or declined
-            // install isn't fatal.
-          }
-        }
-      }
+      await gcx.run(() => cancelled);
       if (cancelled) return;
       advance();
     }
 
     async function runAuth() {
-      setAuthSubPhase("browser-confirm");
-      setAuthError(undefined);
-      const allow = await new Promise<boolean>((resolve) => {
-        authPermissionResolver.current = resolve;
-      });
-      if (cancelled) return;
-
-      if (!allow) {
-        setAuthError("declined");
-        advance();
-        return;
-      }
-
-      setAuthSubPhase("authenticating");
-      try {
-        await Promise.all([ensureAssistantAuth(initialStackUrl), sleep(MIN_SPINNER_MS)]);
-      } catch (err) {
-        // A declined, timed out, or failed sign-in just means "frontend"
-        // falls back to the manual collector-URL path — still surfaced
-        // (not swallowed) so a real failure is diagnosable.
-        setAuthError(err instanceof Error ? err.message : String(err));
-      }
+      await auth.run(initialStackUrl, () => cancelled);
       if (cancelled) return;
       advance();
     }
@@ -361,8 +291,8 @@ export function FrontendApp({ initialStackUrl, forceGcxInstall }: Props) {
           return (
             <Box key={step} flexDirection="column">
               {row}
-              {step === "auth" && completed.has(step) && authError && (
-                <Text color={muted}> Skipping auto-lookup ({authError})</Text>
+              {step === "auth" && completed.has(step) && auth.error && (
+                <Text color={muted}> Skipping auto-lookup ({auth.error})</Text>
               )}
               {step === "frontend" && completed.has(step) && frontendFile && (
                 <Text color={muted}>{"     "}Instrumented {frontendFile}</Text>
@@ -375,29 +305,6 @@ export function FrontendApp({ initialStackUrl, forceGcxInstall }: Props) {
         })}
       </Box>
     );
-  }
-
-  function GcxBody() {
-    if (gcxSubPhase === "gcx-install-confirm")
-      return (
-        <Box flexDirection="column">
-          <Text>{gcxReinstalling ? "Reinstall the Grafana Cloud CLI (gcx)?" : "gcx isn't installed. Install it now?"}</Text>
-          <Text color={muted}>{GCX_INSTALL_COMMAND}</Text>
-          <Text color={muted}>(y/n)</Text>
-        </Box>
-      );
-    return null;
-  }
-
-  function AuthBody() {
-    if (authSubPhase === "browser-confirm")
-      return (
-        <Box flexDirection="column">
-          <Text>Sign in to Grafana Cloud to look up an existing Frontend O11y app automatically? This will open a browser.</Text>
-          <Text color={muted}>(y/n)</Text>
-        </Box>
-      );
-    return null;
   }
 
   function FrontendBody() {
@@ -466,8 +373,8 @@ export function FrontendApp({ initialStackUrl, forceGcxInstall }: Props) {
       <Box
         marginTop={
           failureSummary ||
-          (currentStep === "gcx" && gcxSubPhase === "gcx-install-confirm") ||
-          (currentStep === "auth" && authSubPhase === "browser-confirm") ||
+          (currentStep === "gcx" && gcx.subPhase === "gcx-install-confirm") ||
+          (currentStep === "auth" && auth.subPhase === "browser-confirm") ||
           currentStep === "frontend"
             ? 1
             : 0
@@ -480,8 +387,8 @@ export function FrontendApp({ initialStackUrl, forceGcxInstall }: Props) {
           </Text>
         ) : (
           <>
-            {currentStep === "gcx" && GcxBody()}
-            {currentStep === "auth" && AuthBody()}
+            {currentStep === "gcx" && gcx.body}
+            {currentStep === "auth" && auth.body}
             {currentStep === "frontend" && FrontendBody()}
           </>
         )}

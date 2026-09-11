@@ -121,11 +121,11 @@ export function fileTools(cwd: string): AgentTool[] {
 
 // fileTools() plus write access — kept as an explicit, separate tool set
 // rather than folded into fileTools() so read-only callers (e.g. the SM
-// endpoint-proposal agent in checks/authoring.ts) never get write access
-// just by being in the same module. Only for tasks that genuinely need to
-// edit the project themselves — currently just Next.js instrumentation
-// (see nextjsInstrument.ts), which validates the result afterward rather
-// than trusting it blindly.
+// endpoint-proposal agent in products/syntheticMonitoring/authoring.ts)
+// never get write access just by being in the same module. Only for tasks
+// that genuinely need to edit the project themselves — currently Next.js
+// and React instrumentation (see products/frontendO11y/{nextjs,react}.ts),
+// which validate the result afterward rather than trusting it blindly.
 export function fileToolsWithWrite(cwd: string): AgentTool[] {
   return [
     ...fileTools(cwd),

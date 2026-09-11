@@ -160,6 +160,15 @@ function detectPackageManager(cwd: string): "npm" | "yarn" | "pnpm" {
 
 export async function installFaroPackages(cwd: string, packages: string[]): Promise<void> {
   const pm = detectPackageManager(cwd);
-  const args = pm === "yarn" ? ["add", ...packages] : ["install", ...packages];
+  // npm only: verified live that @grafana/faro-react's peerOptional
+  // react-router range (e.g. ^7||^8) can sit ahead of whatever react-router
+  // major an app actually has installed (v6 is still extremely common) —
+  // npm's strict ERESOLVE then blocks an install that works fine in
+  // practice. --legacy-peer-deps only skips that check, it doesn't change
+  // what gets installed. yarn classic already treats peer conflicts as
+  // warnings, and pnpm doesn't hard-fail on them either, so neither needs
+  // an equivalent flag.
+  const args =
+    pm === "yarn" ? ["add", ...packages] : pm === "npm" ? ["install", "--legacy-peer-deps", ...packages] : ["install", ...packages];
   await execFileAsync(pm, args, { cwd, timeout: 120000 });
 }
