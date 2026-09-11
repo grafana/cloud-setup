@@ -12,7 +12,7 @@ import { getSkillStatus, installSkill } from "../skills.js";
 import { tryAutoSmSession } from "../products/syntheticMonitoring/smAuth.js";
 import { writeTerraformExport } from "../products/syntheticMonitoring/terraform.js";
 import { CheckboxList } from "./CheckboxList.js";
-import { accent, bad, EnterHint, Header, MIN_SPINNER_MS, muted, ok, Working } from "./shared.js";
+import { accent, bad, EnterHint, Header, idColor, MIN_SPINNER_MS, muted, ok, Working } from "./shared.js";
 import { useGcxStep } from "./steps/useGcxStep.js";
 import { useAuthStep } from "./steps/useAuthStep.js";
 import type { SyntheticConfig } from "../products/syntheticMonitoring/types.js";
@@ -740,7 +740,10 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
     if (analyzeSubPhase === "browser-confirm")
       return (
         <Box flexDirection="column">
-          <Text>Open a real browser to see which live endpoints {initialTargetUrl} actually calls?</Text>
+          <Text>
+            Open a real browser to see which live endpoints <Text color={idColor}>{initialTargetUrl}</Text> actually
+            calls?
+          </Text>
           <EnterHint suffix="or n to skip" />
         </Box>
       );
@@ -859,15 +862,9 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
       <Box flexDirection="column" paddingLeft={1}>
         <Header stackUrl={initialStackUrl} />
         <Text>
-          Let's set up your first Synthetic Monitoring checks for <Text bold>&lt;{initialTargetUrl}&gt;</Text> using
-          this folder as context.
+          Let's set up synthetic checks for <Text color={idColor}>{initialTargetUrl}</Text>
         </Text>
-        <Text color={muted}>
-          We'll also configure everything you need to continue iterating on them later on, e.g. Agent Skills.
-        </Text>
-        <Box marginTop={1}>
-          <EnterHint />
-        </Box>
+        <EnterHint />
       </Box>
     );
   }

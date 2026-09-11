@@ -18,6 +18,10 @@ export const NO_COLOR = Boolean(process.env.NO_COLOR);
 export const accent = NO_COLOR ? undefined : "#FFA500";
 export const ok = NO_COLOR ? undefined : "green";
 export const bad = NO_COLOR ? undefined : "red";
+// The target URL is effectively the session's main identifier — called
+// out in its own color wherever it's mentioned, rather than relying on
+// bold or <angle brackets> to make it stand out.
+export const idColor = NO_COLOR ? undefined : "#C792EA";
 // A plain ANSI "gray" (bright-black, code 90) reads as near-invisible on a
 // dark/charcoal terminal background — verified live. This hex sits at a
 // medium gray instead, legible as "secondary" text on both dark and light
@@ -28,6 +32,12 @@ export const ANIMATE = Boolean(process.stdout.isTTY) && !NO_COLOR;
 function formatFolder(cwd: string): string {
   const home = os.homedir();
   return cwd === home || cwd.startsWith(`${home}${path.sep}`) ? `~${cwd.slice(home.length)}` : cwd;
+}
+
+// Display-only — every actual request still uses the real stackUrl passed
+// in by the caller, this just declutters what's shown in the header.
+function formatStackUrl(stackUrl: string): string {
+  return stackUrl.replace(/^https?:\/\//, "");
 }
 
 // Resolved lazily (not top-level constants) — cli.ts may chdir into
@@ -103,7 +113,7 @@ export function Header({ stackUrl }: { stackUrl: string }) {
       <Box marginTop={1} flexDirection="column">
         <Field label="Folder" value={formatFolder(process.cwd())} />
         <Field label="Detected" value={detectFramework(process.cwd())} />
-        <Field label="Stack" value={stackUrl} />
+        <Field label="Stack" value={formatStackUrl(stackUrl)} />
       </Box>
     </Box>
   );
