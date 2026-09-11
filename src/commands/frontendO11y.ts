@@ -1,8 +1,10 @@
 import { setDebugEnabled } from "../debug.js";
 import { runFrontendUI } from "../ui/FrontendApp.js";
-import { applyFolder, usageError, type Command } from "./shared.js";
+import { applyFolder, printCliError, type Command } from "./shared.js";
 
-const USAGE_LINE = "npx @grafana/setup-cli frontend-o11y --stack <stack-url> [--folder <path>] [--force-gcx-install] [--debug]";
+const USAGE_LINE = "npx @grafana/setup-cli frontend --stack <stack-url> [--folder <path>] [--force-gcx-install] [--debug]";
+const SHORT_USAGE_LINE = "npx @grafana/setup-cli frontend --stack <url>";
+const EXAMPLE = ["npx @grafana/setup-cli frontend \\", "  --stack https://my-team.grafana.net"];
 
 async function run(rest: string[]): Promise<void> {
   let stackUrl: string | undefined;
@@ -15,17 +17,25 @@ async function run(rest: string[]): Promise<void> {
     else if (rest[i] === "--force-gcx-install") forceGcxInstall = true;
     else if (rest[i] === "--debug") debug = true;
   }
-  if (!stackUrl) usageError("--stack is required.", USAGE_LINE);
+  if (!stackUrl) printCliError(frontendO11yCommand, "Missing required argument: --stack");
   if (!/^https?:\/\//.test(stackUrl)) stackUrl = `https://${stackUrl}`;
-  applyFolder(folder, USAGE_LINE);
+  applyFolder(folder, frontendO11yCommand);
   const debugFile = setDebugEnabled(debug);
   if (debugFile) console.log(`Debug log: ${debugFile}`);
   await runFrontendUI(stackUrl, forceGcxInstall);
 }
 
 export const frontendO11yCommand: Command = {
-  name: "frontend-o11y",
+  name: "frontend",
   usageLine: USAGE_LINE,
-  summary: "Instrument this project with Frontend O11y only — no target URL needed",
+  shortUsageLine: SHORT_USAGE_LINE,
+  example: EXAMPLE,
+  summary: "Instrument local app with Frontend Observability",
+  flags: [
+    { flag: "--stack <url>", description: "Grafana Cloud stack URL, e.g. https://my-team.grafana.net (required)" },
+    { flag: "--folder <path>", description: "Project directory to set up (default: .)" },
+    { flag: "--force-gcx-install", description: "Install the Grafana Cloud CLI (gcx) without asking, if it's missing" },
+    { flag: "--debug", description: "Log raw Assistant tool calls/responses to a temp file, for troubleshooting" },
+  ],
   run,
 };

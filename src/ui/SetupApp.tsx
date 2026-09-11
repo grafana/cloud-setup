@@ -154,7 +154,7 @@ interface CreationItem {
 // reconfirm. "analyze" covers both local candidate generation and (if
 // authenticated) AI-powered live endpoint discovery — one step, not two.
 // Frontend O11y instrumentation is a separate concern, not chained onto
-// this flow — see the standalone `frontend-o11y` subcommand (FrontendApp.tsx).
+// this flow — see the standalone `frontend` subcommand (FrontendApp.tsx).
 type StepId = "gcx" | "skills" | "analyze" | "auth" | "select" | "create" | "export";
 
 const STEP_ORDER: StepId[] = ["gcx", "auth", "skills", "analyze", "select", "create", "export"];

@@ -21,7 +21,7 @@ import { accent, bad, EnterHint, Header, MIN_SPINNER_MS, muted, ok, Working } fr
 import { useGcxStep } from "./steps/useGcxStep.js";
 import { useAuthStep } from "./steps/useAuthStep.js";
 
-// The standalone `frontend-o11y` subcommand — just the pieces of the main
+// The standalone `frontend` subcommand — just the pieces of the main
 // wizard that Frontend O11y actually needs (gcx, sign-in), without any of
 // the Synthetic Monitoring-specific steps (no target URL, no SM skill
 // install — that's not relevant here). See SetupApp.tsx for the full
@@ -387,7 +387,7 @@ export function FrontendApp({ initialStackUrl, forceGcxInstall }: Props) {
       </Box>
       {failureSummary && (
         <Box marginTop={1}>
-          <Text color={muted}>Resolve the issue, then run `npx @grafana/setup-cli frontend-o11y` again.</Text>
+          <Text color={muted}>Resolve the issue, then run `npx @grafana/setup-cli frontend` again.</Text>
         </Box>
       )}
     </Box>
