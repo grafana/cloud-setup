@@ -65,7 +65,7 @@ export function useGcxStep(forceGcxInstall: boolean, isActive: boolean): GcxStep
       <Box flexDirection="column">
         <Text>{reinstalling ? "Reinstall the Grafana Cloud CLI (gcx)?" : "gcx isn't installed. Install it now?"}</Text>
         <Text color={muted}>{GCX_INSTALL_COMMAND}</Text>
-        <Text color={muted}>(y/n)</Text>
+        <Text>(y/n)</Text>
       </Box>
     ) : null;
 

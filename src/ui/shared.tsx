@@ -18,7 +18,11 @@ export const NO_COLOR = Boolean(process.env.NO_COLOR);
 export const accent = NO_COLOR ? undefined : "#FFA500";
 export const ok = NO_COLOR ? undefined : "green";
 export const bad = NO_COLOR ? undefined : "red";
-export const muted = NO_COLOR ? undefined : "gray";
+// A plain ANSI "gray" (bright-black, code 90) reads as near-invisible on a
+// dark/charcoal terminal background — verified live. This hex sits at a
+// medium gray instead, legible as "secondary" text on both dark and light
+// backgrounds without competing with the default foreground.
+export const muted = NO_COLOR ? undefined : "#999999";
 export const ANIMATE = Boolean(process.stdout.isTTY) && !NO_COLOR;
 
 function formatFolder(cwd: string): string {

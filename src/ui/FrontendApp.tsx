@@ -263,7 +263,7 @@ export function FrontendApp({ initialStackUrl, forceGcxInstall }: Props) {
             row = (
               <Text>
                 {" "}
-                <Text color={ok}>✓</Text> <Text color={muted}>{STEP_LABELS[step]}</Text>
+                <Text color={ok}>✓</Text> {STEP_LABELS[step]}
               </Text>
             );
           } else if (step === currentStep) {
@@ -277,7 +277,7 @@ export function FrontendApp({ initialStackUrl, forceGcxInstall }: Props) {
             row = (
               <Text>
                 {" "}
-                {icon} <Text color={muted}>{STEP_LABELS[step]}</Text>
+                {icon} <Text bold>{STEP_LABELS[step]}</Text>
               </Text>
             );
           } else {
@@ -294,9 +294,7 @@ export function FrontendApp({ initialStackUrl, forceGcxInstall }: Props) {
               {step === "auth" && completed.has(step) && auth.error && (
                 <Text color={muted}> Skipping auto-lookup ({auth.error})</Text>
               )}
-              {step === "frontend" && completed.has(step) && frontendFile && (
-                <Text color={muted}>{"     "}Instrumented {frontendFile}</Text>
-              )}
+              {step === "frontend" && completed.has(step) && frontendFile && <Text>{"     "}Instrumented {frontendFile}</Text>}
               {step === "frontend" && completed.has(step) && frontendError && (
                 <Text color={muted}>{"     "}Skipped Frontend O11y setup ({frontendError})</Text>
               )}
@@ -312,7 +310,7 @@ export function FrontendApp({ initialStackUrl, forceGcxInstall }: Props) {
       return (
         <Box flexDirection="column">
           <Text>Instrument this project with Frontend O11y?</Text>
-          <Text color={muted}>(y/n)</Text>
+          <Text>(y/n)</Text>
         </Box>
       );
     if (frontendSubPhase === "checking") return <Working label="Looking for an existing Frontend O11y app…" />;

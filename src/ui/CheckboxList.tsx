@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { Box, Text, useInput } from "ink";
+import { muted } from "./shared.js";
 
 export interface CheckboxItem {
   key: string;
@@ -53,8 +54,10 @@ export function CheckboxList({ items, initialSelected, accentColor, onSubmit, on
           <Text color={i === cursor ? accentColor : undefined} bold={i === cursor}>
             {i === cursor ? "› " : "  "}[{selected.has(item.key) ? "x" : " "}] {item.label.padEnd(labelWidth)}
           </Text>
-          {item.description && <Text color="gray">   {hasMeta ? item.description.padEnd(descWidth) : item.description}</Text>}
-          {item.meta && <Text color="gray">   {item.meta}</Text>}
+          {item.description && (
+            <Text color={i === cursor ? undefined : muted}>   {hasMeta ? item.description.padEnd(descWidth) : item.description}</Text>
+          )}
+          {item.meta && <Text color={i === cursor ? undefined : muted}>   {item.meta}</Text>}
         </Text>
       ))}
     </Box>

@@ -555,7 +555,7 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
             row = (
               <Text>
                 {" "}
-                <Text color={ok}>✓</Text> <Text color={muted}>{STEP_LABELS[step]}</Text>
+                <Text color={ok}>✓</Text> {STEP_LABELS[step]}
               </Text>
             );
           } else if (step === currentStep) {
@@ -572,7 +572,7 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
             row = (
               <Text>
                 {" "}
-                {icon} <Text color={muted}>{STEP_LABELS[step]}</Text>
+                {icon} <Text bold>{STEP_LABELS[step]}</Text>
               </Text>
             );
           } else {
@@ -592,9 +592,7 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
               {step === "auth" && completed.has(step) && auth.error && (
                 <Text color={muted}> Skipping AI-powered suggestions ({auth.error})</Text>
               )}
-              {step === "export" && completed.has(step) && exportPath && (
-                <Text color={muted}>{"     "}Wrote {exportPath}</Text>
-              )}
+              {step === "export" && completed.has(step) && exportPath && <Text>{"     "}Wrote {exportPath}</Text>}
               {step === "export" && completed.has(step) && exportError && (
                 <Text color={muted}>{"     "}Skipped Terraform export ({exportError})</Text>
               )}
@@ -619,7 +617,7 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
       return (
         <Box flexDirection="column">
           <Text>Open a real browser to see which live endpoints {initialTargetUrl} actually calls?</Text>
-          <Text color={muted}>(y/n)</Text>
+          <Text>(y/n)</Text>
         </Box>
       );
     return null;
@@ -630,7 +628,7 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
       return (
         <Box flexDirection="column">
           <Text>Export these checks as Terraform too?</Text>
-          <Text color={muted}>(y/n)</Text>
+          <Text>(y/n)</Text>
         </Box>
       );
     return null;
@@ -671,7 +669,7 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
       <Text key={it.candidate.key}>
         {"     "}
         <ItemIcon status={it.status} /> {it.candidate.title}
-        {loadZones && <Text color={muted}> — {loadZones}</Text>}
+        {loadZones && <Text> — {loadZones}</Text>}
         {it.detail ? <Text color={muted}> — {it.detail}</Text> : null}
       </Text>
     ));
