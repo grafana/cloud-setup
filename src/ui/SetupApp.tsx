@@ -15,6 +15,7 @@ import { detectFramework } from "../framework.js";
 import { isGcxInstalled, installGcx, GCX_INSTALL_COMMAND } from "../gcx.js";
 import { ensureAssistantAuth } from "../harness/index.js";
 import { getSkillStatus, installSkill } from "../skills.js";
+import { tryAutoSmSession } from "../smAuth.js";
 import { writeTerraformExport } from "../terraform.js";
 import { CheckboxList } from "./CheckboxList.js";
 import type { SyntheticConfig } from "../types.js";
@@ -181,11 +182,12 @@ const EXPORT_WAITING_SUBPHASES: ExportSubPhase[] = ["export-confirm"];
 // here (not in "gcx") since it's unrelated to the gcx CLI — it only needs to
 // happen once, so a revisit via back-navigation skips straight to "creating"
 // once `session` is populated.
-type CreateSubPhase = "base-url-input" | "connecting" | "token-input" | "validating" | "creating";
+type CreateSubPhase = "auto-discovering" | "base-url-input" | "connecting" | "token-input" | "validating" | "creating";
 
 interface Session {
-  url: string;
-  token: string;
+  // Display/export only (e.g. the Terraform export's sm_url) — never used
+  // to build requests; proxy-mode sessions don't need a real SM API URL.
+  url?: string;
   client: SmClient;
   probes: Probe[];
 }
@@ -227,7 +229,7 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
   const [selectedKeys, setSelectedKeys] = useState<string[]>([]);
 
   // create step
-  const [createSubPhase, setCreateSubPhase] = useState<CreateSubPhase>("base-url-input");
+  const [createSubPhase, setCreateSubPhase] = useState<CreateSubPhase>("auto-discovering");
   const [baseUrlInput, setBaseUrlInput] = useState("");
   const [baseUrl, setBaseUrl] = useState(initialBaseUrl);
   const [connectError, setConnectError] = useState<string>();
@@ -493,6 +495,23 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
 
     async function runCreate() {
       if (!session.current) {
+        // Try reusing the "Authenticate with OAuth" session through
+        // Grafana's own datasource-proxy route before ever asking for a
+        // base URL or a pasted access token — no prompt shown at all when
+        // this works. Any failure (insufficient role, SM not provisioned
+        // as a datasource on this stack, ...) just falls through to the
+        // manual flow below, unchanged.
+        setCreateSubPhase("auto-discovering");
+        const [auto] = await Promise.all([tryAutoSmSession(initialStackUrl), sleep(MIN_SPINNER_MS)]);
+        if (cancelled) return;
+        if (auto) {
+          session.current = { url: auto.apiUrl, client: auto.client, probes: auto.probes };
+        } else {
+          setCreateSubPhase("base-url-input");
+        }
+      }
+
+      if (!session.current) {
         const pageUrl = `${initialStackUrl.replace(/\/$/, "")}/a/grafana-synthetic-monitoring-app/config/access-tokens`;
         setTokenPageUrl(pageUrl);
 
@@ -530,12 +549,12 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
           if (cancelled) return;
           setCreateSubPhase("validating");
           await sleep(400);
-          const candidateClient = new SmClient(url, token);
+          const candidateClient = new SmClient({ mode: "direct", baseUrl: url, token });
           try {
             probes = await candidateClient.listProbes();
             client = candidateClient;
             await writeCredentials({ baseUrl: url, token, stackUrl: initialStackUrl, email: undefined });
-            session.current = { url, token, client, probes };
+            session.current = { url, client, probes };
             break;
           } catch (err) {
             setTokenError(err instanceof Error ? err.message : String(err));
@@ -828,6 +847,7 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
   }
 
   function CreateBody() {
+    if (createSubPhase === "auto-discovering") return <Working label="Checking Synthetic Monitoring access…" />;
     if (createSubPhase === "base-url-input")
       return (
         <Box flexDirection="column">

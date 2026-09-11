@@ -128,7 +128,7 @@ function checkResource(jobName: string, def: CheckDefinition, probeIds: Map<stri
   ].join("\n");
 }
 
-function generateTerraform(config: SyntheticConfig, probes: Probe[], stackUrl: string, smUrl: string): string {
+function generateTerraform(config: SyntheticConfig, probes: Probe[], stackUrl: string, smUrl: string | undefined): string {
   const probeIds = new Map(probes.map((p) => [p.name, p.id]));
   const resources = Object.entries(config).map(([name, def]) => checkResource(name, def, probeIds));
 
@@ -147,7 +147,10 @@ function generateTerraform(config: SyntheticConfig, probes: Probe[], stackUrl: s
     "",
     'provider "grafana" {',
     `  url    = ${hclScalar(stackUrl)}`,
-    `  sm_url = ${hclScalar(smUrl)}`,
+    // The real SM API URL couldn't be auto-discovered — GRAFANA_SM_URL
+    // needs to be set instead (see README.md), rather than writing a
+    // guessed/wrong value here.
+    ...(smUrl !== undefined ? [`  sm_url = ${hclScalar(smUrl)}`] : []),
     "  # auth and sm_access_token are read from the GRAFANA_AUTH and",
     "  # GRAFANA_SM_ACCESS_TOKEN environment variables — see README.md.",
     "}",
@@ -172,7 +175,7 @@ function generateImportScript(importCommands: string[]): string {
   ].join("\n");
 }
 
-function generateReadme(stackUrl: string): string {
+function generateReadme(stackUrl: string, smUrlKnown: boolean): string {
   const trimmedStack = stackUrl.replace(/\/$/, "");
   return [
     "# Synthetic Monitoring — Terraform export",
@@ -185,7 +188,7 @@ function generateReadme(stackUrl: string): string {
     "## Requirements",
     "",
     "- [Terraform](https://developer.hashicorp.com/terraform/install)",
-    "- The two environment variables below",
+    "- The environment variables below",
     "",
     "## Environment variables",
     "",
@@ -196,6 +199,14 @@ function generateReadme(stackUrl: string): string {
     `  to manage Synthetic Monitoring. Create one at: ${trimmedStack}/org/serviceaccounts`,
     "- `GRAFANA_SM_ACCESS_TOKEN` — a Synthetic Monitoring access token (the same",
     `  kind this wizard asked you for). Create one at: ${trimmedStack}/a/grafana-synthetic-monitoring-app/config/access-tokens`,
+    ...(smUrlKnown
+      ? []
+      : [
+          "- `GRAFANA_SM_URL` — the Synthetic Monitoring API's own base URL. Couldn't",
+          "  be auto-discovered this run — find it under the Synthetic Monitoring",
+          `  app's config page (${trimmedStack}/a/grafana-synthetic-monitoring-app), or from`,
+          "  the URL the access-token page above redirected you from.",
+        ]),
     "",
     "## First-time setup",
     "",
@@ -217,7 +228,7 @@ export async function writeTerraformExport(
   probes: Probe[],
   remoteIds: Map<string, number>,
   stackUrl: string,
-  smUrl: string,
+  smUrl: string | undefined,
   cwd: string
 ): Promise<string> {
   const dir = pickExportDir(cwd);
@@ -233,6 +244,6 @@ export async function writeTerraformExport(
   const file = path.join(dir, "synthetic_monitoring.tf");
   await writeFile(file, generateTerraform(config, probes, stackUrl, smUrl), "utf8");
   await writeFile(path.join(dir, "import.sh"), generateImportScript(importCommands), { mode: 0o755 });
-  await writeFile(path.join(dir, "README.md"), generateReadme(stackUrl), "utf8");
+  await writeFile(path.join(dir, "README.md"), generateReadme(stackUrl, smUrl !== undefined), "utf8");
   return file;
 }

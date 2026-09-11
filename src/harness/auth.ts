@@ -55,12 +55,20 @@ function generateState(): string {
 // Grafana-hosted consent page on the target stack itself, PKCE-protected,
 // redirecting back to a local callback server we spin up for this.
 function buildAssistantAuthUrl(stackUrl: string, codeChallenge: string, state: string, callbackPort: number): string {
-  const url = new URL("/a/grafana-assistant-app/connect/app", normalizeStackUrl(stackUrl));
+  // "cli/auth", not "connect/app" — verified live that connect/app rejects
+  // grafana-api:* scopes ("invalid scope") while cli/auth (gcx's own path,
+  // confirmed against its source) accepts them.
+  const url = new URL("/a/grafana-assistant-app/cli/auth", normalizeStackUrl(stackUrl));
   url.searchParams.set("callback_port", String(callbackPort));
   url.searchParams.set("state", state);
   url.searchParams.set("code_challenge", codeChallenge);
   url.searchParams.set("code_challenge_method", "S256");
-  url.searchParams.set("scopes", "assistant:chat,assistant:a2a");
+  // Matches gcx's own defaultScopes exactly (verified against its source,
+  // github.com/grafana/gcx internal/auth/flow.go) — grafana-api:* is what
+  // lets the resulting token drive Grafana's own datasource-proxy route
+  // (used below for Synthetic Monitoring), not just the assistant:* scopes
+  // this tool used to request.
+  url.searchParams.set("scopes", "grafana-api:read,grafana-api:write,grafana-api:delete,assistant:a2a,assistant:chat");
   url.searchParams.set("device_name", "setup-cli");
   return url.toString();
 }
