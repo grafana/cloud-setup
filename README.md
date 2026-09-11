@@ -4,10 +4,7 @@
 
 Grafana Cloud's interactive setup wizard, powered by Assistant.
 
-Installs gcx and agent skills, and sets up Grafana products in your project.
-
-Supported products:
-- Synthetic Monitoring
+Installs gcx, configures agent skills, and sets up Synthetic Monitoring Checks for your project.
 
 ## Usage
 
