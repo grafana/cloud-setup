@@ -1,8 +1,13 @@
+import { authorChecks } from "./checks/authoring.js";
 import type { CheckSettings } from "./types.js";
 
 export interface Candidate {
   key: string;
   label: string;
+  // What's actually shown in the UI — `label` is the SM check's job name
+  // (must stay unique, so AI ones carry an "ai-" prefix and a slugified
+  // path) and was never meant to double as display text.
+  title: string;
   description: string;
   selectedByDefault: boolean;
   target: string;
@@ -24,7 +29,7 @@ function browserScript(url: string): string {
     "};",
     "",
     "export default async function () {",
-    "  const page = browser.newPage();",
+    "  const page = await browser.newPage();",
     "  try {",
     `    await page.goto('${url}');`,
     "  } finally {",
@@ -63,6 +68,7 @@ export async function candidatesFor(url: string): Promise<Candidate[]> {
     {
       key: "uptime",
       label: "uptime",
+      title: "Uptime",
       description: `Request ${displayUrl}`,
       selectedByDefault: true,
       target: trimmed,
@@ -75,6 +81,7 @@ export async function candidatesFor(url: string): Promise<Candidate[]> {
     candidates.push({
       key: "ssl",
       label: "ssl",
+      title: "SSL",
       description: `Check SSL certificate for ${parsed.hostname}`,
       selectedByDefault: true,
       target: `${parsed.hostname}:443`,
@@ -87,6 +94,7 @@ export async function candidatesFor(url: string): Promise<Candidate[]> {
     candidates.push({
       key: "browser",
       label: "browser",
+      title: "Browser",
       description: `Load ${displayUrl} in a real browser`,
       selectedByDefault: true,
       target: trimmed,
@@ -96,4 +104,55 @@ export async function candidatesFor(url: string): Promise<Candidate[]> {
   }
 
   return candidates;
+}
+
+const MAX_AI_ENDPOINT_CANDIDATES = 3;
+
+// Candidate labels double as SM job names (and must stay unique across the
+// whole list), so each AI-discovered endpoint needs its own label rather
+// than a shared one — derived from its path, e.g. "ai-region".
+function slugForPath(pathname: string): string {
+  const cleaned = pathname
+    .replace(/^\/|\/$/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "");
+  return cleaned.length > 0 ? cleaned : "root";
+}
+
+function resolveTarget(path: string, baseUrl: string): string {
+  try {
+    return new URL(path).toString();
+  } catch {
+    return new URL(path, baseUrl).toString();
+  }
+}
+
+// AI-discovered candidates: a live-browsing agent finds real backend calls
+// a page makes, a second agent judges which are actually worth their own
+// check. Proposed alongside the standard candidates above — never
+// auto-selected, and capped so the review list stays scannable. Each
+// carries the judge agent's own reason as its description.
+export async function aiEndpointCandidatesFor(
+  targetUrl: string,
+  stackUrl: string,
+  requestPermission: () => Promise<boolean> | boolean
+): Promise<Candidate[]> {
+  const endpoints = await authorChecks(targetUrl, stackUrl, requestPermission);
+
+  return endpoints.slice(0, MAX_AI_ENDPOINT_CANDIDATES).map((endpoint) => {
+    const target = resolveTarget(endpoint.path, targetUrl);
+    const pathname = new URL(target).pathname;
+    const slug = slugForPath(pathname);
+    return {
+      key: `ai-${slug}`,
+      label: `ai-${slug}`,
+      title: pathname,
+      description: endpoint.description,
+      selectedByDefault: false,
+      target,
+      settings: { http: { method: "GET" } },
+      frequencyMs: THIRTY_MINUTES_MS,
+    };
+  });
 }

@@ -1,16 +1,17 @@
 #!/usr/bin/env node
 import { SmApiError } from "./api.js";
 import { readCredentials } from "./credentials.js";
+import { setDebugEnabled } from "./debug.js";
 import { runSetupUI } from "./ui/SetupApp.js";
 
 const USAGE_LINE =
-  "synthetics --url <target-url> --stack <stack-url> [--base-url <url>] [--force-gcx-install] [--force-gcx-auth]";
+  "synthetics --url <target-url> --stack <stack-url> [--base-url <url>] [--force-gcx-install] [--debug]";
 
 function printHelp(): void {
   console.log(
     [
       "synthetics — Grafana Cloud's interactive setup wizard, powered by Assistant.",
-      "Configures gcx, installs agent skills, and sets up Grafana products in your project.",
+      "Installs gcx and agent skills, and sets up Grafana products in your project.",
       "",
       "USAGE",
       `  ${USAGE_LINE}`,
@@ -20,7 +21,7 @@ function printHelp(): void {
       "  --stack <url>          Grafana Cloud stack URL, e.g. https://my-team.grafana.net (required)",
       "  --base-url <url>       Synthetic Monitoring API URL (skips the prompt during setup)",
       "  --force-gcx-install    Install the Grafana Cloud CLI (gcx) without asking, if it's missing",
-      "  --force-gcx-auth       Offer to run `gcx login` (still asks for confirmation before opening a browser)",
+      "  --debug                Log raw Assistant tool calls/responses to a temp file, for troubleshooting",
       "  -h, --help             Show this help",
     ].join("\n")
   );
@@ -48,20 +49,25 @@ async function main() {
   let targetUrl: string | undefined;
   let stackUrl: string | undefined;
   let forceGcxInstall = false;
-  let forceGcxAuth = false;
+  let debug = false;
   for (let i = 0; i < rest.length; i++) {
     if (rest[i] === "--base-url") baseUrl = rest[++i];
     else if (rest[i] === "--url") targetUrl = rest[++i];
     else if (rest[i] === "--stack") stackUrl = rest[++i];
     else if (rest[i] === "--force-gcx-install") forceGcxInstall = true;
-    else if (rest[i] === "--force-gcx-auth") forceGcxAuth = true;
+    else if (rest[i] === "--debug") debug = true;
   }
   if (!targetUrl || !stackUrl) usageError();
+  if (!/^https?:\/\//.test(stackUrl)) stackUrl = `https://${stackUrl}`;
   if (!baseUrl) {
     const stored = await readCredentials();
     baseUrl = stored?.baseUrl;
   }
-  await runSetupUI(baseUrl, targetUrl, stackUrl, forceGcxInstall, forceGcxAuth);
+  // Printed before runSetupUI hands the terminal to Ink — console.log is
+  // safe here only because Ink hasn't started rendering yet.
+  const debugFile = setDebugEnabled(debug);
+  if (debugFile) console.log(`Debug log: ${debugFile}`);
+  await runSetupUI(baseUrl, targetUrl, stackUrl, forceGcxInstall);
 }
 
 main().catch((err) => {
