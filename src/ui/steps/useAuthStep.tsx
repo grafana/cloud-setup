@@ -2,7 +2,7 @@ import { setTimeout as sleep } from "node:timers/promises";
 import { useRef, useState } from "react";
 import { Box, Text, useInput } from "ink";
 import { ensureAssistantAuth } from "../../harness/index.js";
-import { MIN_SPINNER_MS, YesNoHint } from "../shared.js";
+import { ContinueHint, MIN_SPINNER_MS } from "../shared.js";
 
 export type AuthSubPhase = "browser-confirm" | "authenticating";
 export const AUTH_WAITING_SUBPHASES: AuthSubPhase[] = ["browser-confirm"];
@@ -58,7 +58,7 @@ export function useAuthStep(confirmText: string, isActive: boolean): AuthStep {
     subPhase === "browser-confirm" ? (
       <Box flexDirection="column">
         <Text>{confirmText}</Text>
-        <YesNoHint />
+        <ContinueHint />
       </Box>
     ) : null;
 

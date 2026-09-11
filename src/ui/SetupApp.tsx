@@ -12,12 +12,17 @@ import { getSkillStatus, installSkill } from "../skills.js";
 import { tryAutoSmSession } from "../products/syntheticMonitoring/smAuth.js";
 import { writeTerraformExport } from "../products/syntheticMonitoring/terraform.js";
 import { CheckboxList } from "./CheckboxList.js";
-import { accent, bad, Header, MIN_SPINNER_MS, muted, ok, Working, YesNoHint } from "./shared.js";
+import { accent, bad, ContinueHint, Header, MIN_SPINNER_MS, muted, ok, Working } from "./shared.js";
 import { useGcxStep } from "./steps/useGcxStep.js";
 import { useAuthStep } from "./steps/useAuthStep.js";
 import type { SyntheticConfig } from "../products/syntheticMonitoring/types.js";
 
 const ANALYZE_MIN_MS = 5000;
+// Purely theatrical pause between the two post-browser status lines
+// ("reviewing captured requests" / "matching against suggested checks") —
+// the real work is already done by then, this just avoids jump-cutting
+// straight from "opening browser" to the next step.
+const ANALYZE_STAGE_MS = 900;
 // This step lands right after "sign in"'s own real-world wait (the OAuth
 // browser flow) — a bare MIN_SPINNER_MS here reads as an abrupt jump cut
 // right after that, rather than a natural next step.
@@ -101,7 +106,7 @@ function previousEditableStep(from: StepId): StepId | undefined {
 // to open a real (visible, not headless) browser against the target URL
 // for AI-powered live endpoint discovery. Declining just leaves only the
 // standard candidates.
-type AnalyzeSubPhase = "analyzing" | "browser-confirm" | "discovering";
+type AnalyzeSubPhase = "analyzing" | "browser-confirm" | "opening-browser" | "reviewing-requests" | "matching-checks";
 const ANALYZE_WAITING_SUBPHASES: AnalyzeSubPhase[] = ["browser-confirm"];
 
 // "export": ask once, up front, whether to write a Terraform export of the
@@ -314,7 +319,7 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
       if (cancelled) return;
 
       if (allow) {
-        setAnalyzeSubPhase("discovering");
+        setAnalyzeSubPhase("opening-browser");
         try {
           // Permission was already granted above via this step's own
           // prompt — the harness's own gate is a pass-through here, not a
@@ -327,6 +332,14 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
           if (aiCandidates.length > 0) {
             setCandidates((prev) => [...(prev ?? []), ...aiCandidates]);
           }
+          // The browser's already closed by this point — these two are
+          // purely theatrical, narrating what happens with the capture
+          // rather than jump-cutting straight to the next step.
+          setAnalyzeSubPhase("reviewing-requests");
+          await sleep(ANALYZE_STAGE_MS);
+          if (cancelled) return;
+          setAnalyzeSubPhase("matching-checks");
+          await sleep(ANALYZE_STAGE_MS);
         } catch {
           // Nice-to-have — never blocks setup on a failed discovery pass.
         }
@@ -569,10 +582,12 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
                   <Spinner type="dots" />
                 </Text>
               );
+            const suffix = step === "analyze" ? analyzeStatusSuffix() : undefined;
             row = (
               <Text>
                 {" "}
                 {icon} <Text bold>{STEP_LABELS[step]}</Text>
+                {suffix && <Text color={muted}> — {suffix}</Text>}
               </Text>
             );
           } else {
@@ -620,7 +635,7 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
       return (
         <Box flexDirection="column">
           <Text>Open a real browser to see which live endpoints {initialTargetUrl} actually calls?</Text>
-          <YesNoHint />
+          <ContinueHint />
         </Box>
       );
     return null;
@@ -631,7 +646,7 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
       return (
         <Box flexDirection="column">
           <Text>Export these checks as Terraform too?</Text>
-          <YesNoHint />
+          <ContinueHint />
         </Box>
       );
     return null;
@@ -721,6 +736,20 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
       );
     if (createSubPhase === "validating") return <Working label="Validating access token…" />;
     return null; // "creating" — the checks render nested under the step row in StepsList instead.
+  }
+
+  // Purely decorative — the step list otherwise just sits on "Analyze
+  // target" with a spinner for several real seconds (local generation,
+  // then a live browser pass) with nothing to say about what's actually
+  // happening. Text is truthful to the two real phases, not invented.
+  function analyzeStatusSuffix(): string | undefined {
+    // Nothing during local candidate generation or the confirm question
+    // itself — only once a real browser is actually about to open is
+    // there something worth narrating.
+    if (analyzeSubPhase === "opening-browser") return "opening browser";
+    if (analyzeSubPhase === "reviewing-requests") return "reviewing captured requests";
+    if (analyzeSubPhase === "matching-checks") return "matching against suggested checks";
+    return undefined;
   }
 
   function footerPrimary(): string | undefined {

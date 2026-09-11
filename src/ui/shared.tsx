@@ -53,13 +53,17 @@ export function checkNodeVersion(): void {
   }
 }
 
-// "Y" capitalized and accented to communicate the default (Enter accepts
-// it) even without color; "/n" and the parentheses stay neutral since
-// they're not the default.
-export function YesNoHint() {
+// Same phrasing as the intro screens' "press enter to continue" — spelling
+// out the actual key rather than a bare "(Y/n)" reads more like an
+// instruction than a notation to decode.
+export function ContinueHint() {
   return (
-    <Text>
-      (<Text color={accent}>Y</Text>/n)
+    <Text color={muted}>
+      press{" "}
+      <Text color={accent} bold>
+        ⏎ enter
+      </Text>{" "}
+      to continue, or n to skip
     </Text>
   );
 }
