@@ -53,6 +53,17 @@ export function checkNodeVersion(): void {
   }
 }
 
+// "Y" capitalized and accented to communicate the default (Enter accepts
+// it) even without color; "/n" and the parentheses stay neutral since
+// they're not the default.
+export function YesNoHint() {
+  return (
+    <Text>
+      (<Text color={accent}>Y</Text>/n)
+    </Text>
+  );
+}
+
 export function Working({ label }: { label: string }) {
   return (
     <Text>

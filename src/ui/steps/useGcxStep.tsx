@@ -2,7 +2,7 @@ import { setTimeout as sleep } from "node:timers/promises";
 import { useRef, useState } from "react";
 import { Box, Text, useInput } from "ink";
 import { GCX_INSTALL_COMMAND, installGcx, isGcxInstalled } from "../../gcx.js";
-import { checkNodeVersion, MIN_SPINNER_MS, muted } from "../shared.js";
+import { checkNodeVersion, MIN_SPINNER_MS, muted, YesNoHint } from "../shared.js";
 
 export type GcxSubPhase = "checking-gcx" | "gcx-install-confirm" | "gcx-installing";
 export const GCX_WAITING_SUBPHASES: GcxSubPhase[] = ["gcx-install-confirm"];
@@ -65,7 +65,7 @@ export function useGcxStep(forceGcxInstall: boolean, isActive: boolean): GcxStep
       <Box flexDirection="column">
         <Text>{reinstalling ? "Reinstall the Grafana Cloud CLI (gcx)?" : "gcx isn't installed. Install it now?"}</Text>
         <Text color={muted}>{GCX_INSTALL_COMMAND}</Text>
-        <Text>(y/n)</Text>
+        <YesNoHint />
       </Box>
     ) : null;
 

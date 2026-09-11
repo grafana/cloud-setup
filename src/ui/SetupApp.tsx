@@ -12,7 +12,7 @@ import { getSkillStatus, installSkill } from "../skills.js";
 import { tryAutoSmSession } from "../products/syntheticMonitoring/smAuth.js";
 import { writeTerraformExport } from "../products/syntheticMonitoring/terraform.js";
 import { CheckboxList } from "./CheckboxList.js";
-import { accent, bad, Header, MIN_SPINNER_MS, muted, ok, Working } from "./shared.js";
+import { accent, bad, Header, MIN_SPINNER_MS, muted, ok, Working, YesNoHint } from "./shared.js";
 import { useGcxStep } from "./steps/useGcxStep.js";
 import { useAuthStep } from "./steps/useAuthStep.js";
 import type { SyntheticConfig } from "../products/syntheticMonitoring/types.js";
@@ -605,8 +605,11 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
 
   function Footer({ primary }: { primary?: string }) {
     if (!primary) return null;
+    // No marginTop here on purpose — the blank line above the prompt
+    // already comes from the Box wrapping it in the main render; hints sit
+    // directly beneath the prompt they describe, with no gap.
     return (
-      <Box marginTop={1} flexDirection="column">
+      <Box flexDirection="column">
         <Text color={muted}>{primary}</Text>
       </Box>
     );
@@ -617,7 +620,7 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
       return (
         <Box flexDirection="column">
           <Text>Open a real browser to see which live endpoints {initialTargetUrl} actually calls?</Text>
-          <Text>(y/n)</Text>
+          <YesNoHint />
         </Box>
       );
     return null;
@@ -628,7 +631,7 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
       return (
         <Box flexDirection="column">
           <Text>Export these checks as Terraform too?</Text>
-          <Text>(y/n)</Text>
+          <YesNoHint />
         </Box>
       );
     return null;
@@ -676,7 +679,10 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
   }
 
   function CreateBody() {
-    if (createSubPhase === "auto-discovering") return <Working label="Checking Synthetic Monitoring access…" />;
+    // No body here — the step list's own spinner next to "Create Synthetic
+    // Checks" already shows something's happening; a second "Checking…"
+    // line just flashes in and out with nothing to say once it's gone.
+    if (createSubPhase === "auto-discovering") return null;
     if (createSubPhase === "base-url-input")
       return (
         <Box flexDirection="column">
@@ -782,7 +788,7 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
         marginTop={
           failureSummary ||
           currentStep === "select" ||
-          (currentStep === "create" && createSubPhase !== "connecting") ||
+          (currentStep === "create" && createSubPhase !== "connecting" && createSubPhase !== "auto-discovering") ||
           (currentStep === "gcx" && gcx.subPhase === "gcx-install-confirm") ||
           (currentStep === "auth" && auth.subPhase === "browser-confirm") ||
           (currentStep === "analyze" && analyzeSubPhase === "browser-confirm") ||
