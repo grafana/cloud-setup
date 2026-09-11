@@ -3,7 +3,7 @@ import { runAgent, type AgentTool } from "./a2a.js";
 
 export { ensureAssistantAuth } from "./auth.js";
 export { runAgent, type AgentTool } from "./a2a.js";
-export { fileTools } from "./tools.js";
+export { fileTools, fileToolsWithWrite } from "./tools.js";
 export { browserTools, type BrowserToolOptions } from "./browserTool.js";
 
 // Convenience wrapper for the common case: authenticate against the given

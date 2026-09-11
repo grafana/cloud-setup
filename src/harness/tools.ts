@@ -1,8 +1,14 @@
-import { readdirSync, readFileSync, statSync } from "node:fs";
+import { mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import type { AgentTool } from "./a2a.js";
 
-const MAX_FILE_BYTES = 20_000;
+// Generous on purpose: fileToolsWithWrite callers (e.g. nextjsInstrument.ts)
+// read a file, then write back the *whole* thing with a small addition —
+// truncating here would make the agent faithfully write back a truncated
+// file, silently deleting everything past this limit. 20_000 was fine for
+// pure exploration but actively dangerous once write-back entered the
+// picture.
+const MAX_FILE_BYTES = 500_000;
 const MAX_GREP_MATCHES = 50;
 const IGNORED_DIRS = new Set(["node_modules", ".git", ".next", "dist", "build", ".turbo"]);
 
@@ -74,6 +80,13 @@ function grep(cwd: string, input: Record<string, unknown>): string {
   return matches.length > 0 ? matches.join("\n") : "(no matches)";
 }
 
+function writeFile(cwd: string, input: Record<string, unknown>): string {
+  const full = resolveSafe(cwd, String(input.path));
+  mkdirSync(path.dirname(full), { recursive: true });
+  writeFileSync(full, String(input.content ?? ""), "utf8");
+  return `Wrote ${path.relative(cwd, full)}`;
+}
+
 // Generic, product-agnostic local filesystem tools for a coding-agent
 // harness — no Synthetic Monitoring (or any other product) knowledge here.
 // A consumer registers whichever of these it needs alongside its own,
@@ -102,6 +115,30 @@ export function fileTools(cwd: string): AgentTool[] {
         required: ["pattern"],
       },
       execute: (input) => grep(cwd, input),
+    },
+  ];
+}
+
+// fileTools() plus write access — kept as an explicit, separate tool set
+// rather than folded into fileTools() so read-only callers (e.g. the SM
+// endpoint-proposal agent in checks/authoring.ts) never get write access
+// just by being in the same module. Only for tasks that genuinely need to
+// edit the project themselves — currently just Next.js instrumentation
+// (see nextjsInstrument.ts), which validates the result afterward rather
+// than trusting it blindly.
+export function fileToolsWithWrite(cwd: string): AgentTool[] {
+  return [
+    ...fileTools(cwd),
+    {
+      name: "write_file",
+      description:
+        "Write (create or overwrite) a file at a path relative to the project root. When editing an existing file, read_file it first and write back the complete content with only your intended change applied — never partial content.",
+      inputSchema: {
+        type: "object",
+        properties: { path: { type: "string" }, content: { type: "string" } },
+        required: ["path", "content"],
+      },
+      execute: (input) => writeFile(cwd, input),
     },
   ];
 }

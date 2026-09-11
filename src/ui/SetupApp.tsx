@@ -1,8 +1,5 @@
-import { readFileSync } from "node:fs";
-import os from "node:os";
 import path from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
-import { fileURLToPath } from "node:url";
 import React, { useEffect, useRef, useState } from "react";
 import { Box, render, Text, useApp, useInput } from "ink";
 import Spinner from "ink-spinner";
@@ -11,61 +8,33 @@ import { SmApiError, SmClient, type Probe } from "../api.js";
 import { plan as buildPlan } from "../reconcile.js";
 import { writeCredentials } from "../credentials.js";
 import { aiEndpointCandidatesFor, candidatesFor, type Candidate } from "../discover.js";
-import { detectFramework } from "../framework.js";
+import { tryFaroClient } from "../faroAuth.js";
+import {
+  detectFrontendTarget,
+  insertFaroSnippet,
+  installFaroPackages,
+  openFrontendO11ySetupPage,
+  readPkgName,
+  JAVASCRIPT_FARO_PACKAGES,
+  REACT_FARO_PACKAGES,
+  type FaroInstrumentation,
+} from "../frontendO11y.js";
 import { isGcxInstalled, installGcx, GCX_INSTALL_COMMAND } from "../gcx.js";
 import { ensureAssistantAuth } from "../harness/index.js";
+import { instrumentNextjs } from "../nextjsInstrument.js";
+import { instrumentReact } from "../reactInstrument.js";
 import { getSkillStatus, installSkill } from "../skills.js";
 import { tryAutoSmSession } from "../smAuth.js";
 import { writeTerraformExport } from "../terraform.js";
 import { CheckboxList } from "./CheckboxList.js";
+import { accent, bad, checkNodeVersion, Header, MIN_SPINNER_MS, muted, ok, Working } from "./shared.js";
 import type { SyntheticConfig } from "../types.js";
 
-const MIN_NODE_MAJOR = 22;
-const MIN_NODE_MINOR = 6;
-
-// Every automatic spinner/loading-bar phase stays visible at least this
-// long, even when the real work behind it finishes faster.
-const MIN_SPINNER_MS = 3000;
 const ANALYZE_MIN_MS = 5000;
 // This step lands right after "sign in"'s own real-world wait (the OAuth
 // browser flow) — a bare MIN_SPINNER_MS here reads as an abrupt jump cut
 // right after that, rather than a natural next step.
 const SKILLS_MIN_MS = 4500;
-
-const NO_COLOR = Boolean(process.env.NO_COLOR);
-const accent = NO_COLOR ? undefined : "#FFA500";
-const ok = NO_COLOR ? undefined : "green";
-const bad = NO_COLOR ? undefined : "red";
-const muted = NO_COLOR ? undefined : "gray";
-const ANIMATE = Boolean(process.stdout.isTTY) && !NO_COLOR;
-
-function formatFolder(cwd: string): string {
-  const home = os.homedir();
-  return cwd === home || cwd.startsWith(`${home}${path.sep}`) ? `~${cwd.slice(home.length)}` : cwd;
-}
-
-// Computed once — the working directory doesn't change during a run.
-const PROJECT_FOLDER = formatFolder(process.cwd());
-const PROJECT_TYPE = detectFramework(process.cwd());
-
-// Read from package.json rather than hardcoded, so the two can't drift.
-function readPackageVersion(): string {
-  try {
-    const packageJsonPath = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "package.json");
-    const pkg = JSON.parse(readFileSync(packageJsonPath, "utf8")) as { version?: string };
-    return pkg.version ?? "0.0.0";
-  } catch {
-    return "0.0.0";
-  }
-}
-const PACKAGE_VERSION = readPackageVersion();
-
-function checkNodeVersion(): void {
-  const [major, minor] = process.versions.node.split(".").map(Number);
-  if (major < MIN_NODE_MAJOR || (major === MIN_NODE_MAJOR && minor < MIN_NODE_MINOR)) {
-    throw new Error(`Node ${MIN_NODE_MAJOR}.${MIN_NODE_MINOR}+ is required (found ${process.versions.node}).`);
-  }
-}
 
 // Any HTTP response at all (even 401/404) proves the host is real and
 // speaking HTTP; only a network-level failure means the URL is bad. Not
@@ -83,21 +52,6 @@ function formatFrequency(ms: number): string {
     return `every ${minutes} minute${minutes === 1 ? "" : "s"}`;
   }
   return `every ${seconds} second${seconds === 1 ? "" : "s"}`;
-}
-
-function Working({ label }: { label: string }) {
-  return (
-    <Text>
-      {ANIMATE ? (
-        <Text color={accent}>
-          <Spinner type="dots" />
-        </Text>
-      ) : (
-        "…"
-      )}{" "}
-      {label}
-    </Text>
-  );
 }
 
 type ItemStatus = "pending" | "running" | "created" | "updated" | "skipped" | "failed";
@@ -125,15 +79,16 @@ interface CreationItem {
   id?: number;
 }
 
-// The seven macro-steps shown in the persistent step list. "select"/"create"
+// The eight macro-steps shown in the persistent step list. "select"/"create"
 // are editable (can be a `b` back-navigation target); "gcx", "skills",
-// "analyze", "auth", and "export" are fully automatic — once done, they
-// stay done even if you navigate back past them, since there's nothing to
-// reconfirm. "analyze" covers both local candidate generation and (if
-// authenticated) AI-powered live endpoint discovery — one step, not two.
-type StepId = "gcx" | "skills" | "analyze" | "auth" | "select" | "create" | "export";
+// "analyze", "auth", "export", and "frontend" are fully automatic — once
+// done, they stay done even if you navigate back past them, since there's
+// nothing to reconfirm. "analyze" covers both local candidate generation
+// and (if authenticated) AI-powered live endpoint discovery — one step,
+// not two.
+type StepId = "gcx" | "skills" | "analyze" | "auth" | "select" | "create" | "export" | "frontend";
 
-const STEP_ORDER: StepId[] = ["gcx", "auth", "skills", "analyze", "select", "create", "export"];
+const STEP_ORDER: StepId[] = ["gcx", "auth", "skills", "analyze", "select", "create", "export", "frontend"];
 const EDITABLE_STEPS: StepId[] = ["select", "create"];
 const STEP_LABELS: Record<StepId, string> = {
   gcx: "Install Grafana Cloud CLI (gcx)",
@@ -143,6 +98,7 @@ const STEP_LABELS: Record<StepId, string> = {
   select: "Review Synthetic Checks",
   create: "Create Synthetic Checks",
   export: "Export Synthetic Checks as Terraform",
+  frontend: "Instrument Frontend O11y",
 };
 
 function previousEditableStep(from: StepId): StepId | undefined {
@@ -177,6 +133,21 @@ const ANALYZE_WAITING_SUBPHASES: AnalyzeSubPhase[] = ["browser-confirm"];
 // export would.
 type ExportSubPhase = "export-confirm" | "exporting";
 const EXPORT_WAITING_SUBPHASES: ExportSubPhase[] = ["export-confirm"];
+
+// "frontend": ask whether to instrument this project with Frontend O11y —
+// only asked at all when the project matches one of the few shapes this
+// tool actually knows how to instrument (see detectFrontendTarget);
+// anything else skips straight through with no question, same as a
+// declined or failed attempt would.
+// "checking": list existing Faro apps and reuse one whose name matches
+// this project — creating a new one isn't possible through this OAuth
+// session (verified live: Frontend Observability's plugin-proxy route
+// only accepts a real Service Account token for writes, unlike
+// Synthetic Monitoring's datasource-proxy route). When no match is
+// found, opens the Frontend Observability app page for the user to
+// create one there instead, then asks for its collector URL.
+type FrontendSubPhase = "frontend-confirm" | "checking" | "collector-url-input" | "instrumenting";
+const FRONTEND_WAITING_SUBPHASES: FrontendSubPhase[] = ["frontend-confirm", "collector-url-input"];
 
 // "create": connecting to the SM API and authenticating with a token lives
 // here (not in "gcx") since it's unrelated to the gcx CLI — it only needs to
@@ -245,6 +216,12 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
   const [exportPath, setExportPath] = useState<string>();
   const [exportError, setExportError] = useState<string>();
 
+  // frontend step — same "error shown, never swallowed" pattern.
+  const [frontendSubPhase, setFrontendSubPhase] = useState<FrontendSubPhase>("frontend-confirm");
+  const [frontendFile, setFrontendFile] = useState<string>();
+  const [frontendError, setFrontendError] = useState<string>();
+  const [collectorUrlInput, setCollectorUrlInput] = useState("");
+
   const session = useRef<Session>(undefined as unknown as Session);
   // The exact config "create" built (target/probes/settings/frequency per
   // check) — kept here rather than recomputed, so "export" emits Terraform
@@ -257,6 +234,8 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
   const authPermissionResolver = useRef<((allow: boolean) => void) | undefined>(undefined);
   const browserPermissionResolver = useRef<((allow: boolean) => void) | undefined>(undefined);
   const exportPermissionResolver = useRef<((allow: boolean) => void) | undefined>(undefined);
+  const frontendPermissionResolver = useRef<((allow: boolean) => void) | undefined>(undefined);
+  const collectorUrlResolver = useRef<((url: string) => void) | undefined>(undefined);
 
   const backTarget = previousEditableStep(currentStep);
   const isWaiting =
@@ -264,6 +243,7 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
     (currentStep === "auth" && AUTH_WAITING_SUBPHASES.includes(authSubPhase)) ||
     (currentStep === "analyze" && ANALYZE_WAITING_SUBPHASES.includes(analyzeSubPhase)) ||
     (currentStep === "export" && EXPORT_WAITING_SUBPHASES.includes(exportSubPhase)) ||
+    (currentStep === "frontend" && FRONTEND_WAITING_SUBPHASES.includes(frontendSubPhase)) ||
     currentStep === "select" ||
     (currentStep === "create" && (createSubPhase === "base-url-input" || createSubPhase === "token-input"));
   const backAllowed =
@@ -300,7 +280,9 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
 
   // Quit is disabled while free text is being typed (a token or URL could
   // legitimately contain the letter q) — Ctrl+C still works there.
-  const quittingBlocked = currentStep === "create" && (createSubPhase === "base-url-input" || createSubPhase === "token-input");
+  const quittingBlocked =
+    (currentStep === "create" && (createSubPhase === "base-url-input" || createSubPhase === "token-input")) ||
+    (currentStep === "frontend" && frontendSubPhase === "collector-url-input");
   useInput(
     (input) => {
       if (input.toLowerCase() === "q") exit();
@@ -352,6 +334,16 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
       }
     },
     { isActive: currentStep === "export" && exportSubPhase === "export-confirm" }
+  );
+
+  useInput(
+    (input, key) => {
+      if (currentStep === "frontend" && frontendSubPhase === "frontend-confirm") {
+        if (key.return || input.toLowerCase() === "y") frontendPermissionResolver.current?.(true);
+        else if (input.toLowerCase() === "n") frontendPermissionResolver.current?.(false);
+      }
+    },
+    { isActive: currentStep === "frontend" && frontendSubPhase === "frontend-confirm" }
   );
 
   // Drives whichever step is current. Re-runs whenever currentStep changes —
@@ -653,6 +645,111 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
       }
       if (cancelled) return;
       advance();
+    }
+
+    async function runFrontend() {
+      setFrontendError(undefined);
+      setFrontendFile(undefined);
+
+      const target = detectFrontendTarget(process.cwd());
+      if (target.kind === "unsupported") {
+        // Nothing this tool knows how to instrument automatically — skip
+        // the question entirely rather than ask about something that'd
+        // just fail.
+        advance();
+        setDone(true);
+        return;
+      }
+
+      setFrontendSubPhase("frontend-confirm");
+      const allow = await new Promise<boolean>((resolve) => {
+        frontendPermissionResolver.current = resolve;
+      });
+      if (cancelled) return;
+
+      if (allow) {
+        try {
+          const appName = readPkgName(process.cwd()) ?? path.basename(process.cwd());
+
+          setFrontendSubPhase("checking");
+          const [faro] = await Promise.all([tryFaroClient(initialStackUrl), sleep(MIN_SPINNER_MS)]);
+          if (cancelled) return;
+          const existing = await faro?.findExisting(appName);
+
+          let instrumentation: FaroInstrumentation;
+          if (existing) {
+            instrumentation = { name: existing.name, collectorUrl: `${existing.collectEndpointURL}/${existing.appKey}` };
+          } else {
+            // Creating a new app isn't possible through this OAuth session
+            // (see FaroClient.findExisting) — open the real setup page and
+            // ask for the collector URL it shows once the user creates one.
+            openFrontendO11ySetupPage(initialStackUrl);
+            setFrontendSubPhase("collector-url-input");
+            const pastedUrl = await new Promise<string>((resolve) => {
+              collectorUrlResolver.current = resolve;
+            });
+            if (cancelled) return;
+            instrumentation = { name: appName, collectorUrl: pastedUrl };
+          }
+
+          setFrontendSubPhase("instrumenting");
+          if (target.kind === "javascript") {
+            insertFaroSnippet(process.cwd(), target, instrumentation);
+            await Promise.all([installFaroPackages(process.cwd(), JAVASCRIPT_FARO_PACKAGES), sleep(MIN_SPINNER_MS)]);
+            if (cancelled) return;
+            setFrontendFile(target.file);
+          } else if (target.kind === "react") {
+            // Run separately from installFaroPackages (not bundled into
+            // one Promise.all) — a failed install would otherwise reject
+            // the whole thing and discard a perfectly good instrumentation
+            // result. Same pattern for the nextjs branch below.
+            const [result] = await Promise.all([
+              instrumentReact(process.cwd(), initialStackUrl, target.file, instrumentation),
+              sleep(MIN_SPINNER_MS),
+            ]);
+            if (cancelled) return;
+
+            let installError: string | undefined;
+            try {
+              await installFaroPackages(process.cwd(), REACT_FARO_PACKAGES);
+            } catch (err) {
+              installError = err instanceof Error ? err.message : String(err);
+            }
+            if (cancelled) return;
+
+            const base = result.routerFile ? `${result.entryFile}, router wrapped in ${result.routerFile}` : result.entryFile;
+            setFrontendFile(installError ? `${base} (package install failed: ${installError})` : base);
+          } else {
+            const [result] = await Promise.all([instrumentNextjs(process.cwd(), initialStackUrl, instrumentation), sleep(MIN_SPINNER_MS)]);
+            if (cancelled) return;
+
+            let installError: string | undefined;
+            try {
+              await installFaroPackages(process.cwd(), JAVASCRIPT_FARO_PACKAGES);
+            } catch (err) {
+              installError = err instanceof Error ? err.message : String(err);
+            }
+            if (cancelled) return;
+
+            if (result.layoutFile) {
+              setFrontendFile(
+                installError
+                  ? `${result.componentFile}, wired into ${result.layoutFile} (package install failed: ${installError})`
+                  : `${result.componentFile}, wired into ${result.layoutFile}`
+              );
+            } else if (result.componentFile) {
+              setFrontendError(`created ${result.componentFile}, but couldn't wire it into the layout automatically — add <FrontendObservability /> yourself`);
+            } else {
+              setFrontendError(result.detail ?? "the agent couldn't complete the Next.js instrumentation");
+            }
+          }
+        } catch (err) {
+          if (cancelled) return;
+          setFrontendError(err instanceof Error ? err.message : String(err));
+        }
+      }
+      if (cancelled) return;
+      advance();
       setDone(true);
     }
 
@@ -665,6 +762,7 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
         else if (currentStep === "select") await runSelect();
         else if (currentStep === "create") await runCreate();
         else if (currentStep === "export") await runExport();
+        else if (currentStep === "frontend") await runFrontend();
       } catch (err) {
         if (cancelled) return;
         setFailureSummary(err instanceof Error ? err.message : String(err));
@@ -741,6 +839,12 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
               {step === "export" && completed.has(step) && exportError && (
                 <Text color={muted}>{"     "}Skipped Terraform export ({exportError})</Text>
               )}
+              {step === "frontend" && completed.has(step) && frontendFile && (
+                <Text color={muted}>{"     "}Instrumented {frontendFile}</Text>
+              )}
+              {step === "frontend" && completed.has(step) && frontendError && (
+                <Text color={muted}>{"     "}Skipped Frontend O11y setup ({frontendError})</Text>
+              )}
             </Box>
           );
         })}
@@ -802,6 +906,33 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
           <Text color={muted}>(y/n)</Text>
         </Box>
       );
+    return null;
+  }
+
+  function FrontendBody() {
+    if (frontendSubPhase === "frontend-confirm")
+      return (
+        <Box flexDirection="column">
+          <Text>Instrument this project with Frontend O11y too?</Text>
+          <Text color={muted}>(y/n)</Text>
+        </Box>
+      );
+    if (frontendSubPhase === "checking") return <Working label="Looking for an existing Frontend O11y app…" />;
+    if (frontendSubPhase === "collector-url-input")
+      return (
+        <Box flexDirection="column">
+          <Text>A browser window just opened — create a new app there, then paste its collector URL here.</Text>
+          <Box>
+            <Text>Faro collector URL: </Text>
+            <TextInput
+              value={collectorUrlInput}
+              onChange={setCollectorUrlInput}
+              onSubmit={(v) => collectorUrlResolver.current?.(v.trim())}
+            />
+          </Box>
+        </Box>
+      );
+    if (frontendSubPhase === "instrumenting") return <Working label="Instrumenting your project…" />;
     return null;
   }
 
@@ -957,7 +1088,8 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
           (currentStep === "gcx" && gcxSubPhase === "gcx-install-confirm") ||
           (currentStep === "auth" && authSubPhase === "browser-confirm") ||
           (currentStep === "analyze" && analyzeSubPhase === "browser-confirm") ||
-          (currentStep === "export" && exportSubPhase === "export-confirm")
+          (currentStep === "export" && exportSubPhase === "export-confirm") ||
+          currentStep === "frontend"
             ? 1
             : 0
         }
@@ -975,40 +1107,16 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
             {currentStep === "select" && SelectBody()}
             {currentStep === "create" && CreateBody()}
             {currentStep === "export" && ExportBody()}
+            {currentStep === "frontend" && FrontendBody()}
           </>
         )}
       </Box>
       {!failureSummary && Footer({ primary: footerPrimary() })}
       {failureSummary && (
         <Box marginTop={1}>
-          <Text color={muted}>Resolve the issue, then run `synthetics` again.</Text>
+          <Text color={muted}>Resolve the issue, then run `npx @grafana/setup-cli` again.</Text>
         </Box>
       )}
-    </Box>
-  );
-}
-
-function Field({ label, value }: { label: string; value: string }) {
-  return (
-    <Text>
-      <Text color={muted}>{label.padEnd(14)}</Text>
-      {value}
-    </Text>
-  );
-}
-
-function Header({ stackUrl }: { stackUrl: string }) {
-  return (
-    <Box flexDirection="column" marginBottom={1}>
-      <Text>
-        <Text bold>🦕 @grafana/setup-cli</Text>
-        <Text color={muted}> {PACKAGE_VERSION}</Text>
-      </Text>
-      <Box marginTop={1} flexDirection="column">
-        <Field label="Folder" value={PROJECT_FOLDER} />
-        <Field label="Detected" value={PROJECT_TYPE} />
-        <Field label="Stack" value={stackUrl} />
-      </Box>
     </Box>
   );
 }
