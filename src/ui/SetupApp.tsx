@@ -15,6 +15,7 @@ import { detectFramework } from "../framework.js";
 import { isGcxInstalled, installGcx, GCX_INSTALL_COMMAND } from "../gcx.js";
 import { ensureAssistantAuth } from "../harness/index.js";
 import { getSkillStatus, installSkill } from "../skills.js";
+import { writeTerraformExport } from "../terraform.js";
 import { CheckboxList } from "./CheckboxList.js";
 import type { SyntheticConfig } from "../types.js";
 
@@ -29,8 +30,6 @@ const ANALYZE_MIN_MS = 5000;
 // browser flow) — a bare MIN_SPINNER_MS here reads as an abrupt jump cut
 // right after that, rather than a natural next step.
 const SKILLS_MIN_MS = 4500;
-
-const FOLLOWUP_OPTIONS = ["export them as Terraform", "instrument your app with Frontend O11y"];
 
 const NO_COLOR = Boolean(process.env.NO_COLOR);
 const accent = NO_COLOR ? undefined : "#FFA500";
@@ -119,25 +118,30 @@ interface CreationItem {
   candidate: Candidate;
   status: ItemStatus;
   detail?: string;
+  // The SM check ID the API assigned — populated once created/updated, or
+  // read from the existing check on a noop. Needed later by "export" to
+  // emit a working `terraform import` command for each check.
+  id?: number;
 }
 
 // The seven macro-steps shown in the persistent step list. "select"/"create"
 // are editable (can be a `b` back-navigation target); "gcx", "skills",
-// "analyze", "auth", and "endpoints" are fully automatic — once done, they
+// "analyze", "auth", and "export" are fully automatic — once done, they
 // stay done even if you navigate back past them, since there's nothing to
-// reconfirm.
-type StepId = "gcx" | "skills" | "analyze" | "auth" | "endpoints" | "select" | "create";
+// reconfirm. "analyze" covers both local candidate generation and (if
+// authenticated) AI-powered live endpoint discovery — one step, not two.
+type StepId = "gcx" | "skills" | "analyze" | "auth" | "select" | "create" | "export";
 
-const STEP_ORDER: StepId[] = ["gcx", "auth", "skills", "analyze", "endpoints", "select", "create"];
+const STEP_ORDER: StepId[] = ["gcx", "auth", "skills", "analyze", "select", "create", "export"];
 const EDITABLE_STEPS: StepId[] = ["select", "create"];
 const STEP_LABELS: Record<StepId, string> = {
   gcx: "Install Grafana Cloud CLI (gcx)",
   skills: "Configure skills",
   analyze: "Analyze target",
-  auth: "Authenticate",
-  endpoints: "Find endpoints",
-  select: "Review proposals",
+  auth: "Authenticate with OAuth",
+  select: "Review Synthetic Checks",
   create: "Create Synthetic Checks",
+  export: "Export Synthetic Checks as Terraform",
 };
 
 function previousEditableStep(from: StepId): StepId | undefined {
@@ -154,16 +158,24 @@ type GcxSubPhase = "checking-gcx" | "gcx-install-confirm" | "gcx-installing";
 const GCX_WAITING_SUBPHASES: GcxSubPhase[] = ["gcx-install-confirm"];
 
 // "auth": ask once, up front, whether it's OK to open a browser to sign in
-// to Grafana Assistant — declining just skips straight to "endpoints" with
-// no AI-powered suggestions, same as a failed sign-in would.
+// to Grafana Assistant — declining just skips "analyze"'s AI-discovery
+// half, same as a failed sign-in would.
 type AuthSubPhase = "browser-confirm" | "authenticating";
 const AUTH_WAITING_SUBPHASES: AuthSubPhase[] = ["browser-confirm"];
 
-// "endpoints": ask once, up front, whether it's OK to open a real (visible,
-// not headless) browser against the target URL — declining just skips
-// straight to "select" with only the standard candidates.
-type EndpointsSubPhase = "browser-confirm" | "discovering";
-const ENDPOINTS_WAITING_SUBPHASES: EndpointsSubPhase[] = ["browser-confirm"];
+// "analyze": runs local candidate generation first (no confirmation
+// needed), then — unless "auth" already failed — asks once whether it's OK
+// to open a real (visible, not headless) browser against the target URL
+// for AI-powered live endpoint discovery. Declining just leaves only the
+// standard candidates.
+type AnalyzeSubPhase = "analyzing" | "browser-confirm" | "discovering";
+const ANALYZE_WAITING_SUBPHASES: AnalyzeSubPhase[] = ["browser-confirm"];
+
+// "export": ask once, up front, whether to write a Terraform export of the
+// checks just created — declining just ends the wizard, same as a failed
+// export would.
+type ExportSubPhase = "export-confirm" | "exporting";
+const EXPORT_WAITING_SUBPHASES: ExportSubPhase[] = ["export-confirm"];
 
 // "create": connecting to the SM API and authenticating with a token lives
 // here (not in "gcx") since it's unrelated to the gcx CLI — it only needs to
@@ -201,15 +213,13 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
 
   // analyze step
   const [candidates, setCandidates] = useState<Candidate[]>();
+  const [analyzeSubPhase, setAnalyzeSubPhase] = useState<AnalyzeSubPhase>("analyzing");
 
   // auth step — a set "error" (declined, timed out, or failed) just means
-  // "endpoints" skips AI suggestions, but the real reason is still shown
-  // rather than swallowed.
+  // "analyze" skips its AI-discovery half, but the real reason is still
+  // shown rather than swallowed.
   const [authSubPhase, setAuthSubPhase] = useState<AuthSubPhase>("browser-confirm");
   const [authError, setAuthError] = useState<string>();
-
-  // endpoints step
-  const [endpointsSubPhase, setEndpointsSubPhase] = useState<EndpointsSubPhase>("browser-confirm");
 
   // select step — seeded once (in runAnalyze), then kept live via
   // CheckboxList's onSelectionChange so a back-then-forward round trip
@@ -227,19 +237,31 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
   const [assignedProbes, setAssignedProbes] = useState<string[]>([]);
   const [items, setItems] = useState<CreationItem[]>([]);
 
+  // export step — a set "error" just means the export didn't happen, but
+  // the real reason is still shown rather than swallowed.
+  const [exportSubPhase, setExportSubPhase] = useState<ExportSubPhase>("export-confirm");
+  const [exportPath, setExportPath] = useState<string>();
+  const [exportError, setExportError] = useState<string>();
+
   const session = useRef<Session>(undefined as unknown as Session);
+  // The exact config "create" built (target/probes/settings/frequency per
+  // check) — kept here rather than recomputed, so "export" emits Terraform
+  // for precisely what was actually created, not a re-derived guess.
+  const createdConfigRef = useRef<SyntheticConfig>({});
   const baseUrlResolver = useRef<((url: string) => void) | undefined>(undefined);
   const tokenResolver = useRef<((token: string) => void) | undefined>(undefined);
   const selectResolver = useRef<((keys: string[]) => void) | undefined>(undefined);
   const gcxInstallResolver = useRef<((install: boolean) => void) | undefined>(undefined);
   const authPermissionResolver = useRef<((allow: boolean) => void) | undefined>(undefined);
   const browserPermissionResolver = useRef<((allow: boolean) => void) | undefined>(undefined);
+  const exportPermissionResolver = useRef<((allow: boolean) => void) | undefined>(undefined);
 
   const backTarget = previousEditableStep(currentStep);
   const isWaiting =
     (currentStep === "gcx" && GCX_WAITING_SUBPHASES.includes(gcxSubPhase)) ||
     (currentStep === "auth" && AUTH_WAITING_SUBPHASES.includes(authSubPhase)) ||
-    (currentStep === "endpoints" && ENDPOINTS_WAITING_SUBPHASES.includes(endpointsSubPhase)) ||
+    (currentStep === "analyze" && ANALYZE_WAITING_SUBPHASES.includes(analyzeSubPhase)) ||
+    (currentStep === "export" && EXPORT_WAITING_SUBPHASES.includes(exportSubPhase)) ||
     currentStep === "select" ||
     (currentStep === "create" && (createSubPhase === "base-url-input" || createSubPhase === "token-input"));
   const backAllowed =
@@ -312,12 +334,22 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
 
   useInput(
     (input, key) => {
-      if (currentStep === "endpoints" && endpointsSubPhase === "browser-confirm") {
+      if (currentStep === "analyze" && analyzeSubPhase === "browser-confirm") {
         if (key.return || input.toLowerCase() === "y") browserPermissionResolver.current?.(true);
         else if (input.toLowerCase() === "n") browserPermissionResolver.current?.(false);
       }
     },
-    { isActive: currentStep === "endpoints" && endpointsSubPhase === "browser-confirm" }
+    { isActive: currentStep === "analyze" && analyzeSubPhase === "browser-confirm" }
+  );
+
+  useInput(
+    (input, key) => {
+      if (currentStep === "export" && exportSubPhase === "export-confirm") {
+        if (key.return || input.toLowerCase() === "y") exportPermissionResolver.current?.(true);
+        else if (input.toLowerCase() === "n") exportPermissionResolver.current?.(false);
+      }
+    },
+    { isActive: currentStep === "export" && exportSubPhase === "export-confirm" }
   );
 
   // Drives whichever step is current. Re-runs whenever currentStep changes —
@@ -380,11 +412,46 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
     }
 
     async function runAnalyze() {
+      setAnalyzeSubPhase("analyzing");
       const targetUrl = /^https?:\/\//.test(initialTargetUrl) ? initialTargetUrl : `https://${initialTargetUrl}`;
       const [list] = await Promise.all([candidatesFor(targetUrl), sleep(ANALYZE_MIN_MS)]);
       if (cancelled) return;
       setCandidates(list);
       setSelectedKeys(list.filter((c) => c.selectedByDefault).map((c) => c.key));
+
+      // No point asking to open a browser for live discovery if there's no
+      // signed-in assistant to judge what it finds — skip straight through,
+      // same as if the user had declined.
+      if (authError) {
+        advance();
+        return;
+      }
+
+      setAnalyzeSubPhase("browser-confirm");
+      const allow = await new Promise<boolean>((resolve) => {
+        browserPermissionResolver.current = resolve;
+      });
+      if (cancelled) return;
+
+      if (allow) {
+        setAnalyzeSubPhase("discovering");
+        try {
+          // Permission was already granted above via this step's own
+          // prompt — the harness's own gate is a pass-through here, not a
+          // second ask.
+          const [aiCandidates] = await Promise.all([
+            aiEndpointCandidatesFor(targetUrl, initialStackUrl, () => true),
+            sleep(MIN_SPINNER_MS),
+          ]);
+          if (cancelled) return;
+          if (aiCandidates.length > 0) {
+            setCandidates((prev) => [...(prev ?? []), ...aiCandidates]);
+          }
+        } catch {
+          // Nice-to-have — never blocks setup on a failed discovery pass.
+        }
+      }
+      if (cancelled) return;
       advance();
     }
 
@@ -407,47 +474,9 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
         await Promise.all([ensureAssistantAuth(initialStackUrl), sleep(MIN_SPINNER_MS)]);
       } catch (err) {
         // AI-powered endpoint suggestions are additive — a declined, timed
-        // out, or failed sign-in just means "endpoints" has none to offer.
+        // out, or failed sign-in just means "analyze" skips that half.
         // Still surfaced (not swallowed) so a real failure is diagnosable.
         setAuthError(err instanceof Error ? err.message : String(err));
-      }
-      if (cancelled) return;
-      advance();
-    }
-
-    async function runEndpoints() {
-      // No point asking to open a browser for live discovery if there's no
-      // signed-in assistant to judge what it finds — skip straight through,
-      // same as if the user had declined.
-      if (authError) {
-        advance();
-        return;
-      }
-
-      setEndpointsSubPhase("browser-confirm");
-      const allow = await new Promise<boolean>((resolve) => {
-        browserPermissionResolver.current = resolve;
-      });
-      if (cancelled) return;
-
-      if (allow) {
-        setEndpointsSubPhase("discovering");
-        const targetUrl = /^https?:\/\//.test(initialTargetUrl) ? initialTargetUrl : `https://${initialTargetUrl}`;
-        try {
-          // Permission was already granted above via this step's own
-          // prompt — the harness's own gate is a pass-through here, not a
-          // second ask.
-          const [aiCandidates] = await Promise.all([
-            aiEndpointCandidatesFor(targetUrl, initialStackUrl, () => true),
-            sleep(MIN_SPINNER_MS),
-          ]);
-          if (cancelled) return;
-          if (aiCandidates.length > 0) {
-            setCandidates((prev) => [...(prev ?? []), ...aiCandidates]);
-          }
-        } catch {
-          // Nice-to-have — never blocks setup on a failed discovery pass.
-        }
       }
       if (cancelled) return;
       advance();
@@ -527,6 +556,7 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
       for (const c of selected) {
         config[c.label] = { target: c.target, probes: probeNames, settings: c.settings, frequency: c.frequencyMs };
       }
+      createdConfigRef.current = config;
 
       let workingItems: CreationItem[] = selected.map((candidate) => ({ candidate, status: "pending" as ItemStatus }));
       setItems(workingItems);
@@ -548,16 +578,16 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
         updateItem(candidate.key, { status: "running" });
         if (action.kind === "noop") {
           await sleep(MIN_SPINNER_MS);
-          updateItem(candidate.key, { status: "skipped", detail: "already up to date" });
+          updateItem(candidate.key, { status: "skipped", detail: "already up to date", id: action.id });
           continue;
         }
         try {
-          await Promise.all([
+          const [remote] = await Promise.all([
             action.kind === "create" ? session.current.client.createCheck(action.payload) : session.current.client.updateCheck(action.payload),
             sleep(MIN_SPINNER_MS),
           ]);
           const status: ItemStatus = action.kind === "create" ? "created" : "updated";
-          updateItem(candidate.key, { status });
+          updateItem(candidate.key, { status, id: remote.id });
         } catch (err) {
           const detail = err instanceof SmApiError ? err.body : err instanceof Error ? err.message : String(err);
           updateItem(candidate.key, { status: "failed", detail });
@@ -574,6 +604,36 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
         );
       }
       advance();
+    }
+
+    async function runExport() {
+      setExportSubPhase("export-confirm");
+      setExportError(undefined);
+      setExportPath(undefined);
+      const allow = await new Promise<boolean>((resolve) => {
+        exportPermissionResolver.current = resolve;
+      });
+      if (cancelled) return;
+
+      if (allow) {
+        setExportSubPhase("exporting");
+        // job name -> the SM check ID the API assigned, for the README's
+        // `terraform import` commands.
+        const remoteIds = new Map(items.filter((it) => it.id !== undefined).map((it) => [it.candidate.label, it.id!]));
+        try {
+          const [writtenPath] = await Promise.all([
+            writeTerraformExport(createdConfigRef.current, session.current.probes, remoteIds, initialStackUrl, session.current.url, process.cwd()),
+            sleep(MIN_SPINNER_MS),
+          ]);
+          if (cancelled) return;
+          setExportPath(path.relative(process.cwd(), writtenPath));
+        } catch (err) {
+          if (cancelled) return;
+          setExportError(err instanceof Error ? err.message : String(err));
+        }
+      }
+      if (cancelled) return;
+      advance();
       setDone(true);
     }
 
@@ -583,9 +643,9 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
         else if (currentStep === "skills") await runSkills();
         else if (currentStep === "analyze") await runAnalyze();
         else if (currentStep === "auth") await runAuth();
-        else if (currentStep === "endpoints") await runEndpoints();
         else if (currentStep === "select") await runSelect();
         else if (currentStep === "create") await runCreate();
+        else if (currentStep === "export") await runExport();
       } catch (err) {
         if (cancelled) return;
         setFailureSummary(err instanceof Error ? err.message : String(err));
@@ -656,6 +716,12 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
               {step === "auth" && completed.has(step) && authError && (
                 <Text color={muted}> Skipping AI-powered suggestions ({authError})</Text>
               )}
+              {step === "export" && completed.has(step) && exportPath && (
+                <Text color={muted}>{"     "}Wrote {exportPath}</Text>
+              )}
+              {step === "export" && completed.has(step) && exportError && (
+                <Text color={muted}>{"     "}Skipped Terraform export ({exportError})</Text>
+              )}
             </Box>
           );
         })}
@@ -698,11 +764,22 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
     return null;
   }
 
-  function EndpointsBody() {
-    if (endpointsSubPhase === "browser-confirm")
+  function AnalyzeBody() {
+    if (analyzeSubPhase === "browser-confirm")
       return (
         <Box flexDirection="column">
           <Text>Open a real browser to see which live endpoints {initialTargetUrl} actually calls?</Text>
+          <Text color={muted}>(y/n)</Text>
+        </Box>
+      );
+    return null;
+  }
+
+  function ExportBody() {
+    if (exportSubPhase === "export-confirm")
+      return (
+        <Box flexDirection="column">
+          <Text>Export these checks as Terraform too?</Text>
           <Text color={muted}>(y/n)</Text>
         </Box>
       );
@@ -742,7 +819,7 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
     const loadZones = assignedProbes.join(", ");
     return items.map((it) => (
       <Text key={it.candidate.key}>
-        {"   "}
+        {"     "}
         <ItemIcon status={it.status} /> {it.candidate.title}
         {loadZones && <Text color={muted}> — {loadZones}</Text>}
         {it.detail ? <Text color={muted}> — {it.detail}</Text> : null}
@@ -844,10 +921,6 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
             See them here: <Text color="blue">{initialStackUrl.replace(/\/$/, "")}/a/grafana-synthetic-monitoring-app/checks</Text>
           </Text>
         </Box>
-
-        <Box marginTop={1}>
-          <Text color={muted}>Looking for more? You could {FOLLOWUP_OPTIONS.join(" or ")} —  coming soon :)</Text>
-        </Box>
       </Box>
     );
   }
@@ -863,7 +936,8 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
           (currentStep === "create" && createSubPhase !== "connecting") ||
           (currentStep === "gcx" && gcxSubPhase === "gcx-install-confirm") ||
           (currentStep === "auth" && authSubPhase === "browser-confirm") ||
-          (currentStep === "endpoints" && endpointsSubPhase === "browser-confirm")
+          (currentStep === "analyze" && analyzeSubPhase === "browser-confirm") ||
+          (currentStep === "export" && exportSubPhase === "export-confirm")
             ? 1
             : 0
         }
@@ -877,9 +951,10 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
           <>
             {currentStep === "gcx" && GcxBody()}
             {currentStep === "auth" && AuthBody()}
-            {currentStep === "endpoints" && EndpointsBody()}
+            {currentStep === "analyze" && AnalyzeBody()}
             {currentStep === "select" && SelectBody()}
             {currentStep === "create" && CreateBody()}
+            {currentStep === "export" && ExportBody()}
           </>
         )}
       </Box>
