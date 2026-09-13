@@ -4,7 +4,7 @@
 
 Grafana Cloud's interactive setup wizard, powered by Assistant.
 
-Installs gcx, configures agent skills, and sets up Synthetic Monitoring Checks for your project.
+Installs gcx, configures agent skills, and sets up Synthetic Monitoring or Frontend Observability in your project.
 
 ## Usage
 
@@ -12,4 +12,6 @@ Installs gcx, configures agent skills, and sets up Synthetic Monitoring Checks f
 npm install && npm run build && npm link
 
 npx @grafana/setup-cli synthetics --url https://example.com --stack https://my-team.grafana.net
+
+npx @grafana/setup-cli frontend --stack https://my-team.grafana.net
 ```
