@@ -1,7 +1,7 @@
 import path from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import React, { useEffect, useRef, useState } from "react";
-import { Box, render, Text, useApp, useInput } from "ink";
+import { Box, render, Text, useInput } from "ink";
 import Spinner from "ink-spinner";
 import TextInput from "ink-text-input";
 import { SmApiError, SmClient, type Probe } from "../products/syntheticMonitoring/api.js";
@@ -12,7 +12,7 @@ import { getSkillStatus, installSkill } from "../skills.js";
 import { tryAutoSmSession } from "../products/syntheticMonitoring/smAuth.js";
 import { writeTerraformExport } from "../products/syntheticMonitoring/terraform.js";
 import { CheckboxList } from "./CheckboxList.js";
-import { accent, bad, EnterHint, Header, idColor, MIN_SPINNER_MS, muted, ok, Working } from "./shared.js";
+import { accent, bad, EnterHint, Header, idColor, MIN_SPINNER_MS, muted, ok, useHardExit, Working } from "./shared.js";
 import { useGcxStep } from "./steps/useGcxStep.js";
 import { useAuthStep } from "./steps/useAuthStep.js";
 import type { SyntheticConfig } from "../products/syntheticMonitoring/types.js";
@@ -213,7 +213,7 @@ interface Props {
 }
 
 export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, forceGcxInstall }: Props) {
-  const { exit } = useApp();
+  const exit = useHardExit();
 
   const [started, setStarted] = useState(false);
   const [currentStep, setCurrentStep] = useState<StepId>("gcx");
@@ -301,7 +301,7 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
   useInput(
     (input, key) => {
       if (key.return || input.toLowerCase() === "y") setStarted(true);
-      else if (input.toLowerCase() === "n") exit();
+      else if (input.toLowerCase() === "n") exit("Cancelled.");
     },
     { isActive: !started }
   );
@@ -311,7 +311,7 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
   const quittingBlocked = currentStep === "create" && (createSubPhase === "base-url-input" || createSubPhase === "token-input");
   useInput(
     (input) => {
-      if (input.toLowerCase() === "q") exit();
+      if (input.toLowerCase() === "q") exit("Cancelled.");
     },
     { isActive: !quittingBlocked }
   );
@@ -949,13 +949,19 @@ export async function runSetupUI(
   if (!process.stdin.isTTY) {
     throw new Error("synthetics requires an interactive terminal.");
   }
+  // exitOnCtrlC disabled — Ink's own default Ctrl+C handling runs before
+  // useHardExit's useInput callback ever gets a turn (both listen on the
+  // same stdin stream, and Ink's own listener wins the race), so it kills
+  // the process first and our "Cancelled." message never prints. Letting
+  // useHardExit be the only Ctrl+C handler avoids that race entirely.
   const app = render(
     <SetupApp
       initialBaseUrl={initialBaseUrl}
       initialTargetUrl={initialTargetUrl}
       initialStackUrl={initialStackUrl}
       forceGcxInstall={forceGcxInstall}
-    />
+    />,
+    { exitOnCtrlC: false }
   );
   await app.waitUntilExit();
 }

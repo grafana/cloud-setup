@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import React from "react";
-import { Box, Text } from "ink";
+import { Box, Text, useApp, useInput } from "ink";
 import Spinner from "ink-spinner";
 import { detectFramework } from "../framework.js";
 
@@ -61,6 +61,47 @@ export function checkNodeVersion(): void {
   if (major < MIN_NODE_MAJOR || (major === MIN_NODE_MAJOR && minor < MIN_NODE_MINOR)) {
     throw new Error(`Node ${MIN_NODE_MAJOR}.${MIN_NODE_MINOR}+ is required (found ${process.versions.node}).`);
   }
+}
+
+// Ink's own exit() only unmounts the React tree — it restores the
+// terminal (cursor, raw mode) but doesn't actually end the Node process.
+// Anything still in flight when the user quits (the OAuth callback
+// server, an open SSE fetch, a spawned npm/gcx install) then keeps the
+// event loop alive, so the CLI never returns control to the shell — it
+// just sits there looking frozen, which is exactly the "weird state"
+// after a single Ctrl+C. Forcing a real process.exit() right after
+// covers every quit path; the Ctrl+C handler here is always active
+// (unlike the 'q' quit key, which free-text input screens disable) so it
+// works no matter what's on screen.
+// A string cancels silently-but-visibly (prints the message, exit code 0)
+// — used for a user-initiated quit (Ctrl+C, 'q', declining the initial
+// prompt). An Error is a real failure (exit code 1); its message was
+// already rendered by the failing screen itself, so it isn't repeated
+// here. Undefined is a clean, silent exit (the "done" screen already
+// showed its own success message).
+export function useHardExit(): (errorOrMessage?: Error | string) => void {
+  const { exit } = useApp();
+
+  function hardExit(errorOrMessage?: Error | string): void {
+    const error = errorOrMessage instanceof Error ? errorOrMessage : undefined;
+    // exit() first, while Ink still owns the terminal — it restores the
+    // cursor and raw mode; printing before that would just get clobbered
+    // by Ink's own rendering.
+    exit(error);
+    if (typeof errorOrMessage === "string") console.log(errorOrMessage);
+    // setImmediate, not a same-tick process.exit() — Ink's own unmount
+    // cleanup and the console.log above both write to the terminal, and
+    // need a turn of the event loop to actually flush before the process
+    // dies, or they can get silently dropped.
+    setImmediate(() => process.exit(error ? 1 : 0));
+  }
+
+  useInput((input, key) => {
+    require("node:fs").appendFileSync("/tmp/ctrlc-debug.log", `input=${JSON.stringify(input)} key=${JSON.stringify(key)}\n`);
+    if (key.ctrl && input === "c") hardExit("Cancelled.");
+  });
+
+  return hardExit;
 }
 
 // The one "press ⏎ enter to continue" phrasing, shared by the intro

@@ -1,7 +1,7 @@
 import path from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import React, { useEffect, useRef, useState } from "react";
-import { Box, render, Text, useApp, useInput } from "ink";
+import { Box, render, Text, useInput } from "ink";
 import Spinner from "ink-spinner";
 import TextInput from "ink-text-input";
 import { tryFaroClient } from "../products/frontendO11y/faroAuth.js";
@@ -17,7 +17,7 @@ import {
 import type { FaroInstrumentation } from "../products/frontendO11y/instrument.js";
 import { instrumentNextjs } from "../products/frontendO11y/nextjs.js";
 import { instrumentReact } from "../products/frontendO11y/react.js";
-import { accent, bad, EnterHint, Header, MIN_SPINNER_MS, muted, ok, Working } from "./shared.js";
+import { accent, bad, EnterHint, Header, MIN_SPINNER_MS, muted, ok, useHardExit, Working } from "./shared.js";
 import { useGcxStep } from "./steps/useGcxStep.js";
 import { useAuthStep } from "./steps/useAuthStep.js";
 
@@ -50,7 +50,7 @@ interface Props {
 }
 
 export function FrontendApp({ initialStackUrl, forceGcxInstall }: Props) {
-  const { exit } = useApp();
+  const exit = useHardExit();
 
   const [started, setStarted] = useState(false);
   const [currentStep, setCurrentStep] = useState<StepId>("gcx");
@@ -88,7 +88,7 @@ export function FrontendApp({ initialStackUrl, forceGcxInstall }: Props) {
   useInput(
     (input, key) => {
       if (key.return || input.toLowerCase() === "y") setStarted(true);
-      else if (input.toLowerCase() === "n") exit();
+      else if (input.toLowerCase() === "n") exit("Cancelled.");
     },
     { isActive: !started }
   );
@@ -98,7 +98,7 @@ export function FrontendApp({ initialStackUrl, forceGcxInstall }: Props) {
   const quittingBlocked = currentStep === "frontend" && frontendSubPhase === "collector-url-input";
   useInput(
     (input) => {
-      if (input.toLowerCase() === "q") exit();
+      if (input.toLowerCase() === "q") exit("Cancelled.");
     },
     { isActive: !quittingBlocked }
   );
@@ -398,6 +398,10 @@ export async function runFrontendUI(initialStackUrl: string, forceGcxInstall: bo
   if (!process.stdin.isTTY) {
     throw new Error("synthetics requires an interactive terminal.");
   }
-  const app = render(<FrontendApp initialStackUrl={initialStackUrl} forceGcxInstall={forceGcxInstall} />);
+  // exitOnCtrlC disabled — see the matching comment in SetupApp.tsx's
+  // runSetupUI: Ink's own default Ctrl+C handling otherwise wins the race
+  // against useHardExit's useInput callback and kills the process before
+  // our "Cancelled." message ever prints.
+  const app = render(<FrontendApp initialStackUrl={initialStackUrl} forceGcxInstall={forceGcxInstall} />, { exitOnCtrlC: false });
   await app.waitUntilExit();
 }
