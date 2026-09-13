@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import React from "react";
+import React, { useEffect } from "react";
 import { Box, Text, useApp, useInput } from "ink";
 import Spinner from "ink-spinner";
 import { detectFramework } from "../framework.js";
@@ -96,10 +96,29 @@ export function useHardExit(): (errorOrMessage?: Error | string) => void {
     setImmediate(() => process.exit(error ? 1 : 0));
   }
 
+  // Byte-level detection for platforms/terminals where raw mode actually
+  // suppresses signal generation on Ctrl+C.
   useInput((input, key) => {
-    require("node:fs").appendFileSync("/tmp/ctrlc-debug.log", `input=${JSON.stringify(input)} key=${JSON.stringify(key)}\n`);
     if (key.ctrl && input === "c") hardExit("Cancelled.");
   });
+
+  // Verified live: on this setup, raw mode does NOT suppress signal
+  // generation — Ctrl+C still delivers a real SIGINT, and without an
+  // explicit listener Node's default handler kills the process
+  // immediately, before the useInput callback above ever runs. Once a
+  // SIGINT listener is registered, Node no longer auto-exits — this one
+  // *is* the exit, going through the same hardExit so cleanup and the
+  // "Cancelled." message stay identical either way.
+  useEffect(() => {
+    function onSigint() {
+      hardExit("Cancelled.");
+    }
+    process.on("SIGINT", onSigint);
+    return () => {
+      process.off("SIGINT", onSigint);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return hardExit;
 }
