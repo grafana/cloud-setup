@@ -26,9 +26,21 @@ export function openFrontendO11ySetupPage(stackUrl: string): void {
 // the exact `url:` value the snippet needs (collectEndpointURL + "/" +
 // appKey already combined), whether it came from listing an existing app
 // via the API or from the user pasting it after creating one manually.
+// version/environmentExpr/sessionPersistent come from the "Configure"
+// step — see readPkgVersion, detectEnvironmentExpr, and the sessionTracking
+// block below. Verified against Grafana's own faro-setup Claude Code
+// skill (github.com/grafana/faro-web-sdk ai/grafana-cloud/faro-setup),
+// which generates exactly this shape rather than the hardcoded
+// version:'1.0.0'/environment:'production' this tool used before.
 export interface FaroInstrumentation {
   name: string;
   collectorUrl: string;
+  version: string;
+  // A raw JS expression, not a string literal — e.g. `process.env.NODE_ENV`
+  // — so the environment resolves correctly at the app's own runtime
+  // rather than being baked in as a fixed guess at setup time.
+  environmentExpr: string;
+  sessionPersistent: boolean;
 }
 
 // Four real shapes, verified against grafana.com/docs/.../get-started/:
@@ -67,6 +79,23 @@ export function readPkgName(cwd: string): string | undefined {
   return typeof name === "string" && name.length > 0 ? name : undefined;
 }
 
+// Faro's own faro-setup skill reads this from package.json rather than
+// asking or hardcoding "1.0.0" — falls back to that only when there's
+// truly nothing to read.
+export function readPkgVersion(cwd: string): string {
+  const version = readPkg(cwd)?.version;
+  return typeof version === "string" && version.length > 0 ? version : "1.0.0";
+}
+
+// A raw JS expression (not a string), matching Grafana's own faro-setup
+// skill's per-framework choice: React always reads process.env.NODE_ENV
+// (regardless of bundler); Next.js has it natively too. The generic
+// "javascript" bucket covers Vite and other bundlers alike, so it
+// nullish-coalesces both env styles rather than guessing one.
+export function detectEnvironmentExpr(target: FrontendTarget): string {
+  return target.kind === "javascript" ? "process.env.NODE_ENV ?? import.meta.env.MODE" : "process.env.NODE_ENV";
+}
+
 function hasDep(pkg: Record<string, unknown> | undefined, name: string): boolean {
   if (!pkg) return false;
   const deps = { ...(pkg.dependencies as Record<string, string>), ...(pkg.devDependencies as Record<string, string>) };
@@ -103,9 +132,13 @@ export function detectFrontendTarget(cwd: string): FrontendTarget {
   return hasDep(pkg, "react") ? { kind: "react", file: entry } : { kind: "javascript", file: entry };
 }
 
-// Matches the documented vanilla-JS/TS snippet exactly (verified against
-// the Frontend Observability setup page) — no fields beyond what's
-// actually shown there (no invented sampling/session config).
+// Matches the documented vanilla-JS/TS snippet's shape (verified against
+// the Frontend Observability setup page), with version/environment/session
+// fields sourced the way Grafana's own faro-setup skill does rather than
+// guessed — see FaroInstrumentation's doc comment. Sampling is
+// deliberately never exposed here: that same skill explicitly avoids
+// surfacing it unless the user brings up high traffic, since 100% is
+// correct for most apps.
 function webSdkSnippet(instrumentation: FaroInstrumentation): string {
   return [
     "import { getWebInstrumentations, initializeFaro } from '@grafana/faro-web-sdk';",
@@ -115,9 +148,10 @@ function webSdkSnippet(instrumentation: FaroInstrumentation): string {
     `  url: '${instrumentation.collectorUrl}',`,
     "  app: {",
     `    name: '${instrumentation.name}',`,
-    "    version: '1.0.0',",
-    "    environment: 'production',",
+    `    version: '${instrumentation.version}',`,
+    `    environment: ${instrumentation.environmentExpr},`,
     "  },",
+    ...(instrumentation.sessionPersistent ? ["  sessionTracking: {", "    persistent: true,", "  },"] : []),
     "  instrumentations: [",
     "    // Mandatory, omits default instrumentations otherwise.",
     "    ...getWebInstrumentations(),",

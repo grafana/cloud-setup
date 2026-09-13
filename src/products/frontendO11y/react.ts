@@ -11,12 +11,14 @@ const SOURCE_EXTENSIONS = new Set([".ts", ".tsx", ".js", ".jsx"]);
 // file, or not exist at all — most apps don't use this API).
 const DATA_ROUTER_PATTERN = /\bcreate(?:Browser|Hash|Memory)Router\s*\(/;
 
-// Matches the documented basic-init snippet exactly (verified against
+// Base shape matches the documented basic-init snippet (verified against
 // grafana.com/docs/.../instrument-react/) — @grafana/faro-react's own
 // initializeFaro wrapper, not the generic @grafana/faro-web-sdk one used
 // for non-React projects. Notably no explicit instrumentations array —
 // confirmed against the real page twice, not a fetch artifact: the React
-// package apparently applies its own defaults internally.
+// package apparently applies its own defaults internally. version/
+// environment/session fields added on top match Grafana's own faro-setup
+// skill, which includes them for React too (see FaroInstrumentation).
 function basicInitSnippet(instrumentation: FaroInstrumentation): string {
   return [
     "import { initializeFaro } from '@grafana/faro-react';",
@@ -25,7 +27,10 @@ function basicInitSnippet(instrumentation: FaroInstrumentation): string {
     `  url: '${instrumentation.collectorUrl}',`,
     "  app: {",
     `    name: '${instrumentation.name}',`,
+    `    version: '${instrumentation.version}',`,
+    `    environment: ${instrumentation.environmentExpr},`,
     "  },",
+    ...(instrumentation.sessionPersistent ? ["  sessionTracking: {", "    persistent: true,", "  },"] : []),
     "});",
     "",
   ].join("\n");

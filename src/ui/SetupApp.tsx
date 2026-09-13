@@ -12,93 +12,17 @@ import { getSkillStatus, installSkill } from "../skills.js";
 import { tryAutoSmSession } from "../products/syntheticMonitoring/smAuth.js";
 import { writeTerraformExport } from "../products/syntheticMonitoring/terraform.js";
 import { CheckboxList } from "./CheckboxList.js";
-import { accent, bad, EnterHint, Header, idColor, MIN_SPINNER_MS, muted, ok, useHardExit, Working } from "./shared.js";
+import { accent, bad, EnterHint, Header, idColor, MIN_SPINNER_MS, muted, ok, startFakeProgress, useHardExit, Working } from "./shared.js";
 import { useGcxStep } from "./steps/useGcxStep.js";
 import { useAuthStep } from "./steps/useAuthStep.js";
 import type { SyntheticConfig } from "../products/syntheticMonitoring/types.js";
 
 const ANALYZE_MIN_MS = 5000;
 
-// Purely decorative — there's no real progress signal to show across the
-// whole "Analyze target" step (local generation, the confirm question,
-// then one opaque discovery await), so this fakes one, paced against a
-// wall-clock target rather than random step sizes so it reads as roughly
-// "on schedule" instead of jittery. Real work almost always finishes
-// before that target — finish() is the deliberate "speed up" for when it
-// does, sprinting the number up to 100 instead of letting it jump there.
+// No real progress signal across the whole "Analyze target" step (local
+// generation, the confirm question, then one opaque discovery await) — see
+// shared.tsx's startFakeProgress for how this gets faked instead.
 const ANALYZE_PROGRESS_TARGET_MS = 60_000;
-
-interface FakeProgress {
-  pause: () => void;
-  resume: () => void;
-  stop: () => void;
-  finish: () => Promise<void>;
-}
-
-function startFakeProgress(onProgress: (percent: number) => void, isCancelled: () => boolean): FakeProgress {
-  const startedAt = Date.now();
-  // Time spent paused doesn't count toward elapsed — otherwise resuming
-  // after, say, a slow answer to the browser-confirm question would jump
-  // the number ahead to "catch up" to real elapsed time, which is exactly
-  // the jump this is meant to avoid.
-  let pausedMs = 0;
-  let pauseStartedAt: number | undefined;
-  let percent = 0;
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  let stopped = false;
-
-  function tick() {
-    if (stopped || pauseStartedAt !== undefined || isCancelled()) return;
-    const elapsed = Date.now() - startedAt - pausedMs;
-    // Small jitter so it doesn't read as a perfectly straight line, but
-    // never lets it fall behind its own previous value.
-    const paced = (elapsed / ANALYZE_PROGRESS_TARGET_MS) * 100 + (Math.random() * 4 - 2);
-    percent = Math.max(percent, Math.min(99, Math.round(paced)));
-    onProgress(percent);
-    timer = setTimeout(tick, 250 + Math.random() * 250);
-  }
-  tick();
-
-  function pause() {
-    if (stopped || pauseStartedAt !== undefined) return;
-    pauseStartedAt = Date.now();
-    if (timer) clearTimeout(timer);
-  }
-
-  function resume() {
-    if (stopped || pauseStartedAt === undefined) return;
-    pausedMs += Date.now() - pauseStartedAt;
-    pauseStartedAt = undefined;
-    tick();
-  }
-
-  function stop() {
-    stopped = true;
-    if (timer) clearTimeout(timer);
-  }
-
-  function finish(): Promise<void> {
-    stop();
-    return new Promise((resolve) => {
-      function burst() {
-        if (isCancelled()) {
-          resolve();
-          return;
-        }
-        percent = Math.min(100, percent + Math.max(2, Math.round((100 - percent) * 0.35)));
-        onProgress(percent);
-        if (percent >= 100) {
-          resolve();
-          return;
-        }
-        setTimeout(burst, 40 + Math.random() * 40);
-      }
-      burst();
-    });
-  }
-
-  return { pause, resume, stop, finish };
-}
 // This step lands right after "sign in"'s own real-world wait (the OAuth
 // browser flow) — a bare MIN_SPINNER_MS here reads as an abrupt jump cut
 // right after that, rather than a natural next step.
@@ -153,7 +77,7 @@ interface CreationItem {
 // stay done even if you navigate back past them, since there's nothing to
 // reconfirm. "analyze" covers both local candidate generation and (if
 // authenticated) AI-powered live endpoint discovery — one step, not two.
-// Frontend O11y instrumentation is a separate concern, not chained onto
+// Frontend Observability instrumentation is a separate concern, not chained onto
 // this flow — see the standalone `frontend` subcommand (FrontendApp.tsx).
 type StepId = "gcx" | "skills" | "analyze" | "auth" | "select" | "create" | "export";
 
@@ -380,7 +304,7 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
       // itself starts.
       setAnalyzeSubPhase("analyzing");
       setAnalyzeProgress(0);
-      const progress = startFakeProgress(setAnalyzeProgress, () => cancelled);
+      const progress = startFakeProgress(setAnalyzeProgress, () => cancelled, ANALYZE_PROGRESS_TARGET_MS);
 
       const targetUrl = /^https?:\/\//.test(initialTargetUrl) ? initialTargetUrl : `https://${initialTargetUrl}`;
       const [list] = await Promise.all([candidatesFor(targetUrl), sleep(ANALYZE_MIN_MS)]);

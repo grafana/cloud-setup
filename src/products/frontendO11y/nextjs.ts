@@ -37,10 +37,12 @@ const COMPONENT_CANDIDATES = [
 // treated as broken even if it still happens to parse.
 const MIN_RETAINED_FRACTION = 0.8;
 
-// Matches the documented Next.js snippet exactly (verified against
+// Base shape matches the documented Next.js snippet (verified against
 // grafana.com/docs/.../instrument-nextjs/) — a client component guarded
 // against double-init, unlike the plain React quickstart's bare
 // initializeFaro() call, since Next.js can mount the tree more than once.
+// version/environment/session fields sourced the way Grafana's own
+// faro-setup skill does — see FaroInstrumentation's doc comment.
 function componentSource(instrumentation: FaroInstrumentation): string {
   return [
     "'use client';",
@@ -58,9 +60,10 @@ function componentSource(instrumentation: FaroInstrumentation): string {
     `      url: '${instrumentation.collectorUrl}',`,
     "      app: {",
     `        name: '${instrumentation.name}',`,
-    "        version: '1.0.0',",
-    "        environment: 'production',",
+    `        version: '${instrumentation.version}',`,
+    `        environment: ${instrumentation.environmentExpr},`,
     "      },",
+    ...(instrumentation.sessionPersistent ? ["      sessionTracking: {", "        persistent: true,", "      },"] : []),
     "      instrumentations: [",
     "        ...getWebInstrumentations(),",
     "        new TracingInstrumentation(),",
