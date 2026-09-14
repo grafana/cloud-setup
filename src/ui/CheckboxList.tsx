@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { Box, Text, useInput } from "ink";
+import { muted } from "./shared.js";
 
 export interface CheckboxItem {
   key: string;
@@ -15,6 +16,15 @@ interface Props {
   onSubmit: (selectedKeys: string[]) => void;
   onSelectionChange?: (selectedKeys: string[]) => void;
 }
+
+// Descriptions are padded to the longest one actually present so the
+// interval lines up in its own column — reasonable now that AI-discovered
+// descriptions are capped at a short length (see MAX_AI_DESCRIPTION_LENGTH
+// in discover.ts); when nothing bounded that length, one long outlier
+// dragged every row's interval far to the right along with it.
+const PREFIX_WIDTH = 2; // "› " or "  "
+const CHECKBOX_WIDTH = 4; // "[x] " or "[ ] "
+const COLUMN_GUTTER = 2;
 
 // Deliberately bare on footer — the parent (which has the rest of the step
 // chrome) renders the keybind footer, so this stays reusable across steps
@@ -43,20 +53,29 @@ export function CheckboxList({ items, initialSelected, accentColor, onSubmit, on
   });
 
   const labelWidth = Math.max(...items.map((item) => item.label.length));
+  const labelColWidth = PREFIX_WIDTH + CHECKBOX_WIDTH + labelWidth;
   const hasMeta = items.some((item) => item.meta);
   const descWidth = hasMeta ? Math.max(...items.map((item) => item.description.length)) : 0;
 
   return (
     <Box flexDirection="column">
-      {items.map((item, i) => (
-        <Text key={item.key}>
-          <Text color={i === cursor ? accentColor : undefined} bold={i === cursor}>
-            {i === cursor ? "› " : "  "}[{selected.has(item.key) ? "x" : " "}] {item.label.padEnd(labelWidth)}
-          </Text>
-          {item.description && <Text color="gray">   {hasMeta ? item.description.padEnd(descWidth) : item.description}</Text>}
-          {item.meta && <Text color="gray">   {item.meta}</Text>}
-        </Text>
-      ))}
+      {items.map((item, i) => {
+        const focused = i === cursor;
+        return (
+          <Box key={item.key} flexDirection="row">
+            <Box width={labelColWidth} flexShrink={0}>
+              <Text color={focused ? accentColor : undefined} bold={focused}>
+                {focused ? "› " : "  "}[{selected.has(item.key) ? "x" : " "}] {item.label}
+              </Text>
+            </Box>
+            <Text color={focused ? undefined : muted}>
+              {" ".repeat(COLUMN_GUTTER)}
+              {hasMeta ? item.description.padEnd(descWidth) : item.description}
+              {item.meta ? ` ${item.meta}` : ""}
+            </Text>
+          </Box>
+        );
+      })}
     </Box>
   );
 }
