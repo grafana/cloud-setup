@@ -49,6 +49,7 @@ function componentSource(instrumentation: FaroInstrumentation): string {
     "",
     "import { faro, getWebInstrumentations, initializeFaro } from '@grafana/faro-web-sdk';",
     "import { TracingInstrumentation } from '@grafana/faro-web-tracing';",
+    ...(instrumentation.sessionReplay ? ["import { ReplayInstrumentation } from '@grafana/faro-instrumentation-replay';"] : []),
     "",
     "export default function FrontendObservability() {",
     "  if (faro.api) {",
@@ -67,6 +68,9 @@ function componentSource(instrumentation: FaroInstrumentation): string {
     "      instrumentations: [",
     "        ...getWebInstrumentations(),",
     "        new TracingInstrumentation(),",
+    ...(instrumentation.sessionReplay
+      ? ["        // Beta: requires Session Replay enabled on this stack, or it's a no-op.", "        new ReplayInstrumentation(),"]
+      : []),
     "      ],",
     "    });",
     "  } catch {",

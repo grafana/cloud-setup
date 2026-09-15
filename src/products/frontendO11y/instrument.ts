@@ -41,6 +41,11 @@ export interface FaroInstrumentation {
   // rather than being baked in as a fixed guess at setup time.
   environmentExpr: string;
   sessionPersistent: boolean;
+  // Opt-in only (--session-replay): Session Replay is still a beta add-on
+  // that Grafana has to manually enable per-stack (a form submission, no
+  // API), so wiring it in by default would often silently record nothing
+  // — see grafana.com/docs/.../session-replay/.
+  sessionReplay: boolean;
 }
 
 // Four real shapes, verified against grafana.com/docs/.../get-started/:
@@ -143,6 +148,7 @@ function webSdkSnippet(instrumentation: FaroInstrumentation): string {
   return [
     "import { getWebInstrumentations, initializeFaro } from '@grafana/faro-web-sdk';",
     "import { TracingInstrumentation } from '@grafana/faro-web-tracing';",
+    ...(instrumentation.sessionReplay ? ["import { ReplayInstrumentation } from '@grafana/faro-instrumentation-replay';"] : []),
     "",
     "initializeFaro({",
     `  url: '${instrumentation.collectorUrl}',`,
@@ -157,6 +163,7 @@ function webSdkSnippet(instrumentation: FaroInstrumentation): string {
     "    ...getWebInstrumentations(),",
     "    // Tracing package to get end-to-end visibility for HTTP requests.",
     "    new TracingInstrumentation(),",
+    ...(instrumentation.sessionReplay ? ["    // Beta: requires Session Replay enabled on this stack, or it's a no-op.", "    new ReplayInstrumentation(),"] : []),
     "  ],",
     "});",
     "",
@@ -185,6 +192,9 @@ export function insertFaroSnippet(cwd: string, target: FrontendTarget, instrumen
 // is its own package, not web-sdk + web-tracing).
 export const JAVASCRIPT_FARO_PACKAGES = ["@grafana/faro-web-sdk", "@grafana/faro-web-tracing"];
 export const REACT_FARO_PACKAGES = ["@grafana/faro-react"];
+// Its own package regardless of framework — verified against
+// grafana.com/docs/.../session-replay/instrument/.
+export const REPLAY_FARO_PACKAGE = "@grafana/faro-instrumentation-replay";
 
 function detectPackageManager(cwd: string): "npm" | "yarn" | "pnpm" {
   if (existsSync(path.join(cwd, "pnpm-lock.yaml"))) return "pnpm";
