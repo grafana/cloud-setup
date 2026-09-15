@@ -8,6 +8,8 @@ import { SmApiError, SmClient, type Probe } from "../products/syntheticMonitorin
 import { plan as buildPlan } from "../products/syntheticMonitoring/reconcile.js";
 import { writeCredentials } from "../products/syntheticMonitoring/credentials.js";
 import { aiEndpointCandidatesFor, candidatesFor, type Candidate } from "../products/syntheticMonitoring/discover.js";
+import { detectPlaywrightConfig, playwrightCandidatesFor } from "../products/syntheticMonitoring/playwright.js";
+import { attemptInstallK6, isK6McpSupported, K6_INSTALL_COMMAND, K6_INSTALL_DOCS_URL } from "../k6.js";
 import { getSkillStatus, installSkill } from "../skills.js";
 import { tryAutoSmSession } from "../products/syntheticMonitoring/smAuth.js";
 import { writeTerraformExport } from "../products/syntheticMonitoring/terraform.js";
@@ -20,8 +22,10 @@ import type { SyntheticConfig } from "../products/syntheticMonitoring/types.js";
 const ANALYZE_MIN_MS = 5000;
 
 // No real progress signal across the whole "Analyze target" step (local
-// generation, the confirm question, then one opaque discovery await) — see
-// shared.tsx's startFakeProgress for how this gets faked instead.
+// generation, then up to three confirm questions — Playwright analysis,
+// k6 install, and live browser discovery — each followed by its own
+// opaque await) — see shared.tsx's startFakeProgress for how this gets
+// faked instead.
 const ANALYZE_PROGRESS_TARGET_MS = 60_000;
 // This step lands right after "sign in"'s own real-world wait (the OAuth
 // browser flow) — a bare MIN_SPINNER_MS here reads as an abrupt jump cut
@@ -102,12 +106,22 @@ function previousEditableStep(from: StepId): StepId | undefined {
 }
 
 // "analyze": runs local candidate generation first (no confirmation
-// needed), then — unless "auth" already failed — asks once whether it's OK
-// to open a real (visible, not headless) browser against the target URL
-// for AI-powered live endpoint discovery. Declining just leaves only the
-// standard candidates.
-type AnalyzeSubPhase = "analyzing" | "browser-confirm" | "discovering";
-const ANALYZE_WAITING_SUBPHASES: AnalyzeSubPhase[] = ["browser-confirm"];
+// needed), then — unless "auth" already failed — optionally walks through
+// a Playwright sub-flow (confirm analyzing the project's own Playwright
+// tests, then, if allowed, confirm installing/reinstalling k6 to validate
+// the generated scripts) before finally asking once whether it's OK to
+// open a real (visible, not headless) browser against the target URL for
+// AI-powered live endpoint discovery. Declining any of these just leaves
+// fewer candidates, never blocks progress.
+type AnalyzeSubPhase =
+  | "analyzing"
+  | "playwright-confirm"
+  | "k6-install-confirm"
+  | "k6-installing"
+  | "playwright-analyzing"
+  | "browser-confirm"
+  | "discovering";
+const ANALYZE_WAITING_SUBPHASES: AnalyzeSubPhase[] = ["playwright-confirm", "k6-install-confirm", "browser-confirm"];
 
 // "export": ask once, up front, whether to write a Terraform export of the
 // checks just created — declining just ends the wizard, same as a failed
@@ -134,9 +148,10 @@ interface Props {
   initialTargetUrl: string;
   initialStackUrl: string;
   forceGcxInstall: boolean;
+  forceK6Install: boolean;
 }
 
-export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, forceGcxInstall }: Props) {
+export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, forceGcxInstall, forceK6Install }: Props) {
   const exit = useHardExit();
 
   const [started, setStarted] = useState(false);
@@ -149,6 +164,15 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
   const [candidates, setCandidates] = useState<Candidate[]>();
   const [analyzeSubPhase, setAnalyzeSubPhase] = useState<AnalyzeSubPhase>("analyzing");
   const [analyzeProgress, setAnalyzeProgress] = useState(0);
+  // Whether k6 was already usable (isK6McpSupported()) at the moment the
+  // install prompt was shown — mirrors useGcxStep's `reinstalling`, so
+  // --force-k6-install against an already-working k6 is framed as
+  // "Reinstall k6?" rather than the misleading first-install wording.
+  const [k6AlreadySupported, setK6AlreadySupported] = useState(false);
+  // Set when attemptInstallK6() resolves false (non-macOS, no Homebrew, or
+  // a failed brew install) so the user actually sees where to install k6
+  // manually, instead of the prompt silently doing nothing.
+  const [k6InstallFailed, setK6InstallFailed] = useState(false);
 
   // gcx/auth steps — shared with FrontendApp via src/ui/steps.
   const gcx = useGcxStep(forceGcxInstall, currentStep === "gcx");
@@ -187,6 +211,8 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
   const baseUrlResolver = useRef<((url: string) => void) | undefined>(undefined);
   const tokenResolver = useRef<((token: string) => void) | undefined>(undefined);
   const selectResolver = useRef<((keys: string[]) => void) | undefined>(undefined);
+  const playwrightPermissionResolver = useRef<((allow: boolean) => void) | undefined>(undefined);
+  const k6InstallResolver = useRef<((allow: boolean) => void) | undefined>(undefined);
   const browserPermissionResolver = useRef<((allow: boolean) => void) | undefined>(undefined);
   const exportPermissionResolver = useRef<((allow: boolean) => void) | undefined>(undefined);
 
@@ -246,6 +272,24 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
     { isActive: backAllowed }
   );
 
+  useInput(
+    (input, key) => {
+      if (currentStep === "analyze" && analyzeSubPhase === "playwright-confirm") {
+        if (key.return || input.toLowerCase() === "y") playwrightPermissionResolver.current?.(true);
+        else if (input.toLowerCase() === "n") playwrightPermissionResolver.current?.(false);
+      }
+    },
+    { isActive: currentStep === "analyze" && analyzeSubPhase === "playwright-confirm" }
+  );
+  useInput(
+    (input, key) => {
+      if (currentStep === "analyze" && analyzeSubPhase === "k6-install-confirm") {
+        if (key.return || input.toLowerCase() === "y") k6InstallResolver.current?.(true);
+        else if (input.toLowerCase() === "n") k6InstallResolver.current?.(false);
+      }
+    },
+    { isActive: currentStep === "analyze" && analyzeSubPhase === "k6-install-confirm" }
+  );
   useInput(
     (input, key) => {
       if (currentStep === "analyze" && analyzeSubPhase === "browser-confirm") {
@@ -323,6 +367,81 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
         if (cancelled) return;
         advance();
         return;
+      }
+
+      if (detectPlaywrightConfig(process.cwd())) {
+        setAnalyzeSubPhase("playwright-confirm");
+        progress.pause();
+        const allowPlaywright = await new Promise<boolean>((resolve) => {
+          playwrightPermissionResolver.current = resolve;
+        });
+        progress.resume();
+        if (cancelled) {
+          progress.stop();
+          return;
+        }
+
+        if (allowPlaywright) {
+          const k6Supported = isK6McpSupported();
+          if (forceK6Install || !k6Supported) {
+            setK6AlreadySupported(k6Supported);
+            setAnalyzeSubPhase("k6-install-confirm");
+            progress.pause();
+            const allowK6Install = await new Promise<boolean>((resolve) => {
+              k6InstallResolver.current = resolve;
+            });
+            progress.resume();
+            if (cancelled) {
+              progress.stop();
+              return;
+            }
+            if (allowK6Install) {
+              setAnalyzeSubPhase("k6-installing");
+              setK6InstallFailed(false);
+              let installed = false;
+              try {
+                installed = await attemptInstallK6();
+              } catch {
+                // Never fatal — playwrightCandidatesFor re-checks
+                // isK6McpSupported() itself and simply skips validation
+                // if this didn't work.
+              }
+              if (!installed) {
+                // Surface where to install it manually instead of silently
+                // moving on — same visual pattern as useGcxStep's
+                // GCX_INSTALL_COMMAND display. Held visible for a beat
+                // before advancing to "playwright-analyzing".
+                setK6InstallFailed(true);
+                await sleep(MIN_SPINNER_MS);
+              }
+              if (cancelled) {
+                progress.stop();
+                return;
+              }
+            }
+          }
+
+          setAnalyzeSubPhase("playwright-analyzing");
+          try {
+            const [pwCandidates] = await Promise.all([
+              playwrightCandidatesFor(process.cwd(), targetUrl, initialStackUrl),
+              sleep(MIN_SPINNER_MS),
+            ]);
+            if (cancelled) {
+              progress.stop();
+              return;
+            }
+            if (pwCandidates.length > 0) {
+              setCandidates((prev) => [...(prev ?? []), ...pwCandidates]);
+            }
+          } catch {
+            // Nice-to-have — never blocks setup on a failed Playwright analysis pass.
+          }
+        }
+        if (cancelled) {
+          progress.stop();
+          return;
+        }
       }
 
       setAnalyzeSubPhase("browser-confirm");
@@ -661,6 +780,33 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
   }
 
   function AnalyzeBody() {
+    if (analyzeSubPhase === "playwright-confirm")
+      return (
+        <Box flexDirection="column">
+          <Text>Analyze this project's Playwright test suite to suggest additional synthetic checks?</Text>
+          <Text color={muted}>Test file contents are sent to Grafana Assistant to generate and validate synthetic check scripts.</Text>
+          <EnterHint suffix="or n to skip" />
+        </Box>
+      );
+    if (analyzeSubPhase === "k6-install-confirm")
+      return (
+        <Box flexDirection="column">
+          <Text>{k6AlreadySupported ? "Reinstall k6?" : "Install k6 to validate the checks generated from your tests?"}</Text>
+          <Text color={muted}>{K6_INSTALL_COMMAND}</Text>
+          {!k6AlreadySupported && <Text color={muted}>Without it, generated checks are offered unvalidated.</Text>}
+          <EnterHint suffix="or n to skip" />
+        </Box>
+      );
+    if (analyzeSubPhase === "k6-installing")
+      return (
+        <Box flexDirection="column">
+          <Working label="Installing k6…" />
+          {k6InstallFailed && (
+            <Text color={muted}>Couldn't install k6 automatically — see {K6_INSTALL_DOCS_URL} to install it manually.</Text>
+          )}
+        </Box>
+      );
+    if (analyzeSubPhase === "playwright-analyzing") return <Working label="Analyzing your Playwright tests…" />;
     if (analyzeSubPhase === "browser-confirm")
       return (
         <Box flexDirection="column">
@@ -832,7 +978,12 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
           (currentStep === "create" && createSubPhase !== "connecting" && createSubPhase !== "auto-discovering") ||
           (currentStep === "gcx" && gcx.subPhase === "gcx-install-confirm") ||
           (currentStep === "auth" && auth.subPhase === "browser-confirm") ||
-          (currentStep === "analyze" && analyzeSubPhase === "browser-confirm") ||
+          (currentStep === "analyze" &&
+            (analyzeSubPhase === "playwright-confirm" ||
+              analyzeSubPhase === "k6-install-confirm" ||
+              analyzeSubPhase === "k6-installing" ||
+              analyzeSubPhase === "playwright-analyzing" ||
+              analyzeSubPhase === "browser-confirm")) ||
           (currentStep === "export" && exportSubPhase === "export-confirm")
             ? 1
             : 0
@@ -868,7 +1019,8 @@ export async function runSetupUI(
   initialBaseUrl: string | undefined,
   initialTargetUrl: string,
   initialStackUrl: string,
-  forceGcxInstall: boolean
+  forceGcxInstall: boolean,
+  forceK6Install: boolean
 ): Promise<void> {
   if (!process.stdin.isTTY) {
     throw new Error("synthetics requires an interactive terminal.");
@@ -884,6 +1036,7 @@ export async function runSetupUI(
       initialTargetUrl={initialTargetUrl}
       initialStackUrl={initialStackUrl}
       forceGcxInstall={forceGcxInstall}
+      forceK6Install={forceK6Install}
     />,
     { exitOnCtrlC: false }
   );

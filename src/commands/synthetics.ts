@@ -4,7 +4,7 @@ import { runSetupUI } from "../ui/SetupApp.js";
 import { applyFolder, printCliError, type Command } from "./shared.js";
 
 const USAGE_LINE =
-  "npx @grafana/setup-cli synthetics --url <target-url> --stack <stack-url> [--folder <path>] [--base-url <url>] [--force-gcx-install] [--debug]";
+  "npx @grafana/setup-cli synthetics --url <target-url> --stack <stack-url> [--folder <path>] [--base-url <url>] [--force-gcx-install] [--force-k6-install] [--debug]";
 const SHORT_USAGE_LINE = "npx @grafana/setup-cli synthetics --url <url> --stack <url>";
 const EXAMPLE = [
   "npx @grafana/setup-cli synthetics \\",
@@ -18,6 +18,7 @@ async function run(rest: string[]): Promise<void> {
   let stackUrl: string | undefined;
   let folder: string | undefined;
   let forceGcxInstall = false;
+  let forceK6Install = false;
   let debug = false;
   for (let i = 0; i < rest.length; i++) {
     if (rest[i] === "--base-url") baseUrl = rest[++i];
@@ -25,6 +26,7 @@ async function run(rest: string[]): Promise<void> {
     else if (rest[i] === "--stack") stackUrl = rest[++i];
     else if (rest[i] === "--folder") folder = rest[++i];
     else if (rest[i] === "--force-gcx-install") forceGcxInstall = true;
+    else if (rest[i] === "--force-k6-install") forceK6Install = true;
     else if (rest[i] === "--debug") debug = true;
   }
   if (!targetUrl && !stackUrl) printCliError(syntheticsCommand, "Missing required arguments: --url, --stack");
@@ -40,7 +42,7 @@ async function run(rest: string[]): Promise<void> {
   // safe here only because Ink hasn't started rendering yet.
   const debugFile = setDebugEnabled(debug);
   if (debugFile) console.log(`Debug log: ${debugFile}`);
-  await runSetupUI(baseUrl, targetUrl, stackUrl, forceGcxInstall);
+  await runSetupUI(baseUrl, targetUrl, stackUrl, forceGcxInstall, forceK6Install);
 }
 
 export const syntheticsCommand: Command = {
@@ -55,6 +57,7 @@ export const syntheticsCommand: Command = {
     { flag: "--folder <path>", description: "Project directory to set up (default: .)" },
     { flag: "--base-url <url>", description: "Synthetic Monitoring API URL (skips the prompt during setup)" },
     { flag: "--force-gcx-install", description: "Install the Grafana Cloud CLI (gcx) without asking, if it's missing" },
+    { flag: "--force-k6-install", description: "Install k6 without asking, if it's missing (used to validate Playwright-derived checks)" },
     { flag: "--debug", description: "Log raw Assistant tool calls/responses to a temp file, for troubleshooting" },
   ],
   run,

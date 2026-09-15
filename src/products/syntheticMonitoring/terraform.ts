@@ -77,11 +77,13 @@ function tcpBlock(s: NonNullable<CheckSettings["tcp"]>, indent: string): string 
   );
 }
 
-// Un-indented closing marker (`<<EOF` not `<<-EOF`) to match Grafana's own
-// export exactly — an indented heredoc marker is also valid HCL but this
-// keeps a byte-for-byte match with the reference output.
+// A distinctive heredoc delimiter — LLM-generated k6 script text is
+// embedded here, and a plain `EOF` is common enough to plausibly appear as
+// a line in generated script content, which would break the heredoc. This
+// stays un-indented (`<<DELIM` not `<<-DELIM`) to match Grafana's own
+// export's heredoc style otherwise.
 function browserBlock(s: NonNullable<CheckSettings["browser"]>, indent: string): string {
-  return [`${indent}browser {`, `${indent}  script = <<EOF`, s.script, "EOF", `${indent}}`].join("\n");
+  return [`${indent}browser {`, `${indent}  script = <<K6_SCRIPT_EOF`, s.script, "K6_SCRIPT_EOF", `${indent}}`].join("\n");
 }
 
 function settingsBlock(settings: CheckSettings, indent: string): string {

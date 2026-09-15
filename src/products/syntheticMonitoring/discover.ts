@@ -17,7 +17,7 @@ export interface Candidate {
 
 // SSL certs don't change often, so the least frequent check the SM API
 // allows (60 minutes) is enough; the other checks run twice as often.
-const THIRTY_MINUTES_MS = 30 * 60 * 1000;
+export const THIRTY_MINUTES_MS = 30 * 60 * 1000;
 const SIXTY_MINUTES_MS = 60 * 60 * 1000;
 
 function browserScript(url: string): string {
@@ -110,9 +110,9 @@ const MAX_AI_ENDPOINT_CANDIDATES = 3;
 // The prompts ask the model to keep descriptions this short too, but a
 // hard cap here is the only thing that actually guarantees it — a prompt
 // is a request, not a constraint.
-const MAX_AI_DESCRIPTION_LENGTH = 60;
+export const MAX_AI_DESCRIPTION_LENGTH = 60;
 
-function truncateDescription(description: string): string {
+export function truncateDescription(description: string): string {
   const trimmed = description.trim();
   return trimmed.length > MAX_AI_DESCRIPTION_LENGTH ? `${trimmed.slice(0, MAX_AI_DESCRIPTION_LENGTH - 1).trimEnd()}…` : trimmed;
 }
@@ -120,7 +120,7 @@ function truncateDescription(description: string): string {
 // Candidate labels double as SM job names (and must stay unique across the
 // whole list), so each AI-discovered endpoint needs its own label rather
 // than a shared one — derived from its path, e.g. "ai-region".
-function slugForPath(pathname: string): string {
+export function slugForPath(pathname: string): string {
   const cleaned = pathname
     .replace(/^\/|\/$/g, "")
     .toLowerCase()
