@@ -16,12 +16,24 @@ const DATA_ROUTER_PATTERN = /\bcreate(?:Browser|Hash|Memory)Router\s*\(/;
 // initializeFaro wrapper, not the generic @grafana/faro-web-sdk one used
 // for non-React projects. Notably no explicit instrumentations array —
 // confirmed against the real page twice, not a fetch artifact: the React
-// package apparently applies its own defaults internally. version/
+// package apparently applies its own defaults internally (it re-exports
+// @grafana/faro-web-sdk's initializeFaro verbatim, which defaults
+// `instrumentations` to getWebInstrumentations() when the key is omitted —
+// checked in that package's own makeCoreConfig source). version/
 // environment/session fields added on top match Grafana's own faro-setup
 // skill, which includes them for React too (see FaroInstrumentation).
+// Session Replay (sessionReplay) isn't covered by that page at all — its
+// own docs only show the vanilla @grafana/faro-web-sdk shape — but since
+// initializeFaro is the same function, adding it here means the
+// `instrumentations` key can no longer be omitted (the default only
+// applies when it's absent), so getWebInstrumentations() has to be spelled
+// out explicitly once ReplayInstrumentation joins it.
 function basicInitSnippet(instrumentation: FaroInstrumentation): string {
   return [
-    "import { initializeFaro } from '@grafana/faro-react';",
+    instrumentation.sessionReplay
+      ? "import { getWebInstrumentations, initializeFaro } from '@grafana/faro-react';"
+      : "import { initializeFaro } from '@grafana/faro-react';",
+    ...(instrumentation.sessionReplay ? ["import { ReplayInstrumentation } from '@grafana/faro-instrumentation-replay';"] : []),
     "",
     "initializeFaro({",
     `  url: '${instrumentation.collectorUrl}',`,
@@ -31,6 +43,15 @@ function basicInitSnippet(instrumentation: FaroInstrumentation): string {
     `    environment: ${instrumentation.environmentExpr},`,
     "  },",
     ...(instrumentation.sessionPersistent ? ["  sessionTracking: {", "    persistent: true,", "  },"] : []),
+    ...(instrumentation.sessionReplay
+      ? [
+          "  instrumentations: [",
+          "    ...getWebInstrumentations(),",
+          "    // Beta: requires Session Replay enabled on this stack, or it's a no-op.",
+          "    new ReplayInstrumentation(),",
+          "  ],",
+        ]
+      : []),
     "});",
     "",
   ].join("\n");

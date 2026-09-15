@@ -15,6 +15,7 @@ import {
   readPkgVersion,
   JAVASCRIPT_FARO_PACKAGES,
   REACT_FARO_PACKAGES,
+  REPLAY_FARO_PACKAGE,
 } from "../products/frontendO11y/instrument.js";
 import type { FaroInstrumentation, FrontendTarget } from "../products/frontendO11y/instrument.js";
 import { instrumentNextjs } from "../products/frontendO11y/nextjs.js";
@@ -74,9 +75,10 @@ interface Props {
   initialStackUrl: string;
   forceGcxInstall: boolean;
   initialAppName?: string;
+  sessionReplay: boolean;
 }
 
-export function FrontendApp({ initialStackUrl, forceGcxInstall, initialAppName }: Props) {
+export function FrontendApp({ initialStackUrl, forceGcxInstall, initialAppName, sessionReplay }: Props) {
   const exit = useHardExit();
 
   const [started, setStarted] = useState(false);
@@ -265,12 +267,14 @@ export function FrontendApp({ initialStackUrl, forceGcxInstall, initialAppName }
         version: readPkgVersion(process.cwd()),
         environmentExpr: detectEnvironmentExpr(target),
         sessionPersistent: false,
+        sessionReplay,
       };
+      const replayPackages = sessionReplay ? [REPLAY_FARO_PACKAGE] : [];
 
       try {
         if (target.kind === "javascript") {
           insertFaroSnippet(process.cwd(), target, instrumentation);
-          await installFaroPackages(process.cwd(), JAVASCRIPT_FARO_PACKAGES);
+          await installFaroPackages(process.cwd(), [...JAVASCRIPT_FARO_PACKAGES, ...replayPackages]);
           if (cancelled) {
             progress.stop();
             return;
@@ -289,7 +293,7 @@ export function FrontendApp({ initialStackUrl, forceGcxInstall, initialAppName }
 
           let installError: string | undefined;
           try {
-            await installFaroPackages(process.cwd(), REACT_FARO_PACKAGES);
+            await installFaroPackages(process.cwd(), [...REACT_FARO_PACKAGES, ...replayPackages]);
           } catch (err) {
             installError = err instanceof Error ? err.message : String(err);
           }
@@ -309,7 +313,7 @@ export function FrontendApp({ initialStackUrl, forceGcxInstall, initialAppName }
 
           let installError: string | undefined;
           try {
-            await installFaroPackages(process.cwd(), JAVASCRIPT_FARO_PACKAGES);
+            await installFaroPackages(process.cwd(), [...JAVASCRIPT_FARO_PACKAGES, ...replayPackages]);
           } catch (err) {
             installError = err instanceof Error ? err.message : String(err);
           }
@@ -507,6 +511,9 @@ export function FrontendApp({ initialStackUrl, forceGcxInstall, initialAppName }
               Once changes are live, data will show up here: <Text color="blue">{appUrl}</Text>
             </Text>
           )}
+          {frontendFile && sessionReplay && (
+            <Text color={muted}>Session Replay is beta and needs to be separately enabled on this stack, or it'll record nothing.</Text>
+          )}
         </Box>
       </Box>
     );
@@ -548,7 +555,12 @@ export function FrontendApp({ initialStackUrl, forceGcxInstall, initialAppName }
   );
 }
 
-export async function runFrontendUI(initialStackUrl: string, forceGcxInstall: boolean, initialAppName?: string): Promise<void> {
+export async function runFrontendUI(
+  initialStackUrl: string,
+  forceGcxInstall: boolean,
+  initialAppName?: string,
+  sessionReplay = false
+): Promise<void> {
   if (!process.stdin.isTTY) {
     throw new Error("synthetics requires an interactive terminal.");
   }
@@ -557,7 +569,12 @@ export async function runFrontendUI(initialStackUrl: string, forceGcxInstall: bo
   // against useHardExit's useInput callback and kills the process before
   // our "Cancelled." message ever prints.
   const app = render(
-    <FrontendApp initialStackUrl={initialStackUrl} forceGcxInstall={forceGcxInstall} initialAppName={initialAppName} />,
+    <FrontendApp
+      initialStackUrl={initialStackUrl}
+      forceGcxInstall={forceGcxInstall}
+      initialAppName={initialAppName}
+      sessionReplay={sessionReplay}
+    />,
     { exitOnCtrlC: false }
   );
   await app.waitUntilExit();
