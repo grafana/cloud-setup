@@ -94,7 +94,12 @@ async function withPage<T>(options: BrowserToolOptions, url: string, run: () => 
     await agentBrowser(["open", url, "--headed"], 30000);
     return await run();
   } finally {
-    agentBrowser(["close"], 10000).catch(() => {});
+    // Awaited, not fire-and-forget: withPage must not return (or the next
+    // call's "open" must not race) until the visible browser window has
+    // actually closed — otherwise it lingers on screen after the CLI
+    // moves on, and a second withPage call can hang waiting on the same
+    // profile lock this one hasn't released yet.
+    await agentBrowser(["close"], 10000).catch(() => {});
   }
 }
 
