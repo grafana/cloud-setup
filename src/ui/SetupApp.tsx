@@ -137,7 +137,7 @@ interface Props {
 }
 
 export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, forceGcxInstall }: Props) {
-  const exit = useHardExit();
+  const exit = useHardExit("synthetics", initialStackUrl);
 
   const [started, setStarted] = useState(false);
   const [currentStep, setCurrentStep] = useState<StepId>("gcx");

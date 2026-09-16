@@ -2,10 +2,11 @@ import { readFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import React, { useEffect } from "react";
+import React, { useEffect, useRef } from "react";
 import { Box, Text, useApp, useInput } from "ink";
 import Spinner from "ink-spinner";
 import { detectFramework } from "../framework.js";
+import { recordRun, waitForTelemetry, type Command } from "../telemetry.js";
 
 export const MIN_NODE_MAJOR = 22;
 export const MIN_NODE_MINOR = 6;
@@ -79,8 +80,9 @@ export function checkNodeVersion(): void {
 // already rendered by the failing screen itself, so it isn't repeated
 // here. Undefined is a clean, silent exit (the "done" screen already
 // showed its own success message).
-export function useHardExit(): (errorOrMessage?: Error | string) => void {
+export function useHardExit(command: Command, stackUrl: string): (errorOrMessage?: Error | string) => void {
   const { exit } = useApp();
+  const startedAt = useRef(Date.now());
 
   function hardExit(errorOrMessage?: Error | string): void {
     const error = errorOrMessage instanceof Error ? errorOrMessage : undefined;
@@ -89,11 +91,23 @@ export function useHardExit(): (errorOrMessage?: Error | string) => void {
     // by Ink's own rendering.
     exit(error);
     if (typeof errorOrMessage === "string") console.log(errorOrMessage);
+
+    // "Cancelled." is the one message every quit path in this codebase
+    // uses (Ctrl+C, 'q', declining a confirm) — anything else stringy
+    // would be new and unexpected, so it's still treated as a cancel
+    // rather than silently falling through to "ok".
+    const outcome: "ok" | "error" | "canceled" = error ? "error" : errorOrMessage === undefined ? "ok" : "canceled";
+    recordRun(command, stackUrl, outcome, Date.now() - startedAt.current);
+
     // setImmediate, not a same-tick process.exit() — Ink's own unmount
     // cleanup and the console.log above both write to the terminal, and
     // need a turn of the event loop to actually flush before the process
-    // dies, or they can get silently dropped.
-    setImmediate(() => process.exit(error ? 1 : 0));
+    // dies, or they can get silently dropped. Also gives recordRun's
+    // fire-and-forget request a chance to actually start before exit, and
+    // waitForTelemetry below a bounded window to let it finish.
+    waitForTelemetry().finally(() => {
+      setImmediate(() => process.exit(error ? 1 : 0));
+    });
   }
 
   // Byte-level detection for platforms/terminals where raw mode actually

@@ -79,7 +79,7 @@ interface Props {
 }
 
 export function FrontendApp({ initialStackUrl, forceGcxInstall, initialAppName, sessionReplay }: Props) {
-  const exit = useHardExit();
+  const exit = useHardExit("frontend", initialStackUrl);
 
   const [started, setStarted] = useState(false);
   const [currentStep, setCurrentStep] = useState<StepId>("gcx");
