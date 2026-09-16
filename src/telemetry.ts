@@ -87,8 +87,8 @@ function send(event: string, stackUrl: string, properties: Record<string, string
 // Fired once per wizard step completed (advance() in FrontendApp.tsx/SetupApp.tsx) — `step` is a
 // closed-vocabulary property (each command's own StepId), not baked into the event name, so funnel
 // drop-off is one group-by rather than a UNION across per-step event tables.
-export function recordStep(command: Command, stackUrl: string, step: string): void {
-  send(`setup_cli_${command}_completed_step`, stackUrl, { step });
+export function recordStep(command: Command, stackUrl: string, step: string, properties: Record<string, string | number | boolean> = {}): void {
+  send(`setup_cli_${command}_completed_step`, stackUrl, { step, ...properties });
 }
 
 export function recordRun(command: Command, stackUrl: string, outcome: Outcome, durationMs: number, properties: Record<string, string | number | boolean> = {}): void {

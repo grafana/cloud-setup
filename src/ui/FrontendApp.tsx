@@ -129,8 +129,8 @@ export function FrontendApp({ initialStackUrl, forceGcxInstall, initialAppName, 
     (currentStep === "auth" && auth.isWaiting) ||
     (currentStep === "pick-app" && PICK_APP_WAITING_SUBPHASES.includes(pickAppSubPhase));
 
-  function advance() {
-    recordStep("frontend", initialStackUrl, currentStep);
+  function advance(properties?: Record<string, string | number | boolean>) {
+    recordStep("frontend", initialStackUrl, currentStep, properties);
     setCompleted((prev) => new Set(prev).add(currentStep));
     const idx = STEP_ORDER.indexOf(currentStep);
     const next = STEP_ORDER[idx + 1];
@@ -176,15 +176,15 @@ export function FrontendApp({ initialStackUrl, forceGcxInstall, initialAppName, 
     let cancelled = false;
 
     async function runGcx() {
-      await gcx.run(() => cancelled);
+      const result = await gcx.run(() => cancelled);
       if (cancelled) return;
-      advance();
+      advance({ already_installed: result.alreadyInstalled, install_declined: result.installDeclined });
     }
 
     async function runAuth() {
-      await auth.run(initialStackUrl, () => cancelled);
+      const signedIn = await auth.run(initialStackUrl, () => cancelled);
       if (cancelled) return;
-      advance();
+      advance({ signed_in: signedIn });
     }
 
     async function runPickApp() {
@@ -199,6 +199,7 @@ export function FrontendApp({ initialStackUrl, forceGcxInstall, initialAppName, 
       }
       targetRef.current = target;
 
+      let resolution: "named" | "auto_single" | "picker" | "manual" = "manual";
       try {
         setPickAppSubPhase("checking");
         const [faro] = await Promise.all([tryFaroClient(initialStackUrl), sleep(MIN_SPINNER_MS)]);
@@ -210,10 +211,12 @@ export function FrontendApp({ initialStackUrl, forceGcxInstall, initialAppName, 
           // fall through to manual creation below with that same name
           // rather than silently picking a different app.
           chosen = await faro?.findExisting(initialAppName);
+          if (chosen) resolution = "named";
         } else {
           const apps = (await faro?.list()) ?? [];
           if (apps.length === 1) {
             chosen = apps[0];
+            resolution = "auto_single";
           } else if (apps.length > 1) {
             setFaroApps(apps);
             setAppPickerCursor(0);
@@ -222,6 +225,7 @@ export function FrontendApp({ initialStackUrl, forceGcxInstall, initialAppName, 
               appPickerResolver.current = resolve;
             });
             if (cancelled) return;
+            if (chosen) resolution = "picker";
           }
         }
 
@@ -246,7 +250,7 @@ export function FrontendApp({ initialStackUrl, forceGcxInstall, initialAppName, 
         setFrontendError(err instanceof Error ? err.message : String(err));
       }
       if (cancelled) return;
-      advance();
+      advance({ app_resolution: resolution });
     }
 
     async function runInstrument() {
@@ -272,6 +276,9 @@ export function FrontendApp({ initialStackUrl, forceGcxInstall, initialAppName, 
         sessionReplay,
       };
       const replayPackages = sessionReplay ? [REPLAY_FARO_PACKAGE] : [];
+      let packageInstall: "ok" | "failed" = "ok";
+      let routerWired: boolean | undefined;
+      let layoutWired: boolean | undefined;
 
       try {
         if (target.kind === "javascript") {
@@ -298,12 +305,14 @@ export function FrontendApp({ initialStackUrl, forceGcxInstall, initialAppName, 
             await installFaroPackages(process.cwd(), [...REACT_FARO_PACKAGES, ...replayPackages]);
           } catch (err) {
             installError = err instanceof Error ? err.message : String(err);
+            packageInstall = "failed";
           }
           if (cancelled) {
             progress.stop();
             return;
           }
 
+          routerWired = Boolean(result.routerFile);
           const base = result.routerFile ? `${result.entryFile}, router wrapped in ${result.routerFile}` : result.entryFile;
           setFrontendFile(installError ? `${base} (package install failed: ${installError})` : base);
         } else {
@@ -318,12 +327,14 @@ export function FrontendApp({ initialStackUrl, forceGcxInstall, initialAppName, 
             await installFaroPackages(process.cwd(), [...JAVASCRIPT_FARO_PACKAGES, ...replayPackages]);
           } catch (err) {
             installError = err instanceof Error ? err.message : String(err);
+            packageInstall = "failed";
           }
           if (cancelled) {
             progress.stop();
             return;
           }
 
+          layoutWired = Boolean(result.layoutFile);
           if (result.layoutFile) {
             setFrontendFile(
               installError
@@ -341,12 +352,18 @@ export function FrontendApp({ initialStackUrl, forceGcxInstall, initialAppName, 
           progress.stop();
           return;
         }
+        packageInstall = "failed";
         setFrontendError(err instanceof Error ? err.message : String(err));
       }
       if (cancelled) return;
       await progress.finish();
       if (cancelled) return;
-      advance();
+      advance({
+        target_kind: target.kind,
+        package_install: packageInstall,
+        ...(routerWired !== undefined ? { router_wired: routerWired } : {}),
+        ...(layoutWired !== undefined ? { layout_wired: layoutWired } : {}),
+      });
       setDone(true);
     }
 

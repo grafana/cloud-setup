@@ -216,8 +216,8 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
     setCurrentStep(target);
   }
 
-  function advance() {
-    recordStep("synthetics", initialStackUrl, currentStep);
+  function advance(properties?: Record<string, string | number | boolean>) {
+    recordStep("synthetics", initialStackUrl, currentStep, properties);
     setCompleted((prev) => new Set(prev).add(currentStep));
     const idx = STEP_ORDER.indexOf(currentStep);
     const next = STEP_ORDER[idx + 1];
@@ -278,9 +278,9 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
     let cancelled = false;
 
     async function runGcx() {
-      await gcx.run(() => cancelled);
+      const result = await gcx.run(() => cancelled);
       if (cancelled) return;
-      advance();
+      advance({ already_installed: result.alreadyInstalled, install_declined: result.installDeclined });
     }
 
     async function runSkills() {
@@ -323,7 +323,7 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
       if (auth.error) {
         await progress.finish();
         if (cancelled) return;
-        advance();
+        advance({ default_candidates: list.length, ai_candidates: 0, browser_permission: "skipped" });
         return;
       }
 
@@ -341,6 +341,7 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
         return;
       }
 
+      let aiCandidatesCount = 0;
       if (allow) {
         setAnalyzeSubPhase("discovering");
         try {
@@ -355,6 +356,7 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
             progress.stop();
             return;
           }
+          aiCandidatesCount = aiCandidates.length;
           if (aiCandidates.length > 0) {
             setCandidates((prev) => [...(prev ?? []), ...aiCandidates]);
           }
@@ -368,13 +370,13 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
       }
       await progress.finish();
       if (cancelled) return;
-      advance();
+      advance({ default_candidates: list.length, ai_candidates: aiCandidatesCount, browser_permission: allow ? "allowed" : "declined" });
     }
 
     async function runAuth() {
-      await auth.run(initialStackUrl, () => cancelled);
+      const signedIn = await auth.run(initialStackUrl, () => cancelled);
       if (cancelled) return;
-      advance();
+      advance({ signed_in: signedIn });
     }
 
     async function runSelect() {
@@ -383,7 +385,8 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
       });
       if (cancelled) return;
       setSelectedKeys(chosen);
-      advance();
+      const selectedAi = chosen.filter((k) => k.startsWith("ai-")).length;
+      advance({ selected_default: chosen.length - selectedAi, selected_ai: selectedAi });
     }
 
     async function runCreate() {
@@ -515,7 +518,11 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
             `Could not create ${failed.candidate.title}: ${failed.detail}`
         );
       }
-      advance();
+      advance({
+        created: workingItems.filter((it) => it.status === "created").length,
+        updated: workingItems.filter((it) => it.status === "updated").length,
+        skipped: workingItems.filter((it) => it.status === "skipped").length,
+      });
     }
 
     async function runExport() {
@@ -527,6 +534,7 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
       });
       if (cancelled) return;
 
+      let exported = false;
       if (allow) {
         setExportSubPhase("exporting");
         // job name -> the SM check ID the API assigned, for the README's
@@ -539,13 +547,14 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
           ]);
           if (cancelled) return;
           setExportPath(path.relative(process.cwd(), writtenPath));
+          exported = true;
         } catch (err) {
           if (cancelled) return;
           setExportError(err instanceof Error ? err.message : String(err));
         }
       }
       if (cancelled) return;
-      advance();
+      advance({ exported });
       setDone(true);
     }
 

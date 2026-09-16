@@ -7,12 +7,14 @@ import { EnterHint, MIN_SPINNER_MS } from "../shared.js";
 export type AuthSubPhase = "browser-confirm" | "authenticating";
 export const AUTH_WAITING_SUBPHASES: AuthSubPhase[] = ["browser-confirm"];
 
+export type AuthOutcome = "yes" | "declined" | "failed";
+
 export interface AuthStep {
   subPhase: AuthSubPhase;
   error: string | undefined;
   isWaiting: boolean;
   body: React.ReactNode;
-  run(stackUrl: string, isCancelled: () => boolean): Promise<void>;
+  run(stackUrl: string, isCancelled: () => boolean): Promise<AuthOutcome>;
 }
 
 // Shared "auth" step: ask once, up front, whether it's OK to open a browser
@@ -33,24 +35,26 @@ export function useAuthStep(confirmText: string, isActive: boolean): AuthStep {
     { isActive: isActive && subPhase === "browser-confirm" }
   );
 
-  async function run(stackUrl: string, isCancelled: () => boolean): Promise<void> {
+  async function run(stackUrl: string, isCancelled: () => boolean): Promise<AuthOutcome> {
     setSubPhase("browser-confirm");
     setError(undefined);
     const allow = await new Promise<boolean>((resolve) => {
       permissionResolver.current = resolve;
     });
-    if (isCancelled()) return;
+    if (isCancelled()) return "declined";
 
     if (!allow) {
       setError("declined");
-      return;
+      return "declined";
     }
 
     setSubPhase("authenticating");
     try {
       await Promise.all([ensureAssistantAuth(stackUrl), sleep(MIN_SPINNER_MS)]);
+      return "yes";
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
+      return "failed";
     }
   }
 
