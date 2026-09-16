@@ -13,6 +13,7 @@ import { tryAutoSmSession } from "../products/syntheticMonitoring/smAuth.js";
 import { writeTerraformExport } from "../products/syntheticMonitoring/terraform.js";
 import { CheckboxList } from "./CheckboxList.js";
 import { accent, bad, EnterHint, Header, idColor, MIN_SPINNER_MS, muted, ok, startFakeProgress, useHardExit, Working } from "./shared.js";
+import { recordStep } from "../telemetry.js";
 import { useGcxStep } from "./steps/useGcxStep.js";
 import { useAuthStep } from "./steps/useAuthStep.js";
 import type { SyntheticConfig } from "../products/syntheticMonitoring/types.js";
@@ -216,6 +217,7 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
   }
 
   function advance() {
+    recordStep("synthetics", initialStackUrl, currentStep);
     setCompleted((prev) => new Set(prev).add(currentStep));
     const idx = STEP_ORDER.indexOf(currentStep);
     const next = STEP_ORDER[idx + 1];

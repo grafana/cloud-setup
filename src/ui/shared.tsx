@@ -92,19 +92,13 @@ export function useHardExit(command: Command, stackUrl: string): (errorOrMessage
     exit(error);
     if (typeof errorOrMessage === "string") console.log(errorOrMessage);
 
-    // "Cancelled." is the one message every quit path in this codebase
-    // uses (Ctrl+C, 'q', declining a confirm) — anything else stringy
-    // would be new and unexpected, so it's still treated as a cancel
-    // rather than silently falling through to "ok".
     const outcome: "ok" | "error" | "canceled" = error ? "error" : errorOrMessage === undefined ? "ok" : "canceled";
     recordRun(command, stackUrl, outcome, Date.now() - startedAt.current);
 
     // setImmediate, not a same-tick process.exit() — Ink's own unmount
     // cleanup and the console.log above both write to the terminal, and
     // need a turn of the event loop to actually flush before the process
-    // dies, or they can get silently dropped. Also gives recordRun's
-    // fire-and-forget request a chance to actually start before exit, and
-    // waitForTelemetry below a bounded window to let it finish.
+    // dies, or they can get silently dropped.
     waitForTelemetry().finally(() => {
       setImmediate(() => process.exit(error ? 1 : 0));
     });

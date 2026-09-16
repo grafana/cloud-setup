@@ -21,6 +21,7 @@ import type { FaroInstrumentation, FrontendTarget } from "../products/frontendO1
 import { instrumentNextjs } from "../products/frontendO11y/nextjs.js";
 import { instrumentReact } from "../products/frontendO11y/react.js";
 import { accent, bad, EnterHint, Header, MIN_SPINNER_MS, muted, ok, startFakeProgress, useHardExit } from "./shared.js";
+import { recordStep } from "../telemetry.js";
 import { useGcxStep } from "./steps/useGcxStep.js";
 import { useAuthStep } from "./steps/useAuthStep.js";
 
@@ -129,6 +130,7 @@ export function FrontendApp({ initialStackUrl, forceGcxInstall, initialAppName, 
     (currentStep === "pick-app" && PICK_APP_WAITING_SUBPHASES.includes(pickAppSubPhase));
 
   function advance() {
+    recordStep("frontend", initialStackUrl, currentStep);
     setCompleted((prev) => new Set(prev).add(currentStep));
     const idx = STEP_ORDER.indexOf(currentStep);
     const next = STEP_ORDER[idx + 1];
