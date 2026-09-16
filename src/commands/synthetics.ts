@@ -4,10 +4,10 @@ import { runSetupUI } from "../ui/SetupApp.js";
 import { applyFolder, printCliError, type Command } from "./shared.js";
 
 const USAGE_LINE =
-  "npx @grafana/setup-cli synthetics --url <target-url> --stack <stack-url> [--folder <path>] [--base-url <url>] [--force-gcx-install] [--debug]";
-const SHORT_USAGE_LINE = "npx @grafana/setup-cli synthetics --url <url> --stack <url>";
+  "npx @grafana/cloud-setup synthetics --url <target-url> --stack <stack-url> [--folder <path>] [--base-url <url>] [--force-gcx-install] [--debug]";
+const SHORT_USAGE_LINE = "npx @grafana/cloud-setup synthetics --url <url> --stack <url>";
 const EXAMPLE = [
-  "npx @grafana/setup-cli synthetics \\",
+  "npx @grafana/cloud-setup synthetics \\",
   "  --url https://example.com \\",
   "  --stack https://my-team.grafana.net",
 ];

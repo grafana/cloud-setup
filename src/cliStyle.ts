@@ -28,5 +28,5 @@ export const PACKAGE_VERSION = readPackageVersion();
 // CLI output and the Ink UI read as the same tool. Everything else here
 // stays plain on purpose; this is the one deliberate brand touch.
 export function titleLine(): string {
-  return `🦕 @grafana/setup-cli ${PACKAGE_VERSION}`;
+  return `🦕 @grafana/cloud-setup ${PACKAGE_VERSION}`;
 }

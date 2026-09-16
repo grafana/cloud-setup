@@ -9,21 +9,21 @@ function printGlobalHelp(): void {
   console.log(
     [
       titleLine(),
-      "Grafana Cloud's interactive setup wizard, powered by Assistant.",
+      "Grafana Cloud's interactive setup wizard, powered by Grafana Assistant.",
       "",
       "USAGE",
-      "  npx @grafana/setup-cli <command>",
+      "  npx @grafana/cloud-setup <command>",
       "",
       "COMMANDS",
       ...COMMANDS.map((c) => `  ${c.name.padEnd(nameWidth)}    ${c.summary}`),
       "",
-      "Run npx @grafana/setup-cli <command> --help for usage and options.",
+      "Run npx @grafana/cloud-setup <command> --help for usage and options.",
     ].join("\n")
   );
 }
 
 function printUnknownCommand(name: string): void {
-  console.error([titleLine(), "", bad(`✗ Unknown command: ${name}`), "", "Run npx @grafana/setup-cli --help to see available commands."].join("\n"));
+  console.error([titleLine(), "", bad(`✗ Unknown command: ${name}`), "", "Run npx @grafana/cloud-setup --help to see available commands."].join("\n"));
 }
 
 async function main() {

@@ -246,7 +246,7 @@ export function Header({ stackUrl }: { stackUrl: string }) {
   return (
     <Box flexDirection="column" marginBottom={1}>
       <Text>
-        <Text bold>🦕 @grafana/setup-cli</Text>
+        <Text bold>🦕 @grafana/cloud-setup</Text>
         <Text color={muted}> {PACKAGE_VERSION}</Text>
       </Text>
       <Box marginTop={1} flexDirection="column">

@@ -69,7 +69,7 @@ function buildAssistantAuthUrl(stackUrl: string, codeChallenge: string, state: s
   // (used below for Synthetic Monitoring), not just the assistant:* scopes
   // this tool used to request.
   url.searchParams.set("scopes", "grafana-api:read,grafana-api:write,grafana-api:delete,assistant:a2a,assistant:chat");
-  url.searchParams.set("device_name", "setup-cli");
+  url.searchParams.set("device_name", "cloud-setup");
   return url.toString();
 }
 

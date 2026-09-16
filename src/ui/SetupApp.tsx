@@ -857,7 +857,7 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
       {!failureSummary && Footer()}
       {failureSummary && (
         <Box marginTop={1}>
-          <Text color={muted}>Resolve the issue, then run `npx @grafana/setup-cli` again.</Text>
+          <Text color={muted}>Resolve the issue, then run `npx @grafana/cloud-setup` again.</Text>
         </Box>
       )}
     </Box>

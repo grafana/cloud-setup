@@ -22,7 +22,7 @@ function terminalPage(status: string, statusOk: boolean, message: string): strin
     "</style></head>",
     "<body>",
     '<div class="terminal">',
-    '<div class="titlebar"><div class="dot red"></div><div class="dot yellow"></div><div class="dot green"></div><div class="titlebar-label">setup-cli</div></div>',
+    '<div class="titlebar"><div class="dot red"></div><div class="dot yellow"></div><div class="dot green"></div><div class="titlebar-label">cloud-setup</div></div>',
     '<div class="body">',
     `<div><span class="status">${statusIcon} ${status}</span></div>`,
     `<div class="message">${message}</div>`,

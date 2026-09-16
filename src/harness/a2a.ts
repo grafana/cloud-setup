@@ -38,7 +38,7 @@ function buildHeaders(accessToken: string): Record<string, string> {
     Accept: "text/event-stream",
     Authorization: `Bearer ${accessToken}`,
     "X-A2A-Extensions": [REMOTE_TOOL_EXTENSION, CLIENT_TOOLS_EXTENSION].join(", "),
-    "X-App-Source": "grafana-setup-cli",
+    "X-App-Source": "grafana-cloud-setup",
   };
 }
 
