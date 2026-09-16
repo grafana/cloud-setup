@@ -548,7 +548,7 @@ export function FrontendApp({ initialStackUrl, forceGcxInstall, initialAppName, 
       </Box>
       {failureSummary && (
         <Box marginTop={1}>
-          <Text color={muted}>Resolve the issue, then run `npx @grafana/setup-cli frontend` again.</Text>
+          <Text color={muted}>Resolve the issue, then run `npx @grafana/cloud-setup frontend` again.</Text>
         </Box>
       )}
     </Box>

@@ -34,7 +34,7 @@ export function printCliError(command: Command, message: string): never {
       "EXAMPLE",
       ...command.example.map((line) => `  ${line}`),
       "",
-      `Run npx @grafana/setup-cli ${command.name} --help for all options.`,
+      `Run npx @grafana/cloud-setup ${command.name} --help for all options.`,
     ].join("\n")
   );
   process.exit(1);

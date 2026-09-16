@@ -3,9 +3,9 @@ import { runFrontendUI } from "../ui/FrontendApp.js";
 import { applyFolder, printCliError, type Command } from "./shared.js";
 
 const USAGE_LINE =
-  "npx @grafana/setup-cli frontend --stack <stack-url> [--app <name>] [--folder <path>] [--force-gcx-install] [--session-replay] [--debug]";
-const SHORT_USAGE_LINE = "npx @grafana/setup-cli frontend --stack <url>";
-const EXAMPLE = ["npx @grafana/setup-cli frontend \\", "  --stack https://my-team.grafana.net"];
+  "npx @grafana/cloud-setup frontend --stack <stack-url> [--app <name>] [--folder <path>] [--force-gcx-install] [--session-replay] [--debug]";
+const SHORT_USAGE_LINE = "npx @grafana/cloud-setup frontend --stack <url>";
+const EXAMPLE = ["npx @grafana/cloud-setup frontend \\", "  --stack https://my-team.grafana.net"];
 
 async function run(rest: string[]): Promise<void> {
   let stackUrl: string | undefined;
