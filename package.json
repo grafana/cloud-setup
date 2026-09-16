@@ -6,7 +6,7 @@
   "license": "Apache-2.0",
   "type": "module",
   "bin": {
-    "synthetics": "./dist/cli.js"
+    "setup-cli": "./dist/cli.js"
   },
   "files": [
     "dist"
