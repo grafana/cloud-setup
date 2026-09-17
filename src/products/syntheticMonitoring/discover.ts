@@ -117,6 +117,16 @@ function truncateDescription(description: string): string {
   return trimmed.length > MAX_AI_DESCRIPTION_LENGTH ? `${trimmed.slice(0, MAX_AI_DESCRIPTION_LENGTH - 1).trimEnd()}…` : trimmed;
 }
 
+// A discovered path is otherwise unbounded (deeply nested routes, long
+// query-like segments, ...) — capped so one outlier can't blow out the
+// review/checklist column width the way a long description already can't
+// (see MAX_AI_DESCRIPTION_LENGTH).
+const MAX_AI_TITLE_LENGTH = 40;
+
+function truncateTitle(title: string): string {
+  return title.length > MAX_AI_TITLE_LENGTH ? `${title.slice(0, MAX_AI_TITLE_LENGTH - 1)}…` : title;
+}
+
 // Candidate labels double as SM job names (and must stay unique across the
 // whole list), so each AI-discovered endpoint needs its own label rather
 // than a shared one — derived from its path, e.g. "ai-region".
@@ -156,7 +166,7 @@ export async function aiEndpointCandidatesFor(
     return {
       key: `ai-${slug}`,
       label: `ai-${slug}`,
-      title: pathname,
+      title: truncateTitle(pathname),
       description: truncateDescription(endpoint.description),
       selectedByDefault: false,
       target,

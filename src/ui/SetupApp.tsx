@@ -26,6 +26,12 @@ const ANALYZE_MIN_MS = 5000;
 // default "fast" mode (local candidate generation only) is quick enough
 // not to need it.
 const ANALYZE_PROGRESS_TARGET_MS = 60_000;
+// How long the fake-percentage meter (paced against
+// ANALYZE_PROGRESS_TARGET_MS, so this lands around 10%) climbs on its own
+// right when "Find additional synthetic checks" is picked, before the
+// browser-confirm question ever shows — reads as a quick pre-check rather
+// than the question popping up the instant the menu item is picked.
+const PRE_DISCOVERY_CHECK_MS = ANALYZE_PROGRESS_TARGET_MS / 10;
 // This step lands right after "sign in"'s own real-world wait (the OAuth
 // browser flow) — a bare MIN_SPINNER_MS here reads as an abrupt jump cut
 // right after that, rather than a natural next step.
@@ -75,6 +81,20 @@ interface CreationItem {
   id?: number;
 }
 
+// One entry per completed next-step pick, rendered as its own row below
+// the fixed steps in StepsList. `items`, when set, nests the checks that
+// pick actually created underneath it (same ItemIcon/ItemsList look as
+// "Create synthetic checks") instead of a plain text `detail` line — see
+// runCreate for where a "browser-discovery" pass fills this in once it
+// knows what was actually created, overriding the provisional "N found"
+// entry runAnalyze logs first.
+interface NextStepLogEntry {
+  key: string;
+  label: string;
+  detail?: string;
+  items?: CreationItem[];
+}
+
 // The six macro-steps shown in the persistent step list. "create" covers
 // reviewing candidates and creating them (see CreateSubPhase's "reviewing"
 // phase) — its one checkmark row only lands once both are done, and `b`
@@ -101,7 +121,7 @@ const STEP_LABELS: Record<StepId, string> = {
   auth: "Authenticate with OAuth",
   skills: "Configure skills",
   analyze: "Analyze target",
-  create: "Create Synthetic Checks",
+  create: "Create synthetic checks",
   "next-steps": "Next steps",
 };
 
@@ -110,28 +130,38 @@ const STEP_LABELS: Record<StepId, string> = {
 // top-level "auth" step long before this ever runs). "browser-discovery":
 // only ever entered on-demand, by picking it from the "next-steps" menu —
 // checks auth.error up front (no re-prompting — "auth" only ever runs
-// once), runs live endpoint discovery, appends any new candidates, and
-// routes back through "create" to the menu — see runAnalyze below.
+// once), asks its own separate y/n before actually opening a browser (see
+// "browser-confirm" below), then runs live endpoint discovery, appends any
+// new candidates, and routes back through "create" to the menu — see
+// runAnalyze below.
 type AnalyzeMode = "fast" | "browser-discovery";
 
-// "analyzing" covers the "fast" mode; "discovering" is "browser-discovery"
-// — picking it from the menu is its own confirmation, so there's no
-// secondary y/n here.
-type AnalyzeSubPhase = "analyzing" | "discovering";
+// "analyzing" covers the "fast" mode (no confirm — see AnalyzeMode).
+// "browser-discovery" is the only mode that ever reaches "browser-confirm"
+// or "discovering": picking it from the "next-steps" menu isn't itself the
+// confirmation — a real browser is enough of a surprise to warrant its own
+// explicit y/n, same as the top-level "auth" step's.
+type AnalyzeSubPhase = "analyzing" | "browser-confirm" | "discovering";
 
 // "next-steps": a repeatable menu shown after "create" finishes (and after
 // every subsequent "browser-discovery" pass routes back through "create").
-// Picking "Discover live endpoints via browser" jumps back to "analyze";
-// picking "Export as Terraform" runs inline (see runExportNow) without
-// leaving the menu — picking a menu option IS its own confirmation, so
-// none of these ask a further y/n. Not shown as its own row in StepsList —
-// completed picks append their own row instead (see nextStepsLog).
+// Picking "Find additional synthetic checks" jumps back to "analyze" to ask
+// its own y/n before it does anything (see AnalyzeSubPhase); picking
+// "Export checks as Terraform" runs inline (see runExportNow) without
+// leaving the menu, and IS its own confirmation (no further y/n) since it
+// never opens a browser. Not shown as its own row in StepsList — completed
+// picks (including a declined "Find additional synthetic checks") append
+// their own row instead (see nextStepsLog).
 type NextStepsSubPhase = "menu" | "exporting";
 
+// No "Finish"/"exit" entry — there's nothing left to pick once every one
+// of these is used, and the menu quietly finishes itself then (see
+// availableNextStepOptions and the auto-finish effect below). Leaving
+// early before that happens is 'q' (see the global quit keybind), the
+// same key that works everywhere else in this wizard.
 const NEXT_STEP_OPTIONS: SelectMenuItem[] = [
-  { key: "browser-discovery", label: "Discover live endpoints via browser" },
-  { key: "export", label: "Export as Terraform" },
-  { key: "exit", label: "Nothing else — I'm done" },
+  { key: "browser-discovery", label: "Find additional synthetic checks" },
+  { key: "export", label: "Export checks as Terraform" },
 ];
 
 // Reused as-is for both the dynamic "in progress" row in StepsList (while
@@ -146,12 +176,11 @@ function nextStepOptionLabel(key: string): string {
 }
 
 // A pick disappears from the menu once it's logged as done, regardless of
-// outcome — "exit" is always offered. Once nothing else is left, the menu
-// never renders at all (see runNextSteps) — this only decides what CAN
-// still show.
+// outcome. Once nothing's left, this returns empty — see the auto-finish
+// effect below, which is what actually ends the menu at that point.
 function availableNextStepOptions(log: { key: string }[]): SelectMenuItem[] {
   const used = new Set(log.map((e) => e.key));
-  return NEXT_STEP_OPTIONS.filter((o) => o.key === "exit" || !used.has(o.key));
+  return NEXT_STEP_OPTIONS.filter((o) => !used.has(o.key));
 }
 
 // "create": "reviewing" is the checkbox-list selection UI (formerly its own
@@ -193,14 +222,15 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
   const [analyzeProgress, setAnalyzeProgress] = useState(0);
 
   // gcx/auth steps — shared with FrontendApp via src/ui/steps. "auth" runs
-  // once, automatically, right after "gcx" — declining or failing it just
-  // means "Discover live endpoints via browser" skips itself later (see
-  // runAnalyze's auth.error check), never re-prompting.
+  // once, automatically, right after "gcx", and backs two separate things:
+  // "Find additional synthetic checks" (skips itself later — see
+  // runAnalyze's auth.error check) AND "create"'s own auto-discovery of
+  // Synthetic Monitoring access (skips straight to the manual base-url/
+  // token flow instead — see runCreate's auth.error check). Declining or
+  // failing it here never re-prompts; both of those just fall back on
+  // their own.
   const gcx = useGcxStep(forceGcxInstall, currentStep === "gcx");
-  const auth = useAuthStep(
-    "Sign in to Grafana Cloud to enable AI-powered endpoint suggestions? This will open a browser.",
-    currentStep === "auth"
-  );
+  const auth = useAuthStep("Sign in to Grafana Cloud in your browser.", currentStep === "auth");
 
   // create step — "reviewing"'s selectedKeys seeded once (in runAnalyze),
   // then kept live via CheckboxList's onSelectionChange so a back-then-
@@ -239,14 +269,13 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
   // export failed) — cleared whenever a new next-step action starts.
   const [nextStepsNotice, setNextStepsNotice] = useState<string>();
   // One entry per completed next-step pick, rendered as its own checkmark
-  // row in StepsList (below the fixed steps) — see runExportNow and
-  // pendingNextStepLog below. `key` matches a NEXT_STEP_OPTIONS key, and is
-  // used to drop that option from the menu once it's done (see
-  // availableNextStepOptions). Also doubles as "have we done anything yet"
-  // for whether NextStepsBody shows its one-time intro line. `detail`, if
-  // set, renders as its own muted line under the checkmark (same pattern
-  // as "auth"'s declined-sign-in note) rather than crowding the main line.
-  const [nextStepsLog, setNextStepsLog] = useState<{ key: string; label: string; detail?: string }[]>([]);
+  // row in StepsList (below the fixed steps) — see runExportNow,
+  // pendingNextStepLog below, and NextStepLogEntry. `key` matches a
+  // NEXT_STEP_OPTIONS key, and is used to drop that option from the menu
+  // once it's done (see availableNextStepOptions). Also doubles as "have
+  // we done anything yet" for whether NextStepsBody shows its one-time
+  // intro line.
+  const [nextStepsLog, setNextStepsLog] = useState<NextStepLogEntry[]>([]);
 
   const session = useRef<Session>(undefined as unknown as Session);
   // The exact config the latest "create" pass built (target/probes/settings
@@ -259,14 +288,19 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
   const baseUrlResolver = useRef<((url: string) => void) | undefined>(undefined);
   const tokenResolver = useRef<((token: string) => void) | undefined>(undefined);
   const selectResolver = useRef<((keys: string[]) => void) | undefined>(undefined);
+  // "browser-discovery"'s own y/n before it actually opens a browser — see
+  // AnalyzeSubPhase's "browser-confirm".
+  const browserPermissionResolver = useRef<((allow: boolean) => void) | undefined>(undefined);
   // Set by runAnalyze for every "browser-discovery" outcome (found
-  // something, found nothing, or failed) — consumed once "next-steps" is
-  // reached again (see runNextSteps), appending it to nextStepsLog.
-  const pendingNextStepLog = useRef<{ key: string; label: string; detail?: string } | undefined>(undefined);
+  // something, found nothing, declined, or failed) — consumed once
+  // "next-steps" is reached again (see runNextSteps), appending it to
+  // nextStepsLog.
+  const pendingNextStepLog = useRef<NextStepLogEntry | undefined>(undefined);
 
   const isWaiting =
     (currentStep === "gcx" && gcx.isWaiting) ||
     (currentStep === "auth" && auth.isWaiting) ||
+    (currentStep === "analyze" && analyzeSubPhase === "browser-confirm") ||
     (currentStep === "create" &&
       (createSubPhase === "reviewing" || createSubPhase === "base-url-input" || createSubPhase === "token-input"));
   // "reviewing" has nowhere earlier to go back to within this step, and
@@ -304,9 +338,9 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
     setCurrentStep("next-steps");
   }
 
-  // Entry point for the "next-steps" menu's "Discover live endpoints"
-  // option — jumps back to "analyze" (already checkmarked from the first
-  // pass, and staying that way — see proceedToReview).
+  // Entry point for the "next-steps" menu's "Find additional Synthetic
+  // Checks" option — jumps back to "analyze" (already checkmarked from
+  // the first pass, and staying that way — see proceedToReview).
   function runNextStepChoice(mode: AnalyzeMode) {
     setNextStepsNotice(undefined);
     // `items` is left over from whichever pass last ran one — the dynamic
@@ -324,16 +358,15 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
   }
 
   function handleNextStepChoice(key: string) {
-    if (key === "exit") finishNextSteps();
-    else if (key === "export") runExportNow();
+    if (key === "export") runExportNow();
     else runNextStepChoice(key as AnalyzeMode);
   }
 
-  // Runs "Export as Terraform" inline from the next-steps menu — the menu
-  // pick itself is the confirmation, so this fires immediately rather than
-  // asking a further y/n. Independent of the step-driving effect below
-  // (currentStep stays "next-steps" throughout, so nothing else needs to
-  // react to it running).
+  // Runs "Export checks as Terraform" inline from the next-steps menu —
+  // the menu pick itself is the confirmation, so this fires immediately
+  // rather than asking a further y/n. Independent of the step-driving
+  // effect below (currentStep stays "next-steps" throughout, so nothing
+  // else needs to react to it running).
   async function runExportNow() {
     setNextStepsSubPhase("exporting");
     // job name -> the SM check ID the API assigned, for the README's
@@ -371,7 +404,14 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
   const quittingBlocked = currentStep === "create" && (createSubPhase === "base-url-input" || createSubPhase === "token-input");
   useInput(
     (input) => {
-      if (input.toLowerCase() === "q") exit("Cancelled.");
+      if (input.toLowerCase() !== "q") return;
+      // At the next-steps menu, 'q' IS "I'm done" — there's no "Finish"
+      // entry to pick instead (see NEXT_STEP_OPTIONS) — so this finishes
+      // the same graceful way an exhausted menu does on its own, rather
+      // than exiting through the generic "Cancelled." path everywhere
+      // else 'q' means bailing out early.
+      if (currentStep === "next-steps" && nextStepsSubPhase === "menu") finishNextSteps();
+      else exit("Cancelled.");
     },
     { isActive: !quittingBlocked }
   );
@@ -392,14 +432,14 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
     { isActive: currentStep === "create" && createSubPhase === "reviewing" && (candidates?.length ?? 0) === 0 }
   );
 
-  // SelectMenu (rendered by NextStepsBody) owns arrow/Enter navigation —
-  // this only adds Esc as a shortcut for its own "exit" option, same as
-  // useAuthStep's cancel keybind.
+  // "browser-discovery"'s own y/n before opening a browser — same
+  // shape as useAuthStep's own cancel keybind.
   useInput(
     (input, key) => {
-      if (key.escape) finishNextSteps();
+      if (key.return || input.toLowerCase() === "y") browserPermissionResolver.current?.(true);
+      else if (input.toLowerCase() === "n") browserPermissionResolver.current?.(false);
     },
-    { isActive: currentStep === "next-steps" && nextStepsSubPhase === "menu" }
+    { isActive: currentStep === "analyze" && analyzeSubPhase === "browser-confirm" }
   );
 
   // Drives whichever step is current. Re-runs whenever currentStep changes —
@@ -462,13 +502,56 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
         return;
       }
 
+      // One continuous fake-percentage meter for the whole pass, same
+      // shape as main's original "analyze" step: climbs on its own for a
+      // bit (see PRE_DISCOVERY_CHECK_MS) before the confirm even shows,
+      // then pauses for the question itself — how long you take to
+      // answer shouldn't count against the pace, or the number would
+      // leap ahead to "catch up" the moment you do — then resumes and
+      // keeps climbing through the real discovery work below, rather
+      // than resetting to 0 at either point. "analyzing" isn't a new
+      // subphase: nothing renders for it beyond the dynamic StepsList
+      // row's own live percentage, same as "discovering".
+      setAnalyzeSubPhase("analyzing");
       setAnalyzeProgress(0);
       const progress = startFakeProgress(setAnalyzeProgress, () => cancelled, ANALYZE_PROGRESS_TARGET_MS);
+      await sleep(PRE_DISCOVERY_CHECK_MS);
+      if (cancelled) {
+        progress.stop();
+        return;
+      }
+
+      // Picking "Find additional synthetic checks" from the menu isn't
+      // itself the confirmation — a real browser opening is enough of a
+      // surprise to warrant its own explicit y/n, same as the top-level
+      // "auth" step's. A decline here is logged and done, same as every
+      // other outcome (see the pendingNextStepLog comment above its ref)
+      // rather than re-prompted.
+      setAnalyzeSubPhase("browser-confirm");
+      progress.pause();
+      const allowBrowser = await new Promise<boolean>((resolve) => {
+        browserPermissionResolver.current = resolve;
+      });
+      progress.resume();
+      if (cancelled) {
+        progress.stop();
+        return;
+      }
+      if (!allowBrowser) {
+        progress.stop();
+        pendingNextStepLog.current = {
+          key: "browser-discovery",
+          label: nextStepOptionLabel("browser-discovery"),
+          detail: "Skipped — no browser opened.",
+        };
+        backToNextSteps();
+        return;
+      }
+
       setAnalyzeSubPhase("discovering");
       try {
-        // Picking this option from the next-steps menu was already the
-        // confirmation — the harness's own gate is a pass-through here,
-        // not a second ask.
+        // The explicit y/n above was the confirmation — the harness's own
+        // gate is a pass-through here, not a second ask.
         const [aiCandidates] = await Promise.all([
           aiEndpointCandidatesFor(targetUrl, initialStackUrl, () => true),
           sleep(MIN_SPINNER_MS),
@@ -477,12 +560,18 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
           progress.stop();
           return;
         }
-        if (aiCandidates.length > 0) {
-          setCandidates((prev) => [...(prev ?? []), ...aiCandidates]);
+        // Excludes anything a previous pass already created/updated/
+        // skipped — the AI judge has no memory of that, so without this a
+        // rediscovered endpoint would clutter the review screen with a
+        // check that's already live (see handledCandidateKeys/SelectBody).
+        const handled = handledCandidateKeys();
+        const newCandidates = aiCandidates.filter((c) => !handled.has(c.key));
+        if (newCandidates.length > 0) {
+          setCandidates((prev) => [...(prev ?? []), ...newCandidates]);
           pendingNextStepLog.current = {
             key: "browser-discovery",
             label: nextStepOptionLabel("browser-discovery"),
-            detail: `${aiCandidates.length} new check${aiCandidates.length === 1 ? "" : "s"} found`,
+            detail: `${newCandidates.length} new check${newCandidates.length === 1 ? "" : "s"} found`,
           };
         } else {
           // Nothing new — logged as done (see the label/detail comment
@@ -492,7 +581,7 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
           pendingNextStepLog.current = {
             key: "browser-discovery",
             label: nextStepOptionLabel("browser-discovery"),
-            detail: "No additional live endpoints discovered.",
+            detail: "No new endpoints found.",
           };
           progress.stop();
           backToNextSteps();
@@ -503,7 +592,7 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
         pendingNextStepLog.current = {
           key: "browser-discovery",
           label: nextStepOptionLabel("browser-discovery"),
-          detail: "Couldn't discover live endpoints.",
+          detail: "Couldn't discover additional endpoints.",
         };
         progress.stop();
         backToNextSteps();
@@ -531,17 +620,20 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
         // Try reusing the "Authenticate with OAuth" session through
         // Grafana's own datasource-proxy route before ever asking for a
         // base URL or a pasted access token — no prompt shown at all when
-        // this works. Any failure (insufficient role, SM not provisioned
-        // as a datasource on this stack, ...) just falls through to the
-        // manual flow below, unchanged.
-        setCreateSubPhase("auto-discovering");
-        const [auto] = await Promise.all([tryAutoSmSession(initialStackUrl), sleep(MIN_SPINNER_MS)]);
-        if (cancelled) return;
-        if (auto) {
-          session.current = { url: auto.apiUrl, client: auto.client, probes: auto.probes };
-        } else {
-          setCreateSubPhase("base-url-input");
+        // this works. Only attempted if that session actually exists:
+        // ensureAssistantAuth has no memory of an earlier decline or
+        // failure and would otherwise happily retry the full interactive
+        // login right here, popping a second, unannounced browser window
+        // moments after the user already said no (or hit a real failure)
+        // at the top-level "auth" step. Either way, no session here just
+        // falls through to the manual base-url/token flow below.
+        if (!auth.error) {
+          setCreateSubPhase("auto-discovering");
+          const [auto] = await Promise.all([tryAutoSmSession(initialStackUrl), sleep(MIN_SPINNER_MS)]);
+          if (cancelled) return;
+          if (auto) session.current = { url: auto.apiUrl, client: auto.client, probes: auto.probes };
         }
+        if (!session.current) setCreateSubPhase("base-url-input");
       }
 
       if (!session.current) {
@@ -603,8 +695,15 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
       // once, when "create" became current, and setSelectedKeys(chosen)
       // above doesn't retroactively update the value it captured then, so
       // reading the state here would silently use whatever was selected
-      // by default instead of what was actually just submitted.
-      const selected = (candidates ?? []).filter((c) => chosen.includes(c.key));
+      // by default instead of what was actually just submitted. Also
+      // drops anything an earlier pass already created/updated/skipped —
+      // `chosen` can still contain those (CheckboxList's own selection
+      // carries forward keys hidden from the review screen too, see
+      // SelectBody), but re-running `plan` for them here would mean this
+      // pass re-checking (as a harmless but pointless noop) every check
+      // from every prior pass, on top of whatever's actually new.
+      const handledKeys = handledCandidateKeys();
+      const selected = (candidates ?? []).filter((c) => chosen.includes(c.key) && !handledKeys.has(c.key));
       const probeNames = session.current.probes.slice(0, 2).map((p) => p.name);
       if (probeNames.length === 0) throw new Error("No probes are available on this tenant.");
       setAssignedProbes(probeNames);
@@ -613,13 +712,18 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
       for (const c of selected) {
         config[c.label] = { target: c.target, probes: probeNames, settings: c.settings, frequency: c.frequencyMs };
       }
-      createdConfigRef.current = config;
+      // Merged, not replaced — `plan` above only ever runs against this
+      // pass's own (now filtered-down) `config`, so the entries from
+      // every earlier pass have to be carried forward here for "Export
+      // checks as Terraform" to still emit all of them, not just the
+      // latest pass's.
+      createdConfigRef.current = { ...createdConfigRef.current, ...config };
 
       let workingItems: CreationItem[] = selected.map((candidate) => ({ candidate, status: "pending" as ItemStatus }));
       setItems(workingItems);
       // Mirrored into a permanent snapshot only for the first, "fast"
       // pass — see the `items`/`firstPassItems` state comment — so the
-      // fixed "Create Synthetic Checks" row's own nested list is frozen
+      // fixed "Create synthetic checks" row's own nested list is frozen
       // once a later next-steps pass starts overwriting `items` for itself.
       if (analyzeMode === "fast") setFirstPassItems(workingItems);
 
@@ -636,12 +740,12 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
         if (!candidate) continue;
 
         // Every check gets the same minimum-spinner treatment, including
-        // ones already up to date — going one by one consistently rather
+        // ones that already exist — going one by one consistently rather
         // than instantly flashing "skipped".
         updateItem(candidate.key, { status: "running" });
         if (action.kind === "noop") {
           await sleep(MIN_SPINNER_MS);
-          updateItem(candidate.key, { status: "skipped", detail: "already up to date", id: action.id });
+          updateItem(candidate.key, { status: "skipped", detail: "already exists", id: action.id });
           continue;
         }
         try {
@@ -666,7 +770,21 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
             `Could not create ${failed.candidate.title}: ${failed.detail}`
         );
       }
-      if (analyzeMode !== "fast") setExtraCreatedItems((prev) => [...prev, ...workingItems]);
+      // `workingItems` is already just this pass's own new candidates —
+      // `selected` excludes anything handledCandidateKeys() already covers
+      // (see its filter above) — so nothing here needs to be re-deduped
+      // against firstPassItems/extraCreatedItems.
+      if (analyzeMode !== "fast") {
+        setExtraCreatedItems((prev) => [...prev, ...workingItems]);
+        // Overrides the provisional "N found" entry runAnalyze logged
+        // before this pass ever ran — this is the definitive outcome, so
+        // the checklist row gets the actual created checks nested under
+        // it (see NextStepLogEntry), not just a found-count blurb.
+        pendingNextStepLog.current =
+          workingItems.length > 0
+            ? { key: "browser-discovery", label: "Additional synthetic checks", items: workingItems }
+            : { key: "browser-discovery", label: nextStepOptionLabel("browser-discovery"), detail: "No checks created." };
+      }
       advance();
     }
 
@@ -681,10 +799,10 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
         setNextStepsLog((prev) => [...prev, pending]);
       }
       // Nothing else to await here — the menu is driven entirely by
-      // SelectMenu's own input handling and the dedicated Esc handler
-      // above (picking an option either navigates away via setCurrentStep,
-      // or runs inline via runExportNow). Whether there's actually
-      // anything left to offer is handled reactively, below.
+      // SelectMenu's own input handling (picking an option either
+      // navigates away via setCurrentStep, or runs inline via
+      // runExportNow). Whether there's actually anything left to offer is
+      // handled reactively, below.
       setNextStepsSubPhase("menu");
     }
 
@@ -721,11 +839,7 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
   // leaving "next-steps" (like export) can't skip this check the way a
   // one-off inline call would if a future action forgot to make it.
   useEffect(() => {
-    if (
-      currentStep === "next-steps" &&
-      nextStepsSubPhase === "menu" &&
-      availableNextStepOptions(nextStepsLog).every((o) => o.key === "exit")
-    ) {
+    if (currentStep === "next-steps" && nextStepsSubPhase === "menu" && availableNextStepOptions(nextStepsLog).length === 0) {
       finishNextSteps();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -788,7 +902,10 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
                 <Box flexDirection="column">{ItemsList(firstPassItems)}</Box>
               )}
               {step === "auth" && completed.has(step) && auth.error && (
-                <Text color={muted}>{"     "}Skipping AI-powered suggestions ({auth.error})</Text>
+                <Text color={muted}>
+                  {"     "}Skipping AI-powered suggestions — you'll be asked for a Synthetic Monitoring access token
+                  later ({auth.error})
+                </Text>
               )}
             </Box>
           );
@@ -800,6 +917,7 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
               <Text color={ok}>✓</Text> {entry.label}
             </Text>
             {entry.detail && <Text color={muted}>{"     "}{entry.detail}</Text>}
+            {entry.items && entry.items.length > 0 && <Box flexDirection="column">{ItemsList(entry.items)}</Box>}
           </Box>
         ))}
         {analyzeMode !== "fast" && currentStep !== "next-steps" && (
@@ -807,47 +925,130 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
             <Text>
               {" "}
               {liveIcon()} <Text bold>{nextStepOptionLabel(analyzeMode)}</Text>
-              {currentStep === "analyze" && <Text color={muted}> — {analyzeProgress}%</Text>}
+              {currentStep === "analyze" &&
+                (analyzeSubPhase === "analyzing" || analyzeSubPhase === "discovering") && (
+                  <Text color={muted}> — {analyzeProgress}%</Text>
+                )}
             </Text>
             {items.length > 0 && <Box flexDirection="column">{ItemsList(items)}</Box>}
           </Box>
+        )}
+        {currentStep === "next-steps" && nextStepsSubPhase === "exporting" && (
+          <Text>
+            {" "}
+            {liveIcon()} <Text bold>{nextStepOptionLabel("export")}</Text>
+          </Text>
         )}
       </Box>
     );
   }
 
   function Footer() {
-    // Nothing to toggle/move when there's no selectable list at all —
-    // SelectBody already shows its own EnterHint for that case.
     if (currentStep !== "create" || createSubPhase !== "reviewing" || (candidates?.length ?? 0) === 0) return null;
-    // No marginTop here on purpose — the blank line above the prompt
-    // already comes from the Box wrapping it in the main render; hints sit
-    // directly beneath the prompt they describe, with no gap. "continue"
-    // gets its own line via EnterHint, same as everywhere else it appears,
-    // rather than being crammed onto the navigation-hint line.
+    // Same blank-line-before-the-hint spacing as the next-steps menu's own
+    // hint (see NextStepsBody) — one line, same "· "-separated shape,
+    // rather than three stacked lines (a selected-count line plus two more
+    // hint lines) for what's all just keybind info.
     return (
-      <Box flexDirection="column">
-        <Text color={muted}>space toggle   ↑↓ move</Text>
-        <EnterHint />
+      <Box marginTop={1}>
+        <Text color={muted}>
+          press{" "}
+          <Text color={accent} bold>
+            ⏎ enter
+          </Text>{" "}
+          to continue · space toggle · ↑↓ move
+        </Text>
       </Box>
     );
   }
 
   function AnalyzeBody() {
-    if (analyzeSubPhase === "discovering") return <Working label="Opening a browser to discover live endpoints…" />;
+    // The "can take up to a minute" expectation (ANALYZE_PROGRESS_TARGET_MS)
+    // is set once, here, before the browser ever opens — "discovering"
+    // doesn't repeat it: the dynamic StepsList row above already names the
+    // action and shows its own live percentage, so a second spinner here
+    // would just be noise on top of that.
+    if (analyzeSubPhase === "browser-confirm")
+      return (
+        <Box flexDirection="column">
+          <Text>
+            Open a real browser to look for additional synthetic checks on{" "}
+            <Text color={idColor}>{initialTargetUrl}</Text>?
+          </Text>
+          <EnterHint suffix="or n to skip" />
+        </Box>
+      );
     return null;
   }
 
-  function NextStepsBody() {
-    if (nextStepsSubPhase === "exporting") return <Working label="Exporting as Terraform…" />;
+  // Every candidate an earlier pass already created/updated/skipped —
+  // regardless of outcome, it's been through review once and shouldn't be
+  // re-litigated or re-counted by a later pass. Shared by SelectBody (hide
+  // it from the review list) and runCreate/checksCreatedLine (don't
+  // double-count it into the summary).
+  function handledCandidateKeys(): Set<string> {
+    return new Set([...firstPassItems, ...extraCreatedItems].map((it) => it.candidate.key));
+  }
+
+  // The common case (a fresh setup) reads as "3 checks created." — the
+  // more clinical "3 checks: 2 created, 1 already exists." only shows up
+  // once results are actually mixed. Shared by the next-steps menu (shown
+  // before every pass through it) and the final done screen (see
+  // ChecksSummary) so the two never drift apart.
+  function checksCreatedLine(): string {
+    const allItems = [...firstPassItems, ...extraCreatedItems];
+    if (allItems.length === 0) return "Nothing to do.";
+    const createdCount = allItems.filter((it) => it.status === "created").length;
+    if (createdCount === allItems.length) return `${allItems.length} check${allItems.length === 1 ? "" : "s"} created.`;
+    const updatedCount = allItems.filter((it) => it.status === "updated").length;
+    const skippedCount = allItems.filter((it) => it.status === "skipped").length;
+    const parts = [
+      createdCount > 0 ? `${createdCount} created` : "",
+      updatedCount > 0 ? `${updatedCount} updated` : "",
+      skippedCount > 0 ? `${skippedCount} already ${skippedCount === 1 ? "exists" : "exist"}` : "",
+    ].filter(Boolean);
+    return `${allItems.length} check${allItems.length === 1 ? "" : "s"}: ${parts.join(", ")}.`;
+  }
+
+  // Shown before the next-steps menu on every visit, and again (without
+  // the menu) on the final done screen — the check count and link, so the
+  // user always knows what's already live before deciding what, if
+  // anything, to do next.
+  function ChecksSummary() {
     return (
       <Box flexDirection="column">
-        {nextStepsLog.length === 0 && <Text>Nice — the basics are set up.</Text>}
+        <Text>{checksCreatedLine()}</Text>
+        <Text color={muted}>
+          View checks: <Text color="blue">{initialStackUrl.replace(/\/$/, "")}/a/grafana-synthetic-monitoring-app/checks</Text>
+        </Text>
+      </Box>
+    );
+  }
+
+  function NextStepsBody() {
+    // While exporting, its own live row is in StepsList instead (right
+    // under the checklist — see the dynamic row there), the same spot its
+    // permanent checkmark entry lands in once it's done. Nothing shows
+    // here for that whole stretch, rather than a separate loading view
+    // in an entirely different spot that then has to hand off to
+    // StepsList once it finishes.
+    if (nextStepsSubPhase === "exporting") return null;
+    return (
+      <Box flexDirection="column">
+        <ChecksSummary />
         {nextStepsNotice && <Text color={muted}>{nextStepsNotice}</Text>}
-        <Text>Want to do anything else?</Text>
-        <SelectMenu items={availableNextStepOptions(nextStepsLog)} accentColor={accent ?? "white"} onSelect={handleNextStepChoice} />
+        <Box marginTop={1} flexDirection="column">
+          <Text bold>Next actions</Text>
+          <SelectMenu items={availableNextStepOptions(nextStepsLog)} accentColor={accent ?? "white"} onSelect={handleNextStepChoice} />
+        </Box>
         <Box marginTop={1}>
-          <Text color={muted}>↑↓ move   ⏎ select   Esc to stop</Text>
+          <Text color={muted}>
+            press{" "}
+            <Text color={accent} bold>
+              ⏎ enter
+            </Text>{" "}
+            to trigger an action · ↑↓ move · q to finish
+          </Text>
         </Box>
       </Box>
     );
@@ -855,11 +1056,23 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
 
   function SelectBody() {
     if (!candidates) return null;
+    // Candidates a prior pass already handled drop out of what's shown
+    // here, so a discovery pass reviews only what's new instead of
+    // re-listing checks that already exist — runCreate's own `selected`
+    // filters them out again regardless of what CheckboxList submits, so
+    // hiding them here is purely about the review screen, not about
+    // keeping them out of the actual create loop.
+    const handled = handledCandidateKeys();
+    const visible = candidates.filter((c) => !handled.has(c.key));
     return (
       <Box flexDirection="column">
-        <Text>These are the Synthetic Checks we suggest creating</Text>
+        <Text>
+          {analyzeMode === "fast"
+            ? "These are the synthetic checks we suggest creating"
+            : "These are the additional synthetic checks we suggest creating"}
+        </Text>
         <CheckboxList
-          items={candidates.map((c) => ({
+          items={visible.map((c) => ({
             key: c.key,
             label: c.title,
             description: c.description,
@@ -870,11 +1083,6 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
           onSubmit={(keys) => selectResolver.current?.(keys)}
           onSelectionChange={setSelectedKeys}
         />
-        <Box marginTop={1}>
-          <Text color={muted}>
-            {selectedKeys.length} check{selectedKeys.length === 1 ? "" : "s"} selected
-          </Text>
-        </Box>
       </Box>
     );
   }
@@ -883,13 +1091,19 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
   // screen, which keeps showing the same list rather than swapping it out
   // for a plain summary once finished.
   function ItemsList(list: CreationItem[]) {
+    // The dash is what visually connects the check to its locations —
+    // dropping it (in favor of column alignment) left "Uptime" and
+    // "London, Ohio" looking unrelated. No padding/alignment here on
+    // purpose, so a long AI-discovered title (still length-capped — see
+    // MAX_AI_TITLE_LENGTH in discover.ts) never has to fight a fixed
+    // column width either.
     const loadZones = assignedProbes.join(", ");
     return list.map((it) => (
       <Text key={it.candidate.key}>
         {"     "}
         <ItemIcon status={it.status} /> {it.candidate.title}
-        {loadZones && <Text> — {loadZones}</Text>}
-        {it.detail ? <Text color={muted}> — {it.detail}</Text> : null}
+        {loadZones && <Text color={muted}> — {loadZones}</Text>}
+        {it.detail ? <Text color={muted}> · {it.detail}</Text> : null}
       </Text>
     ));
   }
@@ -953,29 +1167,17 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
   }
 
   if (done) {
-    const allItems = [...firstPassItems, ...extraCreatedItems];
-    const createdCount = allItems.filter((it) => it.status === "created").length;
-    const updatedCount = allItems.filter((it) => it.status === "updated").length;
-    const skippedCount = allItems.filter((it) => it.status === "skipped").length;
-    const summaryParts = [
-      createdCount > 0 ? `${createdCount} created` : "",
-      updatedCount > 0 ? `${updatedCount} updated` : "",
-      skippedCount > 0 ? `${skippedCount} already up to date` : "",
-    ].filter(Boolean);
-    const summarySentence =
-      summaryParts.length > 0
-        ? `${allItems.length} check${allItems.length === 1 ? "" : "s"}: ${summaryParts.join(", ")}`
-        : "nothing to do";
-
+    // The completed checklist (StepsList, including every next-steps pick
+    // that ran) stays visible above this — finishing (via 'q' or running
+    // out of picks) never replaces it with a separate "we're done"
+    // message, it just leaves the summary and link that were already
+    // showing in place.
     return (
       <Box flexDirection="column" paddingLeft={1}>
         <Header stackUrl={initialStackUrl} />
         {StepsList()}
-        <Box marginTop={1} flexDirection="column">
-          <Text bold>Cool, we're done! {summarySentence}.</Text>
-          <Text color={muted}>
-            See them here: <Text color="blue">{initialStackUrl.replace(/\/$/, "")}/a/grafana-synthetic-monitoring-app/checks</Text>
-          </Text>
+        <Box marginTop={1}>
+          <ChecksSummary />
         </Box>
       </Box>
     );
@@ -991,7 +1193,7 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
           (currentStep === "create" && createSubPhase !== "connecting" && createSubPhase !== "auto-discovering") ||
           (currentStep === "gcx" && gcx.subPhase === "gcx-install-confirm") ||
           (currentStep === "auth" && (auth.subPhase === "browser-confirm" || auth.subPhase === "authenticating")) ||
-          (currentStep === "analyze" && analyzeSubPhase === "discovering") ||
+          (currentStep === "analyze" && analyzeSubPhase === "browser-confirm") ||
           currentStep === "next-steps"
             ? 1
             : 0

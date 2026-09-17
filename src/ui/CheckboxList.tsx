@@ -68,7 +68,7 @@ export function CheckboxList({ items, initialSelected, accentColor, onSubmit, on
                 {focused ? "› " : "  "}[{selected.has(item.key) ? "x" : " "}] {item.label}
               </Text>
             </Box>
-            <Text color={focused ? undefined : muted}>
+            <Text color={muted}>
               {" ".repeat(COLUMN_GUTTER)}
               {hasMeta ? item.description.padEnd(descWidth) : item.description}
               {item.meta ? ` ${item.meta}` : ""}

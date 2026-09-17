@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { Box, Text, useInput } from "ink";
+import { muted } from "./shared.js";
 
 export interface SelectMenuItem {
   key: string;
@@ -32,7 +33,7 @@ export function SelectMenu({ items, accentColor, onSelect }: Props) {
       {items.map((item, i) => {
         const focused = i === cursor;
         return (
-          <Text key={item.key} color={focused ? accentColor : undefined} bold={focused}>
+          <Text key={item.key} color={focused ? accentColor : muted} bold={focused}>
             {focused ? "› " : "  "}
             {item.label}
           </Text>
