@@ -492,9 +492,7 @@ export function FrontendApp({ initialStackUrl, forceGcxInstall, initialAppName, 
         <Text>
           Let's set up <Text bold>Frontend Observability</Text> for this project.
         </Text>
-        <Box marginTop={1}>
-          <EnterHint />
-        </Box>
+        <EnterHint />
       </Box>
     );
   }
