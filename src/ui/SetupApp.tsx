@@ -385,13 +385,17 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
     }
 
     async function runCreate() {
-      if (!session.current) {
+      if (!session.current && !auth.error) {
         // Try reusing the "Authenticate with OAuth" session through
         // Grafana's own datasource-proxy route before ever asking for a
         // base URL or a pasted access token — no prompt shown at all when
         // this works. Any failure (insufficient role, SM not provisioned
         // as a datasource on this stack, ...) just falls through to the
-        // manual flow below, unchanged.
+        // manual flow below, unchanged. Skipped entirely if "auth" was
+        // declined or failed — otherwise tryAutoSmSession's own call to
+        // ensureAssistantAuth silently retries the interactive OAuth login
+        // (a second, unannounced browser window) instead of respecting
+        // that decision.
         setCreateSubPhase("auto-discovering");
         const [auto] = await Promise.all([tryAutoSmSession(initialStackUrl), sleep(MIN_SPINNER_MS)]);
         if (cancelled) return;
