@@ -2,7 +2,7 @@ import { setTimeout as sleep } from "node:timers/promises";
 import { useRef, useState } from "react";
 import { Box, Text, useInput } from "ink";
 import { ensureAssistantAuth } from "../../harness/index.js";
-import { EnterHint, MIN_SPINNER_MS } from "../shared.js";
+import { EnterHint, MIN_SPINNER_MS, muted } from "../shared.js";
 
 export type AuthSubPhase = "browser-confirm" | "authenticating";
 export const AUTH_WAITING_SUBPHASES: AuthSubPhase[] = ["browser-confirm"];
@@ -24,6 +24,11 @@ export function useAuthStep(confirmText: string, isActive: boolean): AuthStep {
   const [subPhase, setSubPhase] = useState<AuthSubPhase>("browser-confirm");
   const [error, setError] = useState<string>();
   const permissionResolver = useRef<((allow: boolean) => void) | undefined>(undefined);
+  // Lets the "authenticating" wait be cancelled well before the 5-minute
+  // callback timeout — e.g. the browser never opened, or the user just
+  // changed their mind. Only ever set while a login attempt is actually
+  // in flight; see ensureAssistantAuth's `signal` param.
+  const abortController = useRef<AbortController | undefined>(undefined);
 
   useInput(
     (input, key) => {
@@ -31,6 +36,12 @@ export function useAuthStep(confirmText: string, isActive: boolean): AuthStep {
       else if (input.toLowerCase() === "n") permissionResolver.current?.(false);
     },
     { isActive: isActive && subPhase === "browser-confirm" }
+  );
+  useInput(
+    (input, key) => {
+      if (key.escape || input.toLowerCase() === "n") abortController.current?.abort();
+    },
+    { isActive: isActive && subPhase === "authenticating" }
   );
 
   async function run(stackUrl: string, isCancelled: () => boolean): Promise<void> {
@@ -47,10 +58,14 @@ export function useAuthStep(confirmText: string, isActive: boolean): AuthStep {
     }
 
     setSubPhase("authenticating");
+    const controller = new AbortController();
+    abortController.current = controller;
     try {
-      await Promise.all([ensureAssistantAuth(stackUrl), sleep(MIN_SPINNER_MS)]);
+      await Promise.all([ensureAssistantAuth(stackUrl, controller.signal), sleep(MIN_SPINNER_MS)]);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      abortController.current = undefined;
     }
   }
 
@@ -60,6 +75,8 @@ export function useAuthStep(confirmText: string, isActive: boolean): AuthStep {
         <Text>{confirmText}</Text>
         <EnterHint suffix="or n to skip" />
       </Box>
+    ) : subPhase === "authenticating" ? (
+      <Text color={muted}>Waiting for sign-in in the browser — press n or Esc to cancel and continue without it.</Text>
     ) : null;
 
   return { subPhase, error, isWaiting: AUTH_WAITING_SUBPHASES.includes(subPhase), body, run };

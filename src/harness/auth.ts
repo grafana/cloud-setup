@@ -92,7 +92,7 @@ function isAllowedEndpoint(endpoint: string, stackUrl: string): boolean {
   }
 }
 
-async function startCallbackServer(): Promise<{ port: number; result: Promise<CallbackResult> }> {
+async function startCallbackServer(signal?: AbortSignal): Promise<{ port: number; result: Promise<CallbackResult> }> {
   const server = http.createServer({ keepAliveTimeout: 0 });
   let resolve!: (value: CallbackResult) => void;
   let reject!: (reason: Error) => void;
@@ -107,6 +107,12 @@ async function startCallbackServer(): Promise<{ port: number; result: Promise<Ca
   const timer = setTimeout(() => {
     reject(new Error(`Timed out after ${Math.round(LOGIN_TIMEOUT_MS / 1000)}s waiting for Grafana Assistant sign-in.`));
   }, LOGIN_TIMEOUT_MS);
+
+  // Lets a caller bail out well before that 5-minute timeout — e.g. the
+  // user pressing a "cancel" key while the wizard waits on this — without
+  // leaving the server or the timer running in the background.
+  const onAbort = () => reject(new Error("cancelled"));
+  signal?.addEventListener("abort", onAbort);
 
   server.on("request", (req, res) => {
     const url = new URL(req.url ?? "/", "http://localhost");
@@ -136,6 +142,7 @@ async function startCallbackServer(): Promise<{ port: number; result: Promise<Ca
 
   const closeAfter = promise.finally(() => {
     clearTimeout(timer);
+    signal?.removeEventListener("abort", onAbort);
     server.close();
     server.closeAllConnections();
   });
@@ -174,10 +181,10 @@ async function exchangeCode(stackUrl: string, code: string, codeVerifier: string
   };
 }
 
-async function performInteractiveLogin(stackUrl: string): Promise<AssistantTokens> {
+async function performInteractiveLogin(stackUrl: string, signal?: AbortSignal): Promise<AssistantTokens> {
   const { codeVerifier, codeChallenge } = generatePKCE();
   const state = generateState();
-  const { port, result } = await startCallbackServer();
+  const { port, result } = await startCallbackServer(signal);
   const authUrl = buildAssistantAuthUrl(stackUrl, codeChallenge, state, port);
 
   openBrowser(authUrl);
@@ -199,11 +206,14 @@ async function performInteractiveLogin(stackUrl: string): Promise<AssistantToken
 // if it's not expiring soon; otherwise runs the full interactive
 // OAuth-PKCE flow (opens a browser). Callers are expected to have already
 // gotten the user's OK for that browser to open — this never asks itself.
-export async function ensureAssistantAuth(stackUrl: string): Promise<AssistantTokens> {
+// An optional `signal` lets a caller abort a pending interactive login
+// early (e.g. useAuthStep's own cancel keybind) rather than only ever
+// giving up after the 5-minute callback timeout.
+export async function ensureAssistantAuth(stackUrl: string, signal?: AbortSignal): Promise<AssistantTokens> {
   const cached = sessionTokens.get(stackUrl);
   if (cached && Date.now() + REFRESH_THRESHOLD_MS < cached.expiresAt) return cached;
 
-  const tokens = await performInteractiveLogin(stackUrl);
+  const tokens = await performInteractiveLogin(stackUrl, signal);
   sessionTokens.set(stackUrl, tokens);
   return tokens;
 }
