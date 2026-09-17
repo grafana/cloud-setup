@@ -2,7 +2,7 @@ import { existsSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { Probe } from "./api.js";
-import { DEFAULT_FREQUENCY_MS } from "./reconcile.js";
+import { DEFAULT_FREQUENCY_MS, DEFAULT_TIMEOUT_MS } from "./reconcile.js";
 import type { CheckDefinition, CheckSettings, SyntheticConfig } from "./types.js";
 
 // Never an existing directory — this should never silently merge into (or
@@ -123,7 +123,7 @@ function checkResource(jobName: string, def: CheckDefinition, probeIds: Map<stri
     `  probes = [${ids.join(", ")}]`,
     settingsBlock(def.settings, "  "),
     `  frequency = ${def.frequency ?? DEFAULT_FREQUENCY_MS}`,
-    `  timeout = ${def.timeout ?? 3000}`,
+    `  timeout = ${def.timeout ?? DEFAULT_TIMEOUT_MS}`,
     "}",
   ].join("\n");
 }

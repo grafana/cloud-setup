@@ -18,6 +18,13 @@ function encodeSettings(settings: CheckSettings): CheckSettings {
 
 export const DEFAULT_FREQUENCY_MS = 60000;
 
+// Matches the Synthetic Monitoring app's own default timeout (1 minute)
+// for a new check — a prior flat 3000ms default here applied to every
+// check regardless of type, which the SM UI's own editor then refuses to
+// re-save (it enforces a 5s minimum), even though the API accepted it
+// uncomplaining on create.
+export const DEFAULT_TIMEOUT_MS = 60000;
+
 export type PlanAction =
   | { kind: "create"; name: string; payload: Record<string, unknown> }
   | { kind: "update"; name: string; id: number; payload: Record<string, unknown> }
@@ -45,7 +52,7 @@ function toPayload(name: string, def: CheckDefinition, probeIds: Map<string, num
     labels,
     settings: encodeSettings(def.settings),
     frequency: def.frequency ?? DEFAULT_FREQUENCY_MS,
-    timeout: def.timeout ?? 3000,
+    timeout: def.timeout ?? DEFAULT_TIMEOUT_MS,
     enabled: def.enabled ?? true,
     alertSensitivity: def.alertSensitivity ?? "none",
     basicMetricsOnly: def.basicMetricsOnly ?? true,
