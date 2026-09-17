@@ -990,7 +990,7 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
           failureSummary ||
           (currentStep === "create" && createSubPhase !== "connecting" && createSubPhase !== "auto-discovering") ||
           (currentStep === "gcx" && gcx.subPhase === "gcx-install-confirm") ||
-          (currentStep === "auth" && auth.subPhase === "browser-confirm") ||
+          (currentStep === "auth" && (auth.subPhase === "browser-confirm" || auth.subPhase === "authenticating")) ||
           (currentStep === "analyze" && analyzeSubPhase === "discovering") ||
           currentStep === "next-steps"
             ? 1

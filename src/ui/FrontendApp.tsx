@@ -492,9 +492,7 @@ export function FrontendApp({ initialStackUrl, forceGcxInstall, initialAppName, 
         <Text>
           Let's set up <Text bold>Frontend Observability</Text> for this project.
         </Text>
-        <Box marginTop={1}>
-          <EnterHint />
-        </Box>
+        <EnterHint />
       </Box>
     );
   }
@@ -527,7 +525,7 @@ export function FrontendApp({ initialStackUrl, forceGcxInstall, initialAppName, 
         marginTop={
           failureSummary ||
           (currentStep === "gcx" && gcx.subPhase === "gcx-install-confirm") ||
-          (currentStep === "auth" && auth.subPhase === "browser-confirm") ||
+          (currentStep === "auth" && (auth.subPhase === "browser-confirm" || auth.subPhase === "authenticating")) ||
           (currentStep === "pick-app" && pickAppSubPhase !== "checking")
             ? 1
             : 0
