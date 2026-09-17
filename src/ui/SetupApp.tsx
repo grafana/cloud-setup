@@ -149,6 +149,14 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
   const [candidates, setCandidates] = useState<Candidate[]>();
   const [analyzeSubPhase, setAnalyzeSubPhase] = useState<AnalyzeSubPhase>("analyzing");
   const [analyzeProgress, setAnalyzeProgress] = useState(0);
+  // Populated by checkExistingChecks (candidate key -> the SM check ID
+  // already found for that job name/target) — opportunistically looked up
+  // as soon as candidates exist and the OAuth sign-in succeeded, so the
+  // review step can flag which suggestions already exist before you even
+  // pick anything. Silently stays empty (never blocks progress) if sign-in
+  // was declined, or the account/stack's SM datasource can't be reached
+  // this way.
+  const [existingChecks, setExistingChecks] = useState<Map<string, number>>(new Map());
 
   // gcx/auth steps — shared with FrontendApp via src/ui/steps.
   const gcx = useGcxStep(forceGcxInstall, currentStep === "gcx");
@@ -189,6 +197,13 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
   const selectResolver = useRef<((keys: string[]) => void) | undefined>(undefined);
   const browserPermissionResolver = useRef<((allow: boolean) => void) | undefined>(undefined);
   const exportPermissionResolver = useRef<((allow: boolean) => void) | undefined>(undefined);
+
+  // Already-existing candidates (per existingChecks) are never shown in the
+  // toggleable CheckboxList at all — see SelectBody — since there's nothing
+  // to decide about a check that's already there; they're just listed for
+  // awareness. `newCandidates` is what's actually selectable/created.
+  const existingCandidates = candidates?.filter((c) => existingChecks.has(c.key)) ?? [];
+  const newCandidates = candidates?.filter((c) => !existingChecks.has(c.key)) ?? [];
 
   const backTarget = previousEditableStep(currentStep);
   const isWaiting =
@@ -266,6 +281,16 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
     { isActive: currentStep === "export" && exportSubPhase === "export-confirm" }
   );
 
+  // CheckboxList isn't rendered at all when there's nothing new to select
+  // (see SelectBody) — its own Enter-to-submit handler goes with it, so
+  // this covers that case directly.
+  useInput(
+    (input, key) => {
+      if (key.return) selectResolver.current?.([]);
+    },
+    { isActive: currentStep === "select" && newCandidates.length === 0 }
+  );
+
   // Drives whichever step is current. Re-runs whenever currentStep changes —
   // including on back-navigation, since the effect cleanup (`cancelled`)
   // orphans the previous step's in-flight promise harmlessly (it's just
@@ -297,6 +322,54 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
       advance();
     }
 
+    // Opportunistically flags candidates that already exist in the account
+    // — called right after new candidates appear (both the initial local
+    // pass and any live-discovery pass). Reuses the OAuth session from the
+    // "auth" step (never a new sign-in prompt) to establish the same
+    // auto-discovered SM session "create" would otherwise build later — if
+    // this succeeds, it's stashed in `session` so "create" doesn't have to
+    // rediscover it. Best-effort throughout: a declined sign-in, an
+    // unreachable SM datasource, or a single failed lookup just means no
+    // annotation for the affected candidate(s), never blocks progress.
+    async function checkExistingChecks(candidateList: Candidate[], isCancelled: () => boolean) {
+      if (auth.error || candidateList.length === 0) return;
+      if (!session.current) {
+        try {
+          const auto = await tryAutoSmSession(initialStackUrl);
+          if (!auto || isCancelled()) return;
+          session.current = { url: auto.apiUrl, client: auto.client, probes: auto.probes };
+        } catch {
+          return;
+        }
+      }
+      if (isCancelled()) return;
+      const client = session.current.client;
+      const found = await Promise.all(
+        candidateList.map(async (c): Promise<readonly [string, number] | undefined> => {
+          try {
+            const existing = await client.findCheck(c.label, c.target);
+            return existing ? [c.key, existing.id] : undefined;
+          } catch {
+            return undefined;
+          }
+        })
+      );
+      if (isCancelled()) return;
+      const newlyFound = found.filter((entry): entry is readonly [string, number] => entry !== undefined);
+      if (newlyFound.length === 0) return;
+      setExistingChecks((prev) => {
+        const next = new Map(prev);
+        for (const [key, id] of newlyFound) next.set(key, id);
+        return next;
+      });
+      // Already-existing candidates are never shown in the toggleable
+      // review list at all (see SelectBody/newCandidates) — drop them from
+      // the pending selection too, so a "selected by default" flag set
+      // before this resolved can never cause create to touch one.
+      const newlyFoundKeys = new Set(newlyFound.map(([key]) => key));
+      setSelectedKeys((prev) => prev.filter((k) => !newlyFoundKeys.has(k)));
+    }
+
     async function runAnalyze() {
       // Starts right away — before we even know whether the browser step
       // will run — so the percent is already moving during local
@@ -307,13 +380,20 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
       const progress = startFakeProgress(setAnalyzeProgress, () => cancelled, ANALYZE_PROGRESS_TARGET_MS);
 
       const targetUrl = /^https?:\/\//.test(initialTargetUrl) ? initialTargetUrl : `https://${initialTargetUrl}`;
-      const [list] = await Promise.all([candidatesFor(targetUrl), sleep(ANALYZE_MIN_MS)]);
+      const list = await candidatesFor(targetUrl);
       if (cancelled) {
         progress.stop();
         return;
       }
       setCandidates(list);
       setSelectedKeys(list.filter((c) => c.selectedByDefault).map((c) => c.key));
+      // Runs concurrently with the pacing sleep below, so it adds no
+      // perceived latency when it succeeds.
+      await Promise.all([checkExistingChecks(list, () => cancelled), sleep(ANALYZE_MIN_MS)]);
+      if (cancelled) {
+        progress.stop();
+        return;
+      }
 
       // No point asking to open a browser for live discovery if there's no
       // signed-in assistant to judge what it finds — skip straight through,
@@ -355,6 +435,11 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
           }
           if (aiCandidates.length > 0) {
             setCandidates((prev) => [...(prev ?? []), ...aiCandidates]);
+            await checkExistingChecks(aiCandidates, () => cancelled);
+            if (cancelled) {
+              progress.stop();
+              return;
+            }
           }
         } catch {
           // Nice-to-have — never blocks setup on a failed discovery pass.
@@ -646,7 +731,9 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
   }
 
   function Footer() {
-    if (currentStep !== "select") return null;
+    // Nothing to toggle/move when there's no selectable list at all —
+    // SelectBody already shows its own EnterHint for that case.
+    if (currentStep !== "select" || newCandidates.length === 0) return null;
     // No marginTop here on purpose — the blank line above the prompt
     // already comes from the Box wrapping it in the main render; hints sit
     // directly beneath the prompt they describe, with no gap. "continue"
@@ -689,24 +776,44 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
     if (!candidates) return null;
     return (
       <Box flexDirection="column">
-        <Text>These are the Synthetic Checks we suggest creating</Text>
-        <CheckboxList
-          items={candidates.map((c) => ({
-            key: c.key,
-            label: c.title,
-            description: c.description,
-            meta: `(${formatFrequency(c.frequencyMs)})`,
-          }))}
-          initialSelected={new Set(selectedKeys)}
-          accentColor={accent ?? "white"}
-          onSubmit={(keys) => selectResolver.current?.(keys)}
-          onSelectionChange={setSelectedKeys}
-        />
-        <Box marginTop={1}>
-          <Text color={muted}>
-            {selectedKeys.length} check{selectedKeys.length === 1 ? "" : "s"} selected
-          </Text>
-        </Box>
+        {existingCandidates.length > 0 && (
+          <Box flexDirection="column" marginBottom={newCandidates.length > 0 ? 1 : 0}>
+            <Text color={muted}>Already tracked in this stack — left as-is:</Text>
+            {existingCandidates.map((c) => (
+              <Text key={c.key} color={muted}>
+                {"  "}
+                <Text color={ok}>✓</Text> {c.title}
+              </Text>
+            ))}
+          </Box>
+        )}
+        {newCandidates.length > 0 ? (
+          <>
+            <Text>These are the Synthetic Checks we suggest creating</Text>
+            <CheckboxList
+              items={newCandidates.map((c) => ({
+                key: c.key,
+                label: c.title,
+                description: c.description,
+                meta: `(${formatFrequency(c.frequencyMs)})`,
+              }))}
+              initialSelected={new Set(selectedKeys)}
+              accentColor={accent ?? "white"}
+              onSubmit={(keys) => selectResolver.current?.(keys)}
+              onSelectionChange={setSelectedKeys}
+            />
+            <Box marginTop={1}>
+              <Text color={muted}>
+                {selectedKeys.length} check{selectedKeys.length === 1 ? "" : "s"} selected
+              </Text>
+            </Box>
+          </>
+        ) : (
+          <Box flexDirection="column">
+            <Text color={muted}>Nothing new to create — every suggested check already exists in this stack.</Text>
+            <EnterHint suffix="to continue" />
+          </Box>
+        )}
       </Box>
     );
   }
