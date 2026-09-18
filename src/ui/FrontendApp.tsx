@@ -20,7 +20,7 @@ import {
 import type { FaroInstrumentation, FrontendTarget } from "../products/frontendO11y/instrument.js";
 import { instrumentNextjs } from "../products/frontendO11y/nextjs.js";
 import { instrumentReact } from "../products/frontendO11y/react.js";
-import { accent, bad, EnterHint, Header, MIN_SPINNER_MS, muted, ok, startFakeProgress, useHardExit } from "./shared.js";
+import { accent, bad, EnterHint, Header, MIN_SPINNER_MS, muted, ok, startFakeProgress, url, useHardExit } from "./shared.js";
 import { useGcxStep } from "./steps/useGcxStep.js";
 import { useAuthStep } from "./steps/useAuthStep.js";
 
@@ -103,7 +103,7 @@ export function FrontendApp({ initialStackUrl, forceGcxInstall, initialAppName, 
 
   // gcx/auth steps — shared with SetupApp via src/ui/steps.
   const gcx = useGcxStep(forceGcxInstall, currentStep === "gcx");
-  const auth = useAuthStep("Sign in to Grafana Cloud in your browser.", currentStep === "auth");
+  const auth = useAuthStep("Sign in to Grafana Cloud using your browser?", currentStep === "auth");
 
   // undefined means "none of these — create a new app instead" (the
   // picker's trailing option), not "still waiting".
@@ -505,7 +505,7 @@ export function FrontendApp({ initialStackUrl, forceGcxInstall, initialAppName, 
           <Text bold>{frontendFile ? "Cool, we're done!" : frontendError ? "Setup incomplete." : "Nothing to do."}</Text>
           {frontendFile && appUrl && (
             <Text color={muted}>
-              Once changes are live, data will show up here: <Text color="blue">{appUrl}</Text>
+              Once changes are live, data will show up here: <Text color={url}>{appUrl}</Text>
             </Text>
           )}
           {frontendFile && sessionReplay && (
