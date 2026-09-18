@@ -18,10 +18,10 @@ export const NO_COLOR = Boolean(process.env.NO_COLOR);
 export const accent = NO_COLOR ? undefined : "#FFA500";
 export const ok = NO_COLOR ? undefined : "green";
 export const bad = NO_COLOR ? undefined : "red";
-// The target URL is effectively the session's main identifier — called
-// out in its own color wherever it's mentioned, rather than relying on
-// bold or <angle brackets> to make it stand out.
-export const idColor = NO_COLOR ? undefined : "#C792EA";
+// A URL the user might actually open — same color everywhere one shows
+// up (target URL, "view checks", "generate a token", app dashboard),
+// rather than relying on bold or <angle brackets> to make it stand out.
+export const url = NO_COLOR ? undefined : "blue";
 // A plain ANSI "gray" (bright-black, code 90) reads as near-invisible on a
 // dark/charcoal terminal background — verified live. This hex sits at a
 // medium gray instead, legible as "secondary" text on both dark and light
@@ -246,7 +246,7 @@ export function Header({ stackUrl }: { stackUrl: string }) {
   return (
     <Box flexDirection="column" marginBottom={1}>
       <Text>
-        <Text bold>🦕 @grafana/cloud-setup</Text>
+        <Text>🦕 @grafana/cloud-setup</Text>
         <Text color={muted}> {PACKAGE_VERSION}</Text>
       </Text>
       <Box marginTop={1} flexDirection="column">

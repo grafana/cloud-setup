@@ -13,7 +13,7 @@ import { tryAutoSmSession } from "../products/syntheticMonitoring/smAuth.js";
 import { writeTerraformExport } from "../products/syntheticMonitoring/terraform.js";
 import { CheckboxList } from "./CheckboxList.js";
 import { SelectMenu, type SelectMenuItem } from "./SelectMenu.js";
-import { accent, bad, EnterHint, Header, idColor, MIN_SPINNER_MS, muted, ok, startFakeProgress, useHardExit, Working } from "./shared.js";
+import { accent, bad, EnterHint, Header, MIN_SPINNER_MS, muted, ok, startFakeProgress, url, useHardExit, Working } from "./shared.js";
 import { useGcxStep } from "./steps/useGcxStep.js";
 import { useAuthStep } from "./steps/useAuthStep.js";
 import type { SyntheticConfig } from "../products/syntheticMonitoring/types.js";
@@ -230,7 +230,7 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
   // failing it here never re-prompts; both of those just fall back on
   // their own.
   const gcx = useGcxStep(forceGcxInstall, currentStep === "gcx");
-  const auth = useAuthStep("Sign in to Grafana Cloud in your browser.", currentStep === "auth");
+  const auth = useAuthStep("Sign in to Grafana Cloud using your browser?", currentStep === "auth");
 
   // create step — "reviewing"'s selectedKeys seeded once (in runAnalyze),
   // then kept live via CheckboxList's onSelectionChange so a back-then-
@@ -973,7 +973,7 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
         <Box flexDirection="column">
           <Text>
             Open a real browser to look for additional synthetic checks on{" "}
-            <Text color={idColor}>{initialTargetUrl}</Text>?
+            <Text color={url}>{initialTargetUrl}</Text>?
           </Text>
           <EnterHint suffix="or n to skip" />
         </Box>
@@ -1019,7 +1019,7 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
       <Box flexDirection="column">
         <Text>{checksCreatedLine()}</Text>
         <Text color={muted}>
-          View checks: <Text color="blue">{initialStackUrl.replace(/\/$/, "")}/a/grafana-synthetic-monitoring-app/checks</Text>
+          View checks: <Text color={url}>{initialStackUrl.replace(/\/$/, "")}/a/grafana-synthetic-monitoring-app/checks</Text>
         </Text>
       </Box>
     );
@@ -1136,7 +1136,7 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
           <Text>Last thing, we promise. Enter your Grafana Cloud access token</Text>
           {tokenPageUrl && (
             <Text color={muted}>
-              Generate one here: <Text color="blue">{tokenPageUrl}</Text>
+              Generate one here: <Text color={url}>{tokenPageUrl}</Text>
             </Text>
           )}
           <Box>
@@ -1159,7 +1159,7 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
       <Box flexDirection="column" paddingLeft={1}>
         <Header stackUrl={initialStackUrl} />
         <Text>
-          Let's set up synthetic checks for <Text color={idColor}>{initialTargetUrl}</Text>
+          Let's set up synthetic checks for <Text color={url}>{initialTargetUrl}</Text>
         </Text>
         <EnterHint />
       </Box>

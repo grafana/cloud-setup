@@ -20,7 +20,7 @@ import {
 import type { FaroInstrumentation, FrontendTarget } from "../products/frontendO11y/instrument.js";
 import { instrumentNextjs } from "../products/frontendO11y/nextjs.js";
 import { instrumentReact } from "../products/frontendO11y/react.js";
-import { accent, bad, EnterHint, Header, MIN_SPINNER_MS, muted, ok, startFakeProgress, useHardExit } from "./shared.js";
+import { accent, bad, EnterHint, Header, MIN_SPINNER_MS, muted, ok, startFakeProgress, url, useHardExit } from "./shared.js";
 import { useGcxStep } from "./steps/useGcxStep.js";
 import { useAuthStep } from "./steps/useAuthStep.js";
 
@@ -42,7 +42,7 @@ const STEP_LABELS: Record<StepId, string> = {
 // or an agent-assisted React/Next.js edit) — same fake-progress treatment
 // as "Analyze target" in SetupApp.tsx (see shared.tsx's startFakeProgress),
 // just a shorter target since this step is typically much quicker.
-const INSTRUMENT_PROGRESS_TARGET_MS = 20_000;
+const INSTRUMENT_PROGRESS_TARGET_MS = 45_000;
 
 // Display-only detail next to each app in the picker — the collector
 // host is a recognizable "which one is this" cue without printing the
@@ -65,11 +65,11 @@ function faroAppHost(url: string): string {
 // that exists, or exactly one app exists overall, it's used directly
 // with no extra step. With more than one and no --app, "picking-app"
 // shows a picker (with a "create a new app" option at the end). If none
-// exist at all (or the named one doesn't), opens the Frontend
-// Observability app page for the user to create one there instead, then
-// asks for its collector URL.
-type PickAppSubPhase = "checking" | "picking-app" | "collector-url-input";
-const PICK_APP_WAITING_SUBPHASES: PickAppSubPhase[] = ["picking-app", "collector-url-input"];
+// exist at all (or the named one doesn't), asks whether to open the
+// Frontend Observability "create a new app" page, then asks for its
+// collector URL.
+type PickAppSubPhase = "checking" | "picking-app" | "create-app-confirm" | "collector-url-input";
+const PICK_APP_WAITING_SUBPHASES: PickAppSubPhase[] = ["picking-app", "create-app-confirm", "collector-url-input"];
 
 interface Props {
   initialStackUrl: string;
@@ -103,11 +103,12 @@ export function FrontendApp({ initialStackUrl, forceGcxInstall, initialAppName, 
 
   // gcx/auth steps — shared with SetupApp via src/ui/steps.
   const gcx = useGcxStep(forceGcxInstall, currentStep === "gcx");
-  const auth = useAuthStep("Sign in to Grafana Cloud in your browser.", currentStep === "auth");
+  const auth = useAuthStep("Sign in to Grafana Cloud using your browser?", currentStep === "auth");
 
   // undefined means "none of these — create a new app instead" (the
   // picker's trailing option), not "still waiting".
   const appPickerResolver = useRef<((app: FaroApp | undefined) => void) | undefined>(undefined);
+  const createAppConfirmResolver = useRef<((allow: boolean) => void) | undefined>(undefined);
   const collectorUrlResolver = useRef<((url: string) => void) | undefined>(undefined);
 
   // Cross-step state: each step's run function is a fresh closure (the
@@ -164,6 +165,14 @@ export function FrontendApp({ initialStackUrl, forceGcxInstall, initialAppName, 
       }
     },
     { isActive: currentStep === "pick-app" && pickAppSubPhase === "picking-app" }
+  );
+
+  useInput(
+    (input, key) => {
+      if (key.return || input.toLowerCase() === "y") createAppConfirmResolver.current?.(true);
+      else if (input.toLowerCase() === "n") createAppConfirmResolver.current?.(false);
+    },
+    { isActive: currentStep === "pick-app" && pickAppSubPhase === "create-app-confirm" }
   );
 
   useEffect(() => {
@@ -225,15 +234,26 @@ export function FrontendApp({ initialStackUrl, forceGcxInstall, initialAppName, 
           instrumentationBaseRef.current = { name: chosen.name, collectorUrl: `${chosen.collectEndpointURL}/${chosen.appKey}` };
           setAppUrl(chosen.id ? `${base}/a/grafana-kowalski-app/apps/${chosen.id}` : `${base}/a/grafana-kowalski-app`);
         } else {
-          const fallbackName = initialAppName ?? readPkgName(process.cwd()) ?? path.basename(process.cwd());
-          openFrontendO11ySetupPage(initialStackUrl);
-          setPickAppSubPhase("collector-url-input");
-          const pastedUrl = await new Promise<string>((resolve) => {
-            collectorUrlResolver.current = resolve;
+          setPickAppSubPhase("create-app-confirm");
+          const proceed = await new Promise<boolean>((resolve) => {
+            createAppConfirmResolver.current = resolve;
           });
           if (cancelled) return;
-          instrumentationBaseRef.current = { name: fallbackName, collectorUrl: pastedUrl };
-          setAppUrl(`${base}/a/grafana-kowalski-app`);
+
+          if (!proceed) {
+            frontendSkippedRef.current = true;
+            setFrontendError("declined");
+          } else {
+            const fallbackName = initialAppName ?? readPkgName(process.cwd()) ?? path.basename(process.cwd());
+            openFrontendO11ySetupPage(initialStackUrl);
+            setPickAppSubPhase("collector-url-input");
+            const pastedUrl = await new Promise<string>((resolve) => {
+              collectorUrlResolver.current = resolve;
+            });
+            if (cancelled) return;
+            instrumentationBaseRef.current = { name: fallbackName, collectorUrl: pastedUrl };
+            setAppUrl(`${base}/a/grafana-kowalski-app`);
+          }
         }
       } catch (err) {
         if (cancelled) return;
@@ -439,7 +459,7 @@ export function FrontendApp({ initialStackUrl, forceGcxInstall, initialAppName, 
     if (pickAppSubPhase === "picking-app")
       return (
         <Box flexDirection="column">
-          <Text>Which Frontend Observability app is this?</Text>
+          <Text>Which app do you want to use?</Text>
           {faroApps.map((app, i) => (
             <Text key={app.id || app.name}>
               {i === appPickerCursor ? (
@@ -467,10 +487,16 @@ export function FrontendApp({ initialStackUrl, forceGcxInstall, initialAppName, 
           </Box>
         </Box>
       );
+    if (pickAppSubPhase === "create-app-confirm")
+      return (
+        <Box flexDirection="column">
+          <Text>No existing app found. We'll open your browser to create one; once it's created, come back here and paste its collector URL.</Text>
+          <EnterHint suffix="or n to skip" />
+        </Box>
+      );
     if (pickAppSubPhase === "collector-url-input")
       return (
         <Box flexDirection="column">
-          <Text>A browser window just opened — create a new app there, then paste its collector URL here.</Text>
           <Box>
             <Text>Faro collector URL: </Text>
             <TextInput
@@ -489,7 +515,7 @@ export function FrontendApp({ initialStackUrl, forceGcxInstall, initialAppName, 
       <Box flexDirection="column" paddingLeft={1}>
         <Header stackUrl={initialStackUrl} />
         <Text>
-          Let's set up <Text bold>Frontend Observability</Text> for this project.
+          Let's set up Frontend Observability for this project.
         </Text>
         <EnterHint />
       </Box>
@@ -505,7 +531,7 @@ export function FrontendApp({ initialStackUrl, forceGcxInstall, initialAppName, 
           <Text bold>{frontendFile ? "Cool, we're done!" : frontendError ? "Setup incomplete." : "Nothing to do."}</Text>
           {frontendFile && appUrl && (
             <Text color={muted}>
-              Once changes are live, data will show up here: <Text color="blue">{appUrl}</Text>
+              Once changes are live, data will show up here: <Text color={url}>{appUrl}</Text>
             </Text>
           )}
           {frontendFile && sessionReplay && (
