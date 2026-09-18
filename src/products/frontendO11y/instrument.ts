@@ -15,11 +15,11 @@ function openBrowser(url: string): void {
   spawn(cmd, args, { stdio: "ignore", detached: true }).unref();
 }
 
-// Opens the Frontend Observability app list/creation page on the stack —
+// Opens the Frontend Observability "create a new app" page directly —
 // used when no existing app matches this project, since this tool can't
 // create one itself (see FaroClient.findExisting's doc comment).
 export function openFrontendO11ySetupPage(stackUrl: string): void {
-  openBrowser(`${stackUrl.replace(/\/$/, "")}/a/grafana-kowalski-app`);
+  openBrowser(`${stackUrl.replace(/\/$/, "")}/a/grafana-kowalski-app/apps/new`);
 }
 
 // Decoupled from FaroClient's FaroApp shape on purpose — `collectorUrl` is
