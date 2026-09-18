@@ -103,10 +103,7 @@ export function FrontendApp({ initialStackUrl, forceGcxInstall, initialAppName, 
 
   // gcx/auth steps — shared with SetupApp via src/ui/steps.
   const gcx = useGcxStep(forceGcxInstall, currentStep === "gcx");
-  const auth = useAuthStep(
-    "Sign in to Grafana Cloud to look up your Frontend Observability apps automatically? This will open a browser.",
-    currentStep === "auth"
-  );
+  const auth = useAuthStep("Sign in to Grafana Cloud in your browser.", currentStep === "auth");
 
   // undefined means "none of these — create a new app instead" (the
   // picker's trailing option), not "still waiting".
@@ -421,7 +418,9 @@ export function FrontendApp({ initialStackUrl, forceGcxInstall, initialAppName, 
               {step === "auth" && completed.has(step) && auth.error && (
                 <Text color={muted}> Skipping auto-lookup ({auth.error})</Text>
               )}
-              {step === "instrument" && completed.has(step) && frontendFile && <Text>{"     "}Instrumented {frontendFile}</Text>}
+              {step === "instrument" && completed.has(step) && frontendFile && (
+                <Text color={muted}>{"     "}Instrumented {frontendFile}</Text>
+              )}
               {step === "instrument" && completed.has(step) && frontendError && (
                 <Text color={muted}>{"     "}Skipped Frontend Observability setup ({frontendError})</Text>
               )}

@@ -161,6 +161,24 @@ const ExchangeResponseSchema = z.object({
   }),
 });
 
+// The assistant-app error envelope is `{message, name, traceId, ...}` — this
+// surfaces just `message` (what a user can actually act on) instead of the
+// raw JSON blob, which is what ends up in a CLI line like "Skipping
+// AI-powered suggestions (...)" otherwise. Falls back to the raw body only
+// when it isn't that shape, so nothing is silently swallowed.
+async function describeErrorResponse(res: Response): Promise<string> {
+  const text = await res.text().catch(() => "unknown error");
+  try {
+    const body: unknown = JSON.parse(text);
+    if (body && typeof body === "object" && typeof (body as { message?: unknown }).message === "string") {
+      return (body as { message: string }).message;
+    }
+  } catch {
+    // Not JSON — fall through to the raw text below.
+  }
+  return text;
+}
+
 async function exchangeCode(stackUrl: string, code: string, codeVerifier: string): Promise<AssistantTokens> {
   const res = await fetch(`${normalizeStackUrl(stackUrl)}/api/cli/v1/auth/exchange`, {
     method: "POST",
@@ -169,7 +187,7 @@ async function exchangeCode(stackUrl: string, code: string, codeVerifier: string
     signal: AbortSignal.timeout(30000),
   });
   if (!res.ok) {
-    throw new Error(`Assistant auth exchange failed (${res.status}): ${await res.text().catch(() => "unknown error")}`);
+    throw new Error(`Assistant auth exchange failed (${res.status}): ${await describeErrorResponse(res)}`);
   }
   const body = ExchangeResponseSchema.parse(await res.json());
   return {
