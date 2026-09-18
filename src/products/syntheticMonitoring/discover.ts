@@ -40,6 +40,30 @@ function browserScript(url: string): string {
   ].join("\n");
 }
 
+// checkLinks (github.com/grafana/jslib.k6.io PR #263) scans every link on
+// the loaded page and fails the check if any resolve to a bad HTTP status.
+function linkCheckScript(url: string): string {
+  return [
+    "import { browser } from 'k6/browser';",
+    "import { checkLinks } from 'https://jslib.k6.io/sm-linkcheck/0.1.0/index.js';",
+    "",
+    "export const options = {",
+    "  scenarios: { ui: { executor: 'shared-iterations', options: { browser: { type: 'chromium' } } } },",
+    "};",
+    "",
+    "export default async function () {",
+    "  const page = await browser.newPage();",
+    "  try {",
+    `    await page.goto('${url}', { waitUntil: 'load' });`,
+    "    await checkLinks(page);",
+    "  } finally {",
+    "    await page.close();",
+    "  }",
+    "}",
+    "",
+  ].join("\n");
+}
+
 // A GET rather than HEAD, since plenty of servers handle HEAD poorly; body is
 // discarded unread — only the Content-Type header matters here.
 async function isWebsite(url: string): Promise<boolean> {
@@ -55,8 +79,9 @@ async function isWebsite(url: string): Promise<boolean> {
 // Generates the default candidate checks for an explicitly-given target URL
 // (always --url now — never invented or discovered from the project):
 // an HTTP uptime check (always), an SSL check (only if the URL is https —
-// there's no cert to check otherwise), and a browser check if the target
-// actually serves an HTML page. So 1 to 3 candidates.
+// there's no cert to check otherwise), and a browser check plus a broken-
+// link check if the target actually serves an HTML page. So 1 to 4
+// candidates.
 export async function candidatesFor(url: string): Promise<Candidate[]> {
   const trimmed = url.replace(/\/$/, "");
   const parsed = new URL(trimmed);
@@ -100,6 +125,18 @@ export async function candidatesFor(url: string): Promise<Candidate[]> {
       target: trimmed,
       settings: { browser: { script: browserScript(trimmed) } },
       frequencyMs: THIRTY_MINUTES_MS,
+    });
+    candidates.push({
+      key: "broken-links",
+      label: "broken-links",
+      title: "Broken links",
+      description: `Scan ${displayUrl} for broken links`,
+      selectedByDefault: true,
+      target: trimmed,
+      settings: { browser: { script: linkCheckScript(trimmed) } },
+      // Links don't rot as fast as uptime/rendering can break — mainly a
+      // concern right after a deploy, not minute to minute.
+      frequencyMs: SIXTY_MINUTES_MS,
     });
   }
 
