@@ -40,6 +40,32 @@ function browserScript(url: string): string {
   ].join("\n");
 }
 
+// sslcheck.checkCertificate defaults failOnExpired/failOnNearExpiry to
+// false (a library shouldn't throw by default) — opted into both here to
+// actually fail the check on an expired or soon-to-expire cert, matching
+// what the previous TCP-level "ssl" check's SM alerting implied it did.
+function sslCheckScript(url: string): string {
+  return [
+    "import { browser } from 'k6/browser';",
+    "import sslcheck from 'https://jslib.k6.io/sm-sslcheck/0.1.0/index.js';",
+    "",
+    "export const options = {",
+    "  scenarios: { ui: { executor: 'shared-iterations', options: { browser: { type: 'chromium' } } } },",
+    "};",
+    "",
+    "export default async function () {",
+    "  const page = await browser.newPage();",
+    "  try {",
+    `    const res = await page.goto('${url}');`,
+    "    await sslcheck.checkCertificate(res, { warnDays: 30, failOnExpired: true, failOnNearExpiry: true });",
+    "  } finally {",
+    "    await page.close();",
+    "  }",
+    "}",
+    "",
+  ].join("\n");
+}
+
 // A GET rather than HEAD, since plenty of servers handle HEAD poorly; body is
 // discarded unread — only the Content-Type header matters here.
 async function isWebsite(url: string): Promise<boolean> {
@@ -84,8 +110,8 @@ export async function candidatesFor(url: string): Promise<Candidate[]> {
       title: "SSL",
       description: `Check SSL certificate for ${parsed.hostname}`,
       selectedByDefault: true,
-      target: `${parsed.hostname}:443`,
-      settings: { tcp: { tls: true } },
+      target: trimmed,
+      settings: { browser: { script: sslCheckScript(trimmed) } },
       frequencyMs: SIXTY_MINUTES_MS,
     });
   }
