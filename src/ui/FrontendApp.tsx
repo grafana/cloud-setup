@@ -42,7 +42,7 @@ const STEP_LABELS: Record<StepId, string> = {
 // or an agent-assisted React/Next.js edit) — same fake-progress treatment
 // as "Analyze target" in SetupApp.tsx (see shared.tsx's startFakeProgress),
 // just a shorter target since this step is typically much quicker.
-const INSTRUMENT_PROGRESS_TARGET_MS = 20_000;
+const INSTRUMENT_PROGRESS_TARGET_MS = 45_000;
 
 // Display-only detail next to each app in the picker — the collector
 // host is a recognizable "which one is this" cue without printing the
