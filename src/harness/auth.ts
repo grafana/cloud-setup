@@ -12,6 +12,16 @@ export interface AssistantTokens {
   apiEndpoint: string;
   expiresAt: number;
   refreshExpiresAt: number;
+  // The Grafana Cloud stack this session belongs to. The auth flow returns it
+  // as `tenant`, a numeric string, on both the callback and the exchange.
+  // Absent if it ever comes back as something else, rather than guessed at.
+  stackId?: number;
+}
+
+function parseStackId(value: string | null | undefined): number | undefined {
+  if (typeof value !== "string" || !/^\d+$/.test(value)) return undefined;
+  const parsed = Number(value);
+  return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : undefined;
 }
 
 const REFRESH_THRESHOLD_MS = 5 * 60 * 1000;
@@ -158,6 +168,7 @@ const ExchangeResponseSchema = z.object({
     expires_at: z.string(),
     refresh_expires_at: z.string(),
     api_endpoint: z.string(),
+    tenant: z.string().optional(),
   }),
 });
 
@@ -196,6 +207,7 @@ async function exchangeCode(stackUrl: string, code: string, codeVerifier: string
     apiEndpoint: body.data.api_endpoint,
     expiresAt: new Date(body.data.expires_at).getTime(),
     refreshExpiresAt: new Date(body.data.refresh_expires_at).getTime(),
+    ...(parseStackId(body.data.tenant) !== undefined ? { stackId: parseStackId(body.data.tenant) } : {}),
   };
 }
 

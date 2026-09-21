@@ -55,6 +55,12 @@ npm link
 ```
 
 
+## Telemetry
+
+The CLI reports anonymous usage statistics to Grafana's usage-stats service by default, and setting `CLOUD_SETUP_TELEMETRY=disabled` or `DO_NOT_TRACK=1` turns it off. See `src/telemetry.ts` for what is collected, and `CLOUD_SETUP_TELEMETRY=log` to print each payload instead of sending it.
+
+Runs from a source checkout report nothing, so local development stays out of the data. Set `CLOUD_SETUP_TELEMETRY=enabled` to override that, and `CLOUD_SETUP_TELEMETRY_ENDPOINT` to point at the staging receiver.
+
 ## License
 
 Apache-2.0

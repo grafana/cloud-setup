@@ -20,7 +20,8 @@ import {
 import type { FaroInstrumentation, FrontendTarget } from "../products/frontendO11y/instrument.js";
 import { instrumentNextjs } from "../products/frontendO11y/nextjs.js";
 import { instrumentReact } from "../products/frontendO11y/react.js";
-import { accent, bad, EnterHint, Header, MIN_SPINNER_MS, muted, ok, startFakeProgress, url, useHardExit } from "./shared.js";
+import { accent, bad, EnterHint, Header, MIN_SPINNER_MS, muted, ok, requireInteractiveTerminal, startFakeProgress, url, useHardExit } from "./shared.js";
+import { recordStep, type Outcome, type StepProperties, type StepStatus } from "../telemetry.js";
 import { useGcxStep } from "./steps/useGcxStep.js";
 import { useAuthStep } from "./steps/useAuthStep.js";
 
@@ -79,12 +80,13 @@ interface Props {
 }
 
 export function FrontendApp({ initialStackUrl, forceGcxInstall, initialAppName, sessionReplay }: Props) {
-  const exit = useHardExit();
+  const exit = useHardExit("frontend", initialStackUrl);
 
   const [started, setStarted] = useState(false);
   const [currentStep, setCurrentStep] = useState<StepId>("gcx");
   const [completed, setCompleted] = useState<Set<StepId>>(new Set());
   const [done, setDone] = useState(false);
+  const setupOutcome = useRef<Outcome>("incomplete");
   const [failureSummary, setFailureSummary] = useState<string>();
 
   const [pickAppSubPhase, setPickAppSubPhase] = useState<PickAppSubPhase>("checking");
@@ -126,7 +128,8 @@ export function FrontendApp({ initialStackUrl, forceGcxInstall, initialAppName, 
     (currentStep === "auth" && auth.isWaiting) ||
     (currentStep === "pick-app" && PICK_APP_WAITING_SUBPHASES.includes(pickAppSubPhase));
 
-  function advance() {
+  function advance(properties: StepProperties) {
+    recordStep("frontend", initialStackUrl, currentStep, properties);
     setCompleted((prev) => new Set(prev).add(currentStep));
     const idx = STEP_ORDER.indexOf(currentStep);
     const next = STEP_ORDER[idx + 1];
@@ -180,15 +183,19 @@ export function FrontendApp({ initialStackUrl, forceGcxInstall, initialAppName, 
     let cancelled = false;
 
     async function runGcx() {
-      await gcx.run(() => cancelled);
+      const result = await gcx.run(() => cancelled);
       if (cancelled) return;
-      advance();
+      advance({
+        status: result.installDeclined ? "declined" : "ok",
+        already_installed: result.alreadyInstalled,
+        install_declined: result.installDeclined,
+      });
     }
 
     async function runAuth() {
-      await auth.run(initialStackUrl, () => cancelled);
+      const authOutcome = await auth.run(initialStackUrl, () => cancelled);
       if (cancelled) return;
-      advance();
+      advance({ status: authOutcome === "yes" ? "ok" : authOutcome, auth_outcome: authOutcome });
     }
 
     async function runPickApp() {
@@ -203,6 +210,10 @@ export function FrontendApp({ initialStackUrl, forceGcxInstall, initialAppName, 
       }
       targetRef.current = target;
 
+      let resolution: "named" | "auto_single" | "picker" | "manual" = "manual";
+      // Local, not read back off frontendError — that is React state, so it
+      // still holds its previous value inside this closure.
+      let status: StepStatus = "ok";
       try {
         setPickAppSubPhase("checking");
         const [faro] = await Promise.all([tryFaroClient(initialStackUrl), sleep(MIN_SPINNER_MS)]);
@@ -214,10 +225,12 @@ export function FrontendApp({ initialStackUrl, forceGcxInstall, initialAppName, 
           // fall through to manual creation below with that same name
           // rather than silently picking a different app.
           chosen = await faro?.findExisting(initialAppName);
+          if (chosen) resolution = "named";
         } else {
           const apps = (await faro?.list()) ?? [];
           if (apps.length === 1) {
             chosen = apps[0];
+            resolution = "auto_single";
           } else if (apps.length > 1) {
             setFaroApps(apps);
             setAppPickerCursor(0);
@@ -226,6 +239,7 @@ export function FrontendApp({ initialStackUrl, forceGcxInstall, initialAppName, 
               appPickerResolver.current = resolve;
             });
             if (cancelled) return;
+            if (chosen) resolution = "picker";
           }
         }
 
@@ -243,6 +257,7 @@ export function FrontendApp({ initialStackUrl, forceGcxInstall, initialAppName, 
           if (!proceed) {
             frontendSkippedRef.current = true;
             setFrontendError("declined");
+            status = "declined";
           } else {
             const fallbackName = initialAppName ?? readPkgName(process.cwd()) ?? path.basename(process.cwd());
             openFrontendO11ySetupPage(initialStackUrl);
@@ -259,14 +274,15 @@ export function FrontendApp({ initialStackUrl, forceGcxInstall, initialAppName, 
         if (cancelled) return;
         frontendSkippedRef.current = true;
         setFrontendError(err instanceof Error ? err.message : String(err));
+        status = "failed";
       }
       if (cancelled) return;
-      advance();
+      advance({ status, app_resolution: resolution });
     }
 
     async function runInstrument() {
       if (frontendSkippedRef.current) {
-        advance();
+        advance({ status: "skipped" });
         setDone(true);
         return;
       }
@@ -287,6 +303,10 @@ export function FrontendApp({ initialStackUrl, forceGcxInstall, initialAppName, 
         sessionReplay,
       };
       const replayPackages = sessionReplay ? [REPLAY_FARO_PACKAGE] : [];
+      let packageInstall: "ok" | "failed" = "ok";
+      let instrumentationComplete = false;
+      let routerWired: boolean | undefined;
+      let layoutWired: boolean | undefined;
 
       try {
         if (target.kind === "javascript") {
@@ -297,6 +317,7 @@ export function FrontendApp({ initialStackUrl, forceGcxInstall, initialAppName, 
             return;
           }
           setFrontendFile(target.file);
+          instrumentationComplete = true;
         } else if (target.kind === "react") {
           // Run separately from installFaroPackages, not bundled into one
           // Promise.all — a failed install would otherwise reject the
@@ -313,12 +334,15 @@ export function FrontendApp({ initialStackUrl, forceGcxInstall, initialAppName, 
             await installFaroPackages(process.cwd(), [...REACT_FARO_PACKAGES, ...replayPackages]);
           } catch (err) {
             installError = err instanceof Error ? err.message : String(err);
+            packageInstall = "failed";
           }
           if (cancelled) {
             progress.stop();
             return;
           }
 
+          instrumentationComplete = result.complete;
+          routerWired = Boolean(result.routerFile);
           const base = result.routerFile ? `${result.entryFile}, router wrapped in ${result.routerFile}` : result.entryFile;
           setFrontendFile(installError ? `${base} (package install failed: ${installError})` : base);
         } else {
@@ -333,12 +357,15 @@ export function FrontendApp({ initialStackUrl, forceGcxInstall, initialAppName, 
             await installFaroPackages(process.cwd(), [...JAVASCRIPT_FARO_PACKAGES, ...replayPackages]);
           } catch (err) {
             installError = err instanceof Error ? err.message : String(err);
+            packageInstall = "failed";
           }
           if (cancelled) {
             progress.stop();
             return;
           }
 
+          instrumentationComplete = result.complete;
+          layoutWired = Boolean(result.layoutFile);
           if (result.layoutFile) {
             setFrontendFile(
               installError
@@ -356,12 +383,21 @@ export function FrontendApp({ initialStackUrl, forceGcxInstall, initialAppName, 
           progress.stop();
           return;
         }
+        packageInstall = "failed";
         setFrontendError(err instanceof Error ? err.message : String(err));
       }
       if (cancelled) return;
       await progress.finish();
       if (cancelled) return;
-      advance();
+      setupOutcome.current = instrumentationComplete && packageInstall === "ok" ? "ok" : "incomplete";
+      advance({
+        status: setupOutcome.current === "ok" ? "ok" : "failed",
+        instrumentation: instrumentationComplete ? "complete" : "partial",
+        target_kind: target.kind,
+        package_install: packageInstall,
+        ...(routerWired !== undefined ? { router_wired: routerWired } : {}),
+        ...(layoutWired !== undefined ? { layout_wired: layoutWired } : {}),
+      });
       setDone(true);
     }
 
@@ -385,7 +421,7 @@ export function FrontendApp({ initialStackUrl, forceGcxInstall, initialAppName, 
   }, [currentStep, started]);
 
   useEffect(() => {
-    if (done) exit();
+    if (done) exit(undefined, setupOutcome.current);
   }, [done, exit]);
   useEffect(() => {
     if (failureSummary) exit(new Error(failureSummary));
@@ -584,9 +620,7 @@ export async function runFrontendUI(
   initialAppName?: string,
   sessionReplay = false
 ): Promise<void> {
-  if (!process.stdin.isTTY) {
-    throw new Error("synthetics requires an interactive terminal.");
-  }
+  await requireInteractiveTerminal("frontend", initialStackUrl);
   // exitOnCtrlC disabled — see the matching comment in SetupApp.tsx's
   // runSetupUI: Ink's own default Ctrl+C handling otherwise wins the race
   // against useHardExit's useInput callback and kills the process before

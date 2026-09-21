@@ -122,6 +122,9 @@ export interface ReactInstrumentResult {
   entryFile: string;
   routerFile?: string;
   detail?: string;
+  // Whether instrumentation finished. Explicit, so callers never have to
+  // infer it from `detail` being empty — that is a human-readable message.
+  complete: boolean;
 }
 
 // The entry-file init is always deterministic (see insertBasicInit).
@@ -137,7 +140,8 @@ export async function instrumentReact(cwd: string, stackUrl: string, entryFile: 
   insertBasicInit(cwd, entryFile, instrumentation);
 
   const routerRel = findDataRouterFile(cwd);
-  if (!routerRel) return { entryFile };
+  // Nothing to wrap, so the entry-file init above was the whole job.
+  if (!routerRel) return { entryFile, complete: true };
 
   const routerFull = path.join(cwd, routerRel);
   const before = readFileSync(routerFull, "utf8");
@@ -161,7 +165,7 @@ export async function instrumentReact(cwd: string, stackUrl: string, entryFile: 
   try {
     await runTask(stackUrl, task, fileToolsWithWrite(cwd));
   } catch (err) {
-    return { entryFile, detail: err instanceof Error ? err.message : String(err) };
+    return { entryFile, detail: err instanceof Error ? err.message : String(err), complete: false };
   }
 
   const content = existsSync(routerFull) ? readFileSync(routerFull, "utf8") : "";
@@ -171,12 +175,12 @@ export async function instrumentReact(cwd: string, stackUrl: string, entryFile: 
   // already correctly wrapped from an earlier run — an idempotent re-run
   // shouldn't report a regression just because nothing needed to change.
   if (!content.includes("withFaroRouterInstrumentation")) {
-    return { entryFile };
+    return { entryFile, detail: "the agent did not instrument the data router", complete: false };
   }
   if (changedThisRun && (hasSyntaxErrors(content) || looksTruncated(before, content))) {
     writeFileSync(routerFull, before, "utf8");
-    return { entryFile, detail: "the agent's router-wrapping edit didn't look right and was rolled back" };
+    return { entryFile, detail: "the agent's router-wrapping edit didn't look right and was rolled back", complete: false };
   }
 
-  return { entryFile, routerFile: routerRel };
+  return { entryFile, routerFile: routerRel, complete: true };
 }
