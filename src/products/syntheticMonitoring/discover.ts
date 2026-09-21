@@ -14,10 +14,18 @@ export interface Candidate {
   target: string;
   settings: CheckSettings;
   frequencyMs: number;
+  // How many probe locations this check is created with — capped to
+  // however many actually exist on the tenant (see runCreate in
+  // SetupApp.tsx). Varies per check type rather than one count applied to
+  // everything.
+  probeCount: number;
 }
 
-// SSL certs don't change often, so the least frequent check the SM API
-// allows (60 minutes) is enough; the other checks run twice as often.
+// Uptime and Browser check the target's own availability/rendering, which
+// can break at any moment; SSL and Broken links check things that only
+// really change around a deploy, so an hourly cadence is enough for them.
+const TEN_MINUTES_MS = 10 * 60 * 1000;
+const TWENTY_MINUTES_MS = 20 * 60 * 1000;
 const THIRTY_MINUTES_MS = 30 * 60 * 1000;
 const SIXTY_MINUTES_MS = 60 * 60 * 1000;
 
@@ -134,7 +142,8 @@ export async function candidatesFor(url: string): Promise<Candidate[]> {
       selectedByDefault: true,
       target: trimmed,
       settings: { http: { method: "GET" } },
-      frequencyMs: THIRTY_MINUTES_MS,
+      frequencyMs: TEN_MINUTES_MS,
+      probeCount: 3,
     },
   ];
 
@@ -148,6 +157,7 @@ export async function candidatesFor(url: string): Promise<Candidate[]> {
       target: trimmed,
       settings: { browser: { script: sslCheckScript(trimmed) } },
       frequencyMs: SIXTY_MINUTES_MS,
+      probeCount: 1,
     });
   }
 
@@ -160,7 +170,8 @@ export async function candidatesFor(url: string): Promise<Candidate[]> {
       selectedByDefault: true,
       target: trimmed,
       settings: { browser: { script: browserScript(trimmed) } },
-      frequencyMs: THIRTY_MINUTES_MS,
+      frequencyMs: TWENTY_MINUTES_MS,
+      probeCount: 3,
     });
     candidates.push({
       key: "broken-links",
@@ -173,6 +184,7 @@ export async function candidatesFor(url: string): Promise<Candidate[]> {
       // Links don't rot as fast as uptime/rendering can break — mainly a
       // concern right after a deploy, not minute to minute.
       frequencyMs: SIXTY_MINUTES_MS,
+      probeCount: 1,
     });
   }
 
@@ -245,6 +257,9 @@ export async function aiEndpointCandidatesFor(
       target,
       settings: { http: { method: "GET" } },
       frequencyMs: THIRTY_MINUTES_MS,
+      // A protocol check, same category as "Uptime" — matches its probe
+      // count rather than inventing a separate default for this one.
+      probeCount: 3,
     };
   });
 }
