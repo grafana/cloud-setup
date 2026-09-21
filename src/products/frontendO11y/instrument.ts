@@ -241,7 +241,9 @@ export function insertFaroSnippet(cwd: string, target: FrontendTarget, instrumen
 // against grafana.com/docs/.../get-started/ (React's @grafana/faro-react
 // is its own package, not web-sdk + web-tracing).
 export const JAVASCRIPT_FARO_PACKAGES = ["@grafana/faro-web-sdk", "@grafana/faro-web-tracing"];
-export const REACT_FARO_PACKAGES = ["@grafana/faro-react"];
+// faro-web-tracing is a separate package from faro-react itself — needed
+// here too now that TracingInstrumentation is wired in by default.
+export const REACT_FARO_PACKAGES = ["@grafana/faro-react", "@grafana/faro-web-tracing"];
 // Its own package regardless of framework — verified against
 // grafana.com/docs/.../session-replay/instrument/.
 export const REPLAY_FARO_PACKAGE = "@grafana/faro-instrumentation-replay";

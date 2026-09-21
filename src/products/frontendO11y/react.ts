@@ -14,25 +14,18 @@ const DATA_ROUTER_PATTERN = /\bcreate(?:Browser|Hash|Memory)Router\s*\(/;
 // Base shape matches the documented basic-init snippet (verified against
 // grafana.com/docs/.../instrument-react/) — @grafana/faro-react's own
 // initializeFaro wrapper, not the generic @grafana/faro-web-sdk one used
-// for non-React projects. Notably no explicit instrumentations array —
-// confirmed against the real page twice, not a fetch artifact: the React
-// package apparently applies its own defaults internally (it re-exports
-// @grafana/faro-web-sdk's initializeFaro verbatim, which defaults
-// `instrumentations` to getWebInstrumentations() when the key is omitted —
-// checked in that package's own makeCoreConfig source). version/
-// environment/session fields added on top match Grafana's own faro-setup
-// skill, which includes them for React too (see FaroInstrumentation).
-// Session Replay (sessionReplay) isn't covered by that page at all — its
-// own docs only show the vanilla @grafana/faro-web-sdk shape — but since
-// initializeFaro is the same function, adding it here means the
-// `instrumentations` key can no longer be omitted (the default only
-// applies when it's absent), so getWebInstrumentations() has to be spelled
-// out explicitly once ReplayInstrumentation joins it.
+// for non-React projects. That page's own snippet omits the
+// `instrumentations` key entirely and relies on the React package's
+// default (it re-exports @grafana/faro-web-sdk's initializeFaro verbatim,
+// which defaults to getWebInstrumentations() alone when the key is
+// absent) — but TracingInstrumentation (for HTTP request visibility) and,
+// when enabled, Session Replay both need to be added explicitly, same as
+// the vanilla and Next.js snippets, so the array is always spelled out
+// here instead of relying on that default.
 function basicInitSnippet(instrumentation: FaroInstrumentation): string {
   return [
-    instrumentation.sessionReplay
-      ? "import { getWebInstrumentations, initializeFaro } from '@grafana/faro-react';"
-      : "import { initializeFaro } from '@grafana/faro-react';",
+    "import { getWebInstrumentations, initializeFaro } from '@grafana/faro-react';",
+    "import { TracingInstrumentation } from '@grafana/faro-web-tracing';",
     ...(instrumentation.sessionReplay ? ["import { ReplayInstrumentation } from '@grafana/faro-instrumentation-replay';"] : []),
     "",
     "initializeFaro({",
@@ -43,15 +36,15 @@ function basicInitSnippet(instrumentation: FaroInstrumentation): string {
     `    environment: ${instrumentation.environmentExpr},`,
     "  },",
     ...sessionTrackingLines(instrumentation, "  "),
+    "  instrumentations: [",
+    "    // Mandatory, omits default instrumentations otherwise.",
+    "    ...getWebInstrumentations(),",
+    "    // Tracing package to get end-to-end visibility for HTTP requests.",
+    "    new TracingInstrumentation(),",
     ...(instrumentation.sessionReplay
-      ? [
-          "  instrumentations: [",
-          "    ...getWebInstrumentations(),",
-          "    // Beta: requires Session Replay enabled on this stack, or it's a no-op.",
-          ...replayInstrumentationLines(instrumentation.replayMasking, "    "),
-          "  ],",
-        ]
+      ? ["    // Beta: requires Session Replay enabled on this stack, or it's a no-op.", ...replayInstrumentationLines(instrumentation.replayMasking, "    ")]
       : []),
+    "  ],",
     "});",
     "",
   ].join("\n");
