@@ -737,9 +737,7 @@ export function FrontendApp({ initialStackUrl, forceGcxInstall, initialAppName }
     if (pickAppSubPhase === "create-app-confirm")
       return (
         <Box flexDirection="column">
-          <Text>
-            No existing app found. We'll create one — if that doesn't work, we'll open your browser instead and ask you to paste its collector URL.
-          </Text>
+          <Text>No existing app found. Create one? This'll open your browser. Come back here with its collector URL once it's created.</Text>
           <EnterHint suffix="or n to skip" />
         </Box>
       );
