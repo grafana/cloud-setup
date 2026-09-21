@@ -1,5 +1,6 @@
 import path from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
+import { debugLog } from "../debug.js";
 import React, { useEffect, useRef, useState } from "react";
 import { Box, render, Text, useInput } from "ink";
 import Spinner from "ink-spinner";
@@ -91,15 +92,14 @@ function faroAppHost(url: string): string {
 // No confirm question here — running the `frontend` subcommand at all
 // already means "yes, instrument this project," so asking again would
 // just be a redundant question. Straight into "checking": look up
-// existing Faro apps — creating a new one isn't possible through this
-// OAuth session (verified live: Frontend Observability's plugin-proxy
-// route only accepts a real Service Account token for writes, unlike
-// Synthetic Monitoring's datasource-proxy route). If --app named one
-// that exists, or exactly one app exists overall, it's used directly
-// with no extra step. With more than one and no --app, "picking-app"
-// shows a picker (with a "create a new app" option at the end). If none
-// exist at all (or the named one doesn't), asks whether to open the
-// Frontend Observability "create a new app" page, then asks for its
+// existing Faro apps via the same OAuth session used everywhere else in
+// this wizard. If --app named one that exists, or exactly one app exists
+// overall, it's used directly with no extra step. With more than one and
+// no --app, "picking-app" shows a picker (with a "create a new app"
+// option at the end). If none exist at all (or the named one doesn't),
+// asks to create one — tried first through this same OAuth session
+// (see FaroClient.create), falling back only on failure to opening the
+// Frontend Observability "create a new app" page and asking for its
 // collector URL. Once an app is resolved (whichever path got there),
 // "sampling-input"/"replay-confirm"/"masking-picker" configure it — same
 // step, not a separate one, since these are properties of the app you
@@ -107,8 +107,16 @@ function faroAppHost(url: string): string {
 // Sampling comes first — it's the general, every-session setting — then
 // Session Replay narrows down from there, then its masking preset if
 // enabled.
+//
+// "advancing" is a brief, non-interactive beat inserted between each pair
+// of questions (see the transition() helper in runPickApp below) — same
+// idea as "checking"'s own spinner, just shorter: a completely instant
+// question-after-question flow reads as broken/skipped rather than as a
+// wizard progressing, especially right after the create attempt (which
+// can resolve in well under a second).
 type PickAppSubPhase =
   | "checking"
+  | "advancing"
   | "picking-app"
   | "create-app-confirm"
   | "collector-url-input"
@@ -123,6 +131,7 @@ const PICK_APP_WAITING_SUBPHASES: PickAppSubPhase[] = [
   "replay-confirm",
   "masking-picker",
 ];
+const PICK_APP_TRANSITION_MS = 500;
 
 interface Props {
   initialStackUrl: string;
@@ -292,10 +301,20 @@ export function FrontendApp({ initialStackUrl, forceGcxInstall, initialAppName }
       }
       targetRef.current = target;
 
-      let resolution: "named" | "auto_single" | "picker" | "manual" = "manual";
+      let resolution: "named" | "auto_single" | "picker" | "created" | "manual" = "manual";
       // Local, not read back off frontendError — that is React state, so it
       // still holds its previous value inside this closure.
       let status: StepStatus = "ok";
+
+      // A brief spinner beat before each subsequent question — see the
+      // doc comment on PickAppSubPhase. Returns false (caller should
+      // bail) if the step got cancelled mid-beat.
+      async function transition(): Promise<boolean> {
+        setPickAppSubPhase("advancing");
+        await sleep(PICK_APP_TRANSITION_MS);
+        return !cancelled;
+      }
+
       try {
         setPickAppSubPhase("checking");
         const [faro] = await Promise.all([tryFaroClient(initialStackUrl), sleep(MIN_SPINNER_MS)]);
@@ -331,6 +350,7 @@ export function FrontendApp({ initialStackUrl, forceGcxInstall, initialAppName }
           setAppUrl(chosen.id ? `${base}/a/grafana-kowalski-app/apps/${chosen.id}` : `${base}/a/grafana-kowalski-app`);
           setAppName(chosen.name);
         } else {
+          if (!(await transition())) return;
           setPickAppSubPhase("create-app-confirm");
           const proceed = await new Promise<boolean>((resolve) => {
             createAppConfirmResolver.current = resolve;
@@ -343,15 +363,43 @@ export function FrontendApp({ initialStackUrl, forceGcxInstall, initialAppName }
             status = "declined";
           } else {
             const fallbackName = initialAppName ?? readPkgName(process.cwd()) ?? path.basename(process.cwd());
-            openFrontendO11ySetupPage(initialStackUrl);
-            setPickAppSubPhase("collector-url-input");
-            const pastedUrl = await new Promise<string>((resolve) => {
-              collectorUrlResolver.current = resolve;
-            });
+
+            // Try creating it through the same OAuth session first — no
+            // second, browser-based login, no manual paste. Only fall
+            // back to the manual flow if that fails (older stack, no
+            // faro client, name conflict, ...): this is a nice-to-have
+            // shortcut, not something worth hard-failing the step over.
+            // The spinner (rather than an instant jump to either the
+            // next question or the browser) doubles as the minimum
+            // pacing beat between questions — a real request this can
+            // resolve in well under a second, otherwise.
+            setPickAppSubPhase("advancing");
+            if (!faro) debugLog("faro create", "no Faro client — auth/session lookup failed earlier");
+            const [created] = await Promise.all([
+              faro?.create(fallbackName).catch((err) => {
+                debugLog("faro create", err instanceof Error ? err.message : String(err));
+                return undefined;
+              }),
+              sleep(PICK_APP_TRANSITION_MS),
+            ]);
             if (cancelled) return;
-            instrumentationBaseRef.current = { name: fallbackName, collectorUrl: pastedUrl };
-            setAppUrl(`${base}/a/grafana-kowalski-app`);
-            setAppName(fallbackName);
+
+            if (created) {
+              resolution = "created";
+              instrumentationBaseRef.current = { name: created.name, collectorUrl: `${created.collectEndpointURL}/${created.appKey}` };
+              setAppUrl(created.id ? `${base}/a/grafana-kowalski-app/apps/${created.id}` : `${base}/a/grafana-kowalski-app`);
+              setAppName(created.name);
+            } else {
+              openFrontendO11ySetupPage(initialStackUrl);
+              setPickAppSubPhase("collector-url-input");
+              const pastedUrl = await new Promise<string>((resolve) => {
+                collectorUrlResolver.current = resolve;
+              });
+              if (cancelled) return;
+              instrumentationBaseRef.current = { name: fallbackName, collectorUrl: pastedUrl };
+              setAppUrl(`${base}/a/grafana-kowalski-app`);
+              setAppName(fallbackName);
+            }
           }
         }
       } catch (err) {
@@ -374,6 +422,7 @@ export function FrontendApp({ initialStackUrl, forceGcxInstall, initialAppName }
       // Sampling first — it's the general, every-session setting;
       // Session Replay (and its masking, if enabled) narrows down from
       // there, so it comes after.
+      if (!(await transition())) return;
       setPickAppSubPhase("sampling-input");
       const rate = await new Promise<number>((resolve) => {
         samplingResolver.current = resolve;
@@ -381,6 +430,7 @@ export function FrontendApp({ initialStackUrl, forceGcxInstall, initialAppName }
       if (cancelled) return;
       setSamplingRate(rate);
 
+      if (!(await transition())) return;
       setPickAppSubPhase("replay-confirm");
       const replayEnabled = await new Promise<boolean>((resolve) => {
         replayConfirmResolver.current = resolve;
@@ -390,6 +440,7 @@ export function FrontendApp({ initialStackUrl, forceGcxInstall, initialAppName }
 
       let masking: ReplayMasking = "balanced";
       if (replayEnabled) {
+        if (!(await transition())) return;
         setPickAppSubPhase("masking-picker");
         masking = await new Promise<ReplayMasking>((resolve) => {
           maskingResolver.current = resolve;
@@ -686,7 +737,9 @@ export function FrontendApp({ initialStackUrl, forceGcxInstall, initialAppName }
     if (pickAppSubPhase === "create-app-confirm")
       return (
         <Box flexDirection="column">
-          <Text>No existing app found. We'll open your browser to create one; once it's created, come back here and paste its collector URL.</Text>
+          <Text>
+            No existing app found. We'll create one — if that doesn't work, we'll open your browser instead and ask you to paste its collector URL.
+          </Text>
           <EnterHint suffix="or n to skip" />
         </Box>
       );
@@ -805,7 +858,7 @@ export function FrontendApp({ initialStackUrl, forceGcxInstall, initialAppName }
           failureSummary ||
           (currentStep === "gcx" && gcx.subPhase === "gcx-install-confirm") ||
           (currentStep === "auth" && (auth.subPhase === "browser-confirm" || auth.subPhase === "authenticating")) ||
-          (currentStep === "pick-app" && pickAppSubPhase !== "checking")
+          (currentStep === "pick-app" && pickAppSubPhase !== "checking" && pickAppSubPhase !== "advancing")
             ? 1
             : 0
         }
