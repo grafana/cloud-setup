@@ -164,6 +164,9 @@ export interface StepProperties {
 
   // frontend: pick-app
   app_resolution?: "named" | "auto_single" | "picker" | "manual";
+  session_replay?: boolean;
+  replay_masking?: "strict" | "balanced" | "open";
+  sampling_rate?: number;
 
   // frontend: instrument. Not named "outcome": that belongs to the run, and
   // reusing it here made one run report two conflicting outcomes.

@@ -2,7 +2,7 @@ import { existsSync, readFileSync, readdirSync, statSync, writeFileSync } from "
 import path from "node:path";
 import ts from "typescript";
 import { fileToolsWithWrite, runTask } from "../../harness/index.js";
-import type { FaroInstrumentation } from "./instrument.js";
+import { replayInstrumentationLines, sessionTrackingLines, type FaroInstrumentation } from "./instrument.js";
 
 const IGNORED_DIRS = new Set(["node_modules", ".git", "dist", "build", ".turbo", ".next"]);
 const SOURCE_EXTENSIONS = new Set([".ts", ".tsx", ".js", ".jsx"]);
@@ -42,13 +42,13 @@ function basicInitSnippet(instrumentation: FaroInstrumentation): string {
     `    version: '${instrumentation.version}',`,
     `    environment: ${instrumentation.environmentExpr},`,
     "  },",
-    ...(instrumentation.sessionPersistent ? ["  sessionTracking: {", "    persistent: true,", "  },"] : []),
+    ...sessionTrackingLines(instrumentation, "  "),
     ...(instrumentation.sessionReplay
       ? [
           "  instrumentations: [",
           "    ...getWebInstrumentations(),",
           "    // Beta: requires Session Replay enabled on this stack, or it's a no-op.",
-          "    new ReplayInstrumentation(),",
+          ...replayInstrumentationLines(instrumentation.replayMasking, "    "),
           "  ],",
         ]
       : []),

@@ -2,7 +2,7 @@ import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import ts from "typescript";
 import { fileToolsWithWrite, runTask } from "../../harness/index.js";
-import type { FaroInstrumentation } from "./instrument.js";
+import { replayInstrumentationLines, sessionTrackingLines, type FaroInstrumentation } from "./instrument.js";
 
 // Root layout candidates (App Router and Pages Router, with or without
 // src/) — existing ones get snapshotted before the agent runs, so a
@@ -64,12 +64,12 @@ function componentSource(instrumentation: FaroInstrumentation): string {
     `        version: '${instrumentation.version}',`,
     `        environment: ${instrumentation.environmentExpr},`,
     "      },",
-    ...(instrumentation.sessionPersistent ? ["      sessionTracking: {", "        persistent: true,", "      },"] : []),
+    ...sessionTrackingLines(instrumentation, "      "),
     "      instrumentations: [",
     "        ...getWebInstrumentations(),",
     "        new TracingInstrumentation(),",
     ...(instrumentation.sessionReplay
-      ? ["        // Beta: requires Session Replay enabled on this stack, or it's a no-op.", "        new ReplayInstrumentation(),"]
+      ? ["        // Beta: requires Session Replay enabled on this stack, or it's a no-op.", ...replayInstrumentationLines(instrumentation.replayMasking, "        ")]
       : []),
     "      ],",
     "    });",

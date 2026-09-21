@@ -41,11 +41,62 @@ export interface FaroInstrumentation {
   // rather than being baked in as a fixed guess at setup time.
   environmentExpr: string;
   sessionPersistent: boolean;
-  // Opt-in only (--session-replay): Session Replay is still a beta add-on
-  // that Grafana has to manually enable per-stack (a form submission, no
-  // API), so wiring it in by default would often silently record nothing
-  // — see grafana.com/docs/.../session-replay/.
+  // Opt-in only (--session-replay, or the interactive prompt): Session
+  // Replay is still a beta add-on that Grafana has to manually enable
+  // per-stack (a form submission, no API), so wiring it in by default
+  // would often silently record nothing — see grafana.com/docs/.../session-replay/.
   sessionReplay: boolean;
+  // Only meaningful when sessionReplay is true — which privacy-masking
+  // preset the generated ReplayInstrumentation() call uses.
+  replayMasking: ReplayMasking;
+  // Fraction of sessions tracked, (0, 1]. 1 (100%) matches the SDK's own
+  // default, so it's only ever emitted into the snippet when lower.
+  samplingRate: number;
+}
+
+// The three presets Grafana's Session Replay setup wizard offers — Strict
+// blocks all media and relies on blocking rather than masking, Balanced
+// masks text content, Open only masks password/email inputs by default.
+export type ReplayMasking = "strict" | "balanced" | "open";
+
+const REPLAY_MASKING_OPTIONS: Record<ReplayMasking, string[]> = {
+  strict: [
+    "blockSelector: '.grafana-block, img, picture, svg, video, audio, canvas, iframe, object, embed',",
+    "ignoreSelector: '.grafana-ignore'",
+  ],
+  balanced: [
+    "maskTextSelector: '.grafana-mask, [contenteditable]',",
+    "blockSelector: '.grafana-block',",
+    "ignoreSelector: '.grafana-ignore'",
+  ],
+  open: [
+    "maskAllInputs: false,",
+    "maskInputOptions: {",
+    "  password: true,",
+    "  email: true",
+    "},",
+    "maskTextSelector: '.grafana-mask',",
+    "blockSelector: '.grafana-block',",
+    "ignoreSelector: '.grafana-ignore'",
+  ],
+};
+
+// Shared by the vanilla, React, and Next.js snippet generators — `indent`
+// is whatever column the `new ReplayInstrumentation(...)` call itself sits
+// at in that generator's instrumentations array, since it differs per
+// framework's snippet shape.
+export function replayInstrumentationLines(masking: ReplayMasking, indent: string): string[] {
+  return [`${indent}new ReplayInstrumentation({`, ...REPLAY_MASKING_OPTIONS[masking].map((line) => `${indent}  ${line}`), `${indent}}),`];
+}
+
+// Also shared across the three generators. `indent` is the column the
+// surrounding `app: {...}` / `instrumentations: [...]` keys sit at.
+export function sessionTrackingLines(instrumentation: FaroInstrumentation, indent: string): string[] {
+  const fields: string[] = [];
+  if (instrumentation.sessionPersistent) fields.push(`${indent}  persistent: true,`);
+  if (instrumentation.samplingRate !== 1) fields.push(`${indent}  samplingRate: ${instrumentation.samplingRate},`);
+  if (fields.length === 0) return [];
+  return [`${indent}sessionTracking: {`, ...fields, `${indent}},`];
 }
 
 // Four real shapes, verified against grafana.com/docs/.../get-started/:
@@ -140,10 +191,7 @@ export function detectFrontendTarget(cwd: string): FrontendTarget {
 // Matches the documented vanilla-JS/TS snippet's shape (verified against
 // the Frontend Observability setup page), with version/environment/session
 // fields sourced the way Grafana's own faro-setup skill does rather than
-// guessed — see FaroInstrumentation's doc comment. Sampling is
-// deliberately never exposed here: that same skill explicitly avoids
-// surfacing it unless the user brings up high traffic, since 100% is
-// correct for most apps.
+// guessed — see FaroInstrumentation's doc comment.
 function webSdkSnippet(instrumentation: FaroInstrumentation): string {
   return [
     "import { getWebInstrumentations, initializeFaro } from '@grafana/faro-web-sdk';",
@@ -157,13 +205,15 @@ function webSdkSnippet(instrumentation: FaroInstrumentation): string {
     `    version: '${instrumentation.version}',`,
     `    environment: ${instrumentation.environmentExpr},`,
     "  },",
-    ...(instrumentation.sessionPersistent ? ["  sessionTracking: {", "    persistent: true,", "  },"] : []),
+    ...sessionTrackingLines(instrumentation, "  "),
     "  instrumentations: [",
     "    // Mandatory, omits default instrumentations otherwise.",
     "    ...getWebInstrumentations(),",
     "    // Tracing package to get end-to-end visibility for HTTP requests.",
     "    new TracingInstrumentation(),",
-    ...(instrumentation.sessionReplay ? ["    // Beta: requires Session Replay enabled on this stack, or it's a no-op.", "    new ReplayInstrumentation(),"] : []),
+    ...(instrumentation.sessionReplay
+      ? ["    // Beta: requires Session Replay enabled on this stack, or it's a no-op.", ...replayInstrumentationLines(instrumentation.replayMasking, "    ")]
+      : []),
     "  ],",
     "});",
     "",
