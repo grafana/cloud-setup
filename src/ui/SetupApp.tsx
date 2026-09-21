@@ -79,6 +79,11 @@ interface CreationItem {
   // Terraform" next step to emit a working `terraform import` command for
   // each check.
   id?: number;
+  // The probe names this specific check was actually assigned — each
+  // candidate carries its own probeCount (see discover.ts), so this can
+  // differ between items in the same pass rather than being one shared
+  // list for all of them.
+  probes: string[];
 }
 
 // One entry per completed next-step pick, rendered as its own row below
@@ -244,7 +249,6 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
   const [tokenInput, setTokenInput] = useState("");
   const [tokenError, setTokenError] = useState<string>();
   const [tokenPageUrl, setTokenPageUrl] = useState<string>();
-  const [assignedProbes, setAssignedProbes] = useState<string[]>([]);
   // Items for whichever "create" pass is currently running or most
   // recently ran — always what the in-progress/live row (fixed on the
   // first, "fast" pass; the dynamic next-steps row on every later pass)
@@ -704,13 +708,17 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
       // from every prior pass, on top of whatever's actually new.
       const handledKeys = handledCandidateKeys();
       const selected = (candidates ?? []).filter((c) => chosen.includes(c.key) && !handledKeys.has(c.key));
-      const probeNames = session.current.probes.slice(0, 2).map((p) => p.name);
-      if (probeNames.length === 0) throw new Error("No probes are available on this tenant.");
-      setAssignedProbes(probeNames);
+      if (session.current.probes.length === 0) throw new Error("No probes are available on this tenant.");
+      // Each candidate carries its own probeCount (see discover.ts) — capped
+      // to however many actually exist, same as the flat slice(0, 2) this
+      // replaced did for a fixed count.
+      const probesByCandidate = new Map<string, string[]>(
+        selected.map((c) => [c.key, session.current.probes.slice(0, c.probeCount).map((p) => p.name)])
+      );
 
       const config: SyntheticConfig = {};
       for (const c of selected) {
-        config[c.label] = { target: c.target, probes: probeNames, settings: c.settings, frequency: c.frequencyMs };
+        config[c.label] = { target: c.target, probes: probesByCandidate.get(c.key)!, settings: c.settings, frequency: c.frequencyMs };
       }
       // Merged, not replaced — `plan` above only ever runs against this
       // pass's own (now filtered-down) `config`, so the entries from
@@ -719,7 +727,11 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
       // latest pass's.
       createdConfigRef.current = { ...createdConfigRef.current, ...config };
 
-      let workingItems: CreationItem[] = selected.map((candidate) => ({ candidate, status: "pending" as ItemStatus }));
+      let workingItems: CreationItem[] = selected.map((candidate) => ({
+        candidate,
+        status: "pending" as ItemStatus,
+        probes: probesByCandidate.get(candidate.key)!,
+      }));
       setItems(workingItems);
       // Mirrored into a permanent snapshot only for the first, "fast"
       // pass — see the `items`/`firstPassItems` state comment — so the
@@ -1096,16 +1108,20 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
     // "London, Ohio" looking unrelated. No padding/alignment here on
     // purpose, so a long AI-discovered title (still length-capped — see
     // MAX_AI_TITLE_LENGTH in discover.ts) never has to fight a fixed
-    // column width either.
-    const loadZones = assignedProbes.join(", ");
-    return list.map((it) => (
-      <Text key={it.candidate.key}>
-        {"     "}
-        <ItemIcon status={it.status} /> {it.candidate.title}
-        {loadZones && <Text color={muted}> — {loadZones}</Text>}
-        {it.detail ? <Text color={muted}> · {it.detail}</Text> : null}
-      </Text>
-    ));
+    // column width either. Each item's own probes (see the CreationItem
+    // comment) — different candidates can carry different probe counts,
+    // so this is never a single list shared by the whole pass.
+    return list.map((it) => {
+      const loadZones = it.probes.join(", ");
+      return (
+        <Text key={it.candidate.key}>
+          {"     "}
+          <ItemIcon status={it.status} /> {it.candidate.title}
+          {loadZones && <Text color={muted}> — {loadZones}</Text>}
+          {it.detail ? <Text color={muted}> · {it.detail}</Text> : null}
+        </Text>
+      );
+    });
   }
 
   function CreateBody() {
