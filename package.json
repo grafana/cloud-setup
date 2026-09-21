@@ -2,8 +2,10 @@
   "name": "@grafana/cloud-setup",
   "version": "0.1.0",
   "description": "Grafana Cloud's interactive setup wizard, powered by Grafana Assistant.",
-  "private": true,
   "license": "Apache-2.0",
+  "publishConfig": {
+    "access": "public"
+  },
   "type": "module",
   "bin": {
     "cloud-setup": "./dist/cli.js"
