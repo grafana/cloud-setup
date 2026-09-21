@@ -4,7 +4,7 @@
 
 Grafana Cloud's interactive setup wizard, powered by Grafana Assistant. 
 
-Sets up **Synthetic Monitoring** or **Frontend Observability** in your project, installing `gcx` and agent skills along the way.
+Sets up **Synthetics** or **Frontend Observability** in your project, installing `gcx` and agent skills along the way.
 
 ### Requirements
 - Node.js >= 22.6.0
