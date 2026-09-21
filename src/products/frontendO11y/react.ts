@@ -50,15 +50,25 @@ function basicInitSnippet(instrumentation: FaroInstrumentation): string {
   ].join("\n");
 }
 
-// Same idempotent-prepend approach as the generic JS path — deterministic,
-// no agent needed, since both the content and the target file are fully
-// known ahead of time.
+// Same first-line-to-closing-`});` anchor as instrument.ts's
+// FARO_WEB_SDK_BLOCK — see that constant's comment for why it's safe
+// against the snippet's own nested closes.
+const FARO_REACT_BLOCK = /import \{ getWebInstrumentations, initializeFaro \} from '@grafana\/faro-react';[\s\S]*?\n\}\);\n/;
+
+// Same re-syncing prepend as instrument.ts's insertFaroSnippet — a later
+// run with different answers replaces the previously-inserted block
+// instead of leaving it stale. Deterministic, no agent needed, since both
+// the content and the target file are fully known ahead of time.
 function insertBasicInit(cwd: string, entryFile: string, instrumentation: FaroInstrumentation): void {
   const full = path.join(cwd, entryFile);
   const existing = existsSync(full) ? readFileSync(full, "utf8") : "";
-  if (existing.includes("@grafana/faro-react")) return;
+  const match = existing.match(FARO_REACT_BLOCK);
+  const rest = (match ? existing.slice(match.index! + match[0].length) : existing).replace(/^\n+/, "");
+
   const snippet = basicInitSnippet(instrumentation);
-  writeFileSync(full, existing ? `${snippet}\n${existing}` : snippet, "utf8");
+  const next = rest ? `${snippet}\n${rest}` : snippet;
+  if (next === existing) return;
+  writeFileSync(full, next, "utf8");
 }
 
 function walk(dir: string, out: string[]): void {
