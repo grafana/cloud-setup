@@ -7,11 +7,16 @@ import { checkNodeVersion, EnterHint, MIN_SPINNER_MS, muted } from "../shared.js
 export type GcxSubPhase = "checking-gcx" | "gcx-install-confirm" | "gcx-installing";
 export const GCX_WAITING_SUBPHASES: GcxSubPhase[] = ["gcx-install-confirm"];
 
+export interface GcxRunResult {
+  alreadyInstalled: boolean;
+  installDeclined: boolean;
+}
+
 export interface GcxStep {
   subPhase: GcxSubPhase;
   isWaiting: boolean;
   body: React.ReactNode;
-  run(isCancelled: () => boolean): Promise<void>;
+  run(isCancelled: () => boolean): Promise<GcxRunResult>;
 }
 
 // Shared "gcx" step: check whether the Grafana Cloud CLI is installed and,
@@ -31,13 +36,14 @@ export function useGcxStep(forceGcxInstall: boolean, isActive: boolean): GcxStep
     { isActive: isActive && subPhase === "gcx-install-confirm" }
   );
 
-  async function run(isCancelled: () => boolean): Promise<void> {
+  async function run(isCancelled: () => boolean): Promise<GcxRunResult> {
     checkNodeVersion();
     setSubPhase("checking-gcx");
     const gcxAvailable = isGcxInstalled();
     await sleep(MIN_SPINNER_MS);
-    if (isCancelled()) return;
+    if (isCancelled()) return { alreadyInstalled: gcxAvailable, installDeclined: false };
 
+    let installDeclined = false;
     // The flag only surfaces this path when gcx is already there (so you
     // get offered a reinstall instead of nothing happening) — it never
     // skips the confirmation itself.
@@ -47,7 +53,8 @@ export function useGcxStep(forceGcxInstall: boolean, isActive: boolean): GcxStep
       const shouldInstall = await new Promise<boolean>((resolve) => {
         installResolver.current = resolve;
       });
-      if (isCancelled()) return;
+      if (isCancelled()) return { alreadyInstalled: gcxAvailable, installDeclined: false };
+      installDeclined = !shouldInstall;
       if (shouldInstall) {
         setSubPhase("gcx-installing");
         try {
@@ -58,6 +65,7 @@ export function useGcxStep(forceGcxInstall: boolean, isActive: boolean): GcxStep
         }
       }
     }
+    return { alreadyInstalled: gcxAvailable, installDeclined };
   }
 
   const body =

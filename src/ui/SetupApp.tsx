@@ -13,7 +13,8 @@ import { tryAutoSmSession } from "../products/syntheticMonitoring/smAuth.js";
 import { writeTerraformExport } from "../products/syntheticMonitoring/terraform.js";
 import { CheckboxList } from "./CheckboxList.js";
 import { SelectMenu, type SelectMenuItem } from "./SelectMenu.js";
-import { accent, bad, EnterHint, Header, MIN_SPINNER_MS, muted, ok, startFakeProgress, url, useHardExit, Working } from "./shared.js";
+import { accent, bad, EnterHint, Header, MIN_SPINNER_MS, muted, ok, requireInteractiveTerminal, startFakeProgress, url, useHardExit, Working } from "./shared.js";
+import { recordStep, type StepProperties } from "../telemetry.js";
 import { useGcxStep } from "./steps/useGcxStep.js";
 import { useAuthStep } from "./steps/useAuthStep.js";
 import type { SyntheticConfig } from "../products/syntheticMonitoring/types.js";
@@ -212,7 +213,7 @@ interface Props {
 }
 
 export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, forceGcxInstall }: Props) {
-  const exit = useHardExit();
+  const exit = useHardExit("synthetics", initialStackUrl);
 
   const [started, setStarted] = useState(false);
   const [currentStep, setCurrentStep] = useState<StepId>("gcx");
@@ -316,7 +317,8 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
     if (backAllowed) setCreateSubPhase("reviewing");
   }
 
-  function advance() {
+  function advance(properties: StepProperties) {
+    recordStep("synthetics", initialStackUrl, currentStep, properties);
     setCompleted((prev) => new Set(prev).add(currentStep));
     const idx = STEP_ORDER.indexOf(currentStep);
     const next = STEP_ORDER[idx + 1];
@@ -357,7 +359,7 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
   }
 
   function finishNextSteps() {
-    advance();
+    advance({ status: "ok" });
     setDone(true);
   }
 
@@ -456,18 +458,23 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
     let cancelled = false;
 
     async function runGcx() {
-      await gcx.run(() => cancelled);
+      const result = await gcx.run(() => cancelled);
       if (cancelled) return;
-      advance();
+      advance({
+        status: result.installDeclined ? "declined" : "ok",
+        already_installed: result.alreadyInstalled,
+        install_declined: result.installDeclined,
+      });
     }
 
     async function runAuth() {
-      await auth.run(initialStackUrl, () => cancelled);
+      const authOutcome = await auth.run(initialStackUrl, () => cancelled);
       if (cancelled) return;
-      advance();
+      advance({ status: authOutcome === "yes" ? "ok" : authOutcome, auth_outcome: authOutcome });
     }
 
     async function runSkills() {
+      let installed = true;
       try {
         await Promise.all([
           (async () => {
@@ -478,9 +485,10 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
         ]);
       } catch {
         // Non-fatal — this is a nice-to-have for agent tooling, not core to creating checks.
+        installed = false;
       }
       if (cancelled) return;
-      advance();
+      advance({ status: installed ? "ok" : "failed" });
     }
 
     async function runAnalyze() {
@@ -494,7 +502,7 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
         if (cancelled) return;
         setCandidates(list);
         setSelectedKeys(list.filter((c) => c.selectedByDefault).map((c) => c.key));
-        advance();
+        advance({ status: "ok", analyze_mode: "fast", default_candidates: list.length });
         return;
       }
 
@@ -502,6 +510,7 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
       // declined or failed there means this skips itself here, same as if
       // it were declined right now, never re-prompting.
       if (auth.error) {
+        recordStep("synthetics", initialStackUrl, "analyze", { status: "skipped", analyze_mode: mode });
         backToNextSteps(`Grafana Assistant isn't signed in (${auth.error}) — skipped.`);
         return;
       }
@@ -548,10 +557,17 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
           label: nextStepOptionLabel("browser-discovery"),
           detail: "Skipped — no browser opened.",
         };
+        recordStep("synthetics", initialStackUrl, "analyze", {
+          status: "declined",
+          analyze_mode: mode,
+          browser_permission: "declined",
+        });
         backToNextSteps();
         return;
       }
 
+      // Out here because newCandidates is scoped to the try block below.
+      let newCandidateCount = 0;
       setAnalyzeSubPhase("discovering");
       try {
         // The explicit y/n above was the confirmation — the harness's own
@@ -570,6 +586,7 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
         // check that's already live (see handledCandidateKeys/SelectBody).
         const handled = handledCandidateKeys();
         const newCandidates = aiCandidates.filter((c) => !handled.has(c.key));
+        newCandidateCount = newCandidates.length;
         if (newCandidates.length > 0) {
           setCandidates((prev) => [...(prev ?? []), ...newCandidates]);
           pendingNextStepLog.current = {
@@ -587,6 +604,12 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
             label: nextStepOptionLabel("browser-discovery"),
             detail: "No new endpoints found.",
           };
+          recordStep("synthetics", initialStackUrl, "analyze", {
+            status: "ok",
+            analyze_mode: mode,
+            browser_permission: "allowed",
+            ai_candidates: 0,
+          });
           progress.stop();
           backToNextSteps();
           return;
@@ -598,6 +621,11 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
           label: nextStepOptionLabel("browser-discovery"),
           detail: "Couldn't discover additional endpoints.",
         };
+        recordStep("synthetics", initialStackUrl, "analyze", {
+          status: "failed",
+          analyze_mode: mode,
+          browser_permission: "allowed",
+        });
         progress.stop();
         backToNextSteps();
         return;
@@ -609,6 +637,12 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
       }
       await progress.finish();
       if (cancelled) return;
+      recordStep("synthetics", initialStackUrl, "analyze", {
+        status: "ok",
+        analyze_mode: mode,
+        browser_permission: "allowed",
+        ai_candidates: newCandidateCount,
+      });
       proceedToReview();
     }
 
@@ -797,7 +831,13 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
             ? { key: "browser-discovery", label: "Additional synthetic checks", items: workingItems }
             : { key: "browser-discovery", label: nextStepOptionLabel("browser-discovery"), detail: "No checks created." };
       }
-      advance();
+      advance({
+        status: "ok",
+        analyze_mode: analyzeMode,
+        created: workingItems.filter((it) => it.status === "created").length,
+        updated: workingItems.filter((it) => it.status === "updated").length,
+        skipped: workingItems.filter((it) => it.status === "skipped").length,
+      });
     }
 
     async function runNextSteps() {
@@ -1246,9 +1286,7 @@ export async function runSetupUI(
   initialStackUrl: string,
   forceGcxInstall: boolean
 ): Promise<void> {
-  if (!process.stdin.isTTY) {
-    throw new Error("synthetics requires an interactive terminal.");
-  }
+  await requireInteractiveTerminal("synthetics", initialStackUrl);
   // exitOnCtrlC disabled — Ink's own default Ctrl+C handling runs before
   // useHardExit's useInput callback ever gets a turn (both listen on the
   // same stdin stream, and Ink's own listener wins the race), so it kills

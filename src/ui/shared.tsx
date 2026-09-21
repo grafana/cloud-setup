@@ -2,10 +2,11 @@ import { readFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import React, { useEffect } from "react";
+import React, { useEffect, useRef } from "react";
 import { Box, Text, useApp, useInput } from "ink";
 import Spinner from "ink-spinner";
 import { detectFramework } from "../framework.js";
+import { recordRun, waitForTelemetry, type Command, type Outcome } from "../telemetry.js";
 
 export const MIN_NODE_MAJOR = 22;
 export const MIN_NODE_MINOR = 6;
@@ -63,6 +64,16 @@ export function checkNodeVersion(): void {
   }
 }
 
+// Ink needs a TTY on stdin for keyboard input, so a non-interactive run cannot
+// work at all. Reported before throwing, because otherwise the runs that never
+// got started are the one failure mode that leaves no trace.
+export async function requireInteractiveTerminal(command: Command, stackUrl: string): Promise<void> {
+  if (process.stdin.isTTY) return;
+  recordRun(command, stackUrl, "no_tty", 0);
+  await waitForTelemetry();
+  throw new Error(`${command} requires an interactive terminal.`);
+}
+
 // Ink's own exit() only unmounts the React tree — it restores the
 // terminal (cursor, raw mode) but doesn't actually end the Node process.
 // Anything still in flight when the user quits (the OAuth callback
@@ -79,21 +90,35 @@ export function checkNodeVersion(): void {
 // already rendered by the failing screen itself, so it isn't repeated
 // here. Undefined is a clean, silent exit (the "done" screen already
 // showed its own success message).
-export function useHardExit(): (errorOrMessage?: Error | string) => void {
+export function useHardExit(command: Command, stackUrl: string): (errorOrMessage?: Error | string, setupOutcome?: Outcome) => void {
   const { exit } = useApp();
+  const startedAt = useRef(Date.now());
+  const exiting = useRef(false);
 
-  function hardExit(errorOrMessage?: Error | string): void {
+  function hardExit(errorOrMessage?: Error | string, setupOutcome?: Outcome): void {
+    // Registering a SIGINT listener means nothing else will kill the process,
+    // so a second Ctrl+C has to exit here or it would look ignored.
+    if (exiting.current) {
+      process.exit(errorOrMessage instanceof Error ? 1 : 0);
+    }
+    exiting.current = true;
     const error = errorOrMessage instanceof Error ? errorOrMessage : undefined;
     // exit() first, while Ink still owns the terminal — it restores the
     // cursor and raw mode; printing before that would just get clobbered
     // by Ink's own rendering.
     exit(error);
     if (typeof errorOrMessage === "string") console.log(errorOrMessage);
+
+    const outcome: Outcome = error ? "error" : errorOrMessage !== undefined ? "canceled" : setupOutcome ?? "ok";
+    recordRun(command, stackUrl, outcome, Date.now() - startedAt.current);
+
     // setImmediate, not a same-tick process.exit() — Ink's own unmount
     // cleanup and the console.log above both write to the terminal, and
     // need a turn of the event loop to actually flush before the process
     // dies, or they can get silently dropped.
-    setImmediate(() => process.exit(error ? 1 : 0));
+    waitForTelemetry().finally(() => {
+      setImmediate(() => process.exit(error ? 1 : 0));
+    });
   }
 
   // Byte-level detection for platforms/terminals where raw mode actually

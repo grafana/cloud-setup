@@ -122,6 +122,9 @@ export interface NextjsInstrumentResult {
   componentFile?: string;
   layoutFile?: string;
   detail?: string;
+  // Whether instrumentation finished, which here means the component got
+  // wired into a root layout.
+  complete: boolean;
 }
 
 // Lets the Assistant agent own the whole thing — both the new component
@@ -174,7 +177,7 @@ export async function instrumentNextjs(cwd: string, stackUrl: string, instrument
   try {
     await runTask(stackUrl, task, fileToolsWithWrite(cwd));
   } catch (err) {
-    return { detail: err instanceof Error ? err.message : String(err) };
+    return { detail: err instanceof Error ? err.message : String(err), complete: false };
   }
 
   // The component's content is fixed and known ahead of time — never
@@ -205,7 +208,7 @@ export async function instrumentNextjs(cwd: string, stackUrl: string, instrument
       const before = componentSnapshots.get(rel);
       return before !== undefined && !before.includes("@grafana/faro-web-sdk") && existsSync(path.join(cwd, rel));
     });
-    return { detail: collided ? "a file already exists at the expected component path for something else" : undefined };
+    return { detail: collided ? "a file already exists at the expected component path for something else" : undefined, complete: false };
   }
 
   // Remove any OTHER component candidate the agent may have also created
@@ -242,5 +245,5 @@ export async function instrumentNextjs(cwd: string, stackUrl: string, instrument
     }
   }
 
-  return { componentFile, layoutFile };
+  return { componentFile, layoutFile, complete: layoutFile !== undefined };
 }

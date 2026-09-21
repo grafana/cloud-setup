@@ -2,17 +2,22 @@ import { setTimeout as sleep } from "node:timers/promises";
 import { useRef, useState } from "react";
 import { Box, Text, useInput } from "ink";
 import { ensureAssistantAuth } from "../../harness/index.js";
+import { setStackIdentity } from "../../telemetry.js";
 import { EnterHint, MIN_SPINNER_MS, muted } from "../shared.js";
 
 export type AuthSubPhase = "browser-confirm" | "authenticating";
 export const AUTH_WAITING_SUBPHASES: AuthSubPhase[] = ["browser-confirm"];
+
+// "aborted" is the user cancelling the wait (n or Esc), which is a choice
+// rather than a breakage — worth keeping distinct from "failed".
+export type AuthOutcome = "yes" | "declined" | "aborted" | "failed";
 
 export interface AuthStep {
   subPhase: AuthSubPhase;
   error: string | undefined;
   isWaiting: boolean;
   body: React.ReactNode;
-  run(stackUrl: string, isCancelled: () => boolean): Promise<void>;
+  run(stackUrl: string, isCancelled: () => boolean): Promise<AuthOutcome>;
 }
 
 // Shared "auth" step: ask once, up front, whether it's OK to open a browser
@@ -44,26 +49,29 @@ export function useAuthStep(confirmText: string, isActive: boolean): AuthStep {
     { isActive: isActive && subPhase === "authenticating" }
   );
 
-  async function run(stackUrl: string, isCancelled: () => boolean): Promise<void> {
+  async function run(stackUrl: string, isCancelled: () => boolean): Promise<AuthOutcome> {
     setSubPhase("browser-confirm");
     setError(undefined);
     const allow = await new Promise<boolean>((resolve) => {
       permissionResolver.current = resolve;
     });
-    if (isCancelled()) return;
+    if (isCancelled()) return "declined";
 
     if (!allow) {
       setError("declined");
-      return;
+      return "declined";
     }
 
     setSubPhase("authenticating");
     const controller = new AbortController();
     abortController.current = controller;
     try {
-      await Promise.all([ensureAssistantAuth(stackUrl, controller.signal), sleep(MIN_SPINNER_MS)]);
+      const [tokens] = await Promise.all([ensureAssistantAuth(stackUrl, controller.signal), sleep(MIN_SPINNER_MS)]);
+      if (!isCancelled()) setStackIdentity(stackUrl, tokens.stackId);
+      return "yes";
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
+      return controller.signal.aborted ? "aborted" : "failed";
     } finally {
       abortController.current = undefined;
     }
