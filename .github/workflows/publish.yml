@@ -27,6 +27,10 @@ jobs:
           node-version: '22'
           registry-url: 'https://registry.npmjs.org'
           scope: '@grafana'
+          # This is a publishing workflow; disable caching so a cache entry
+          # poisoned from a less-trusted context can't influence what gets
+          # published (zizmor cache-poisoning).
+          package-manager-cache: false
 
       # Trusted (OIDC) publishing requires npm >= 11.5.1; pin it explicitly
       # rather than relying on whatever npm ships bundled with Node.
