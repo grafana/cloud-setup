@@ -1,5 +1,6 @@
 import path from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
+import { debugLog } from "../debug.js";
 import React, { useEffect, useRef, useState } from "react";
 import { Box, render, Text, useInput } from "ink";
 import Spinner from "ink-spinner";
@@ -20,10 +21,11 @@ import { detectFrontendTarget } from "../products/frontendO11y/instrument.js";
 import { runFrontendUI } from "./FrontendApp.js";
 import { CheckboxList } from "./CheckboxList.js";
 import { SelectMenu, type SelectMenuItem } from "./SelectMenu.js";
-import { accent, bad, EnterHint, Header, MIN_SPINNER_MS, muted, ok, requireInteractiveTerminal, startFakeProgress, url, useHardExit, Working } from "./shared.js";
+import { accent, bad, EnterHint, Header, MIN_SPINNER_MS, muted, ok, originOf, requireInteractiveTerminal, startFakeProgress, url, useHardExit, Working } from "./shared.js";
 import { recordStep, type StepProperties } from "../telemetry.js";
 import { useGcxStep } from "./steps/useGcxStep.js";
 import { useAuthStep } from "./steps/useAuthStep.js";
+import { useConfirmScreen } from "./steps/useConfirmScreen.js";
 import type { SyntheticConfig } from "../products/syntheticMonitoring/types.js";
 
 const ANALYZE_MIN_MS = 5000;
@@ -54,17 +56,6 @@ async function probeReachable(url: string): Promise<void> {
   });
 }
 
-// scheme+host+port only, matching a Faro app's own corsOrigins shape (see
-// FaroApp) — never a full URL with a path/query, regardless of what shape
-// the SM target itself was passed in as.
-function originOf(rawUrl: string): string {
-  try {
-    return new URL(/^https?:\/\//.test(rawUrl) ? rawUrl : `https://${rawUrl}`).origin;
-  } catch {
-    return rawUrl;
-  }
-}
-
 // A corsOrigins entry can itself contain "*" wildcards (e.g.
 // "https://*.example.com"), so this can't be plain string equality — and
 // running a wildcard entry through originOf/new URL would just throw (a
@@ -72,6 +63,13 @@ function originOf(rawUrl: string): string {
 // comparing it as a literal that can never match. Escape everything else
 // and treat "*" as a glob instead.
 function originMatchesPattern(pattern: string, targetOrigin: string): boolean {
+  // A bare "*" is a fully-open CORS policy, which in practice is a
+  // leftover dev/test setting, not a real signal that this specific site
+  // is instrumented — verified live (a "Datadog Calculator Dev" app with
+  // corsOrigins ["*", "http://localhost:5173"] otherwise silently
+  // "covered" every URL on the stack, forever). A scoped wildcard like
+  // "https://*.example.com" still counts; only the unscoped one doesn't.
+  if (pattern === "*") return false;
   const escaped = pattern.replace(/[.*+?^${}()|[\]\\]/g, (c) => (c === "*" ? ".*" : `\\${c}`));
   try {
     return new RegExp(`^${escaped}$`).test(targetOrigin);
@@ -87,14 +85,30 @@ function originMatchesPattern(pattern: string, targetOrigin: string): boolean {
 // app's own CORS allow-list rather than "the stack has any app at all" —
 // plenty of stacks have Frontend Observability apps for other properties.
 async function checkFrontendO11yRecommendable(stackUrl: string, targetUrl: string): Promise<boolean> {
-  if (detectFrontendTarget(process.cwd()).kind === "unsupported") return false;
+  const target = detectFrontendTarget(process.cwd());
+  if (target.kind === "unsupported") {
+    debugLog("frontend-o11y-recommendable", "skipped: folder is not a recognizable frontend project");
+    return false;
+  }
   const faro = await tryFaroClient(stackUrl);
-  if (!faro) return false;
+  if (!faro) {
+    debugLog("frontend-o11y-recommendable", "skipped: no Faro client (auth/session unavailable)");
+    return false;
+  }
   try {
     const targetOrigin = originOf(targetUrl);
     const apps = await faro.list();
-    return !apps.some((app) => app.corsOrigins.some((pattern) => originMatchesPattern(pattern, targetOrigin)));
-  } catch {
+    const covering = apps.find((app) => app.corsOrigins.some((pattern) => originMatchesPattern(pattern, targetOrigin)));
+    debugLog("frontend-o11y-recommendable", {
+      targetOrigin,
+      appCount: apps.length,
+      apps: apps.map((a) => ({ name: a.name, corsOrigins: a.corsOrigins })),
+      coveringApp: covering?.name,
+      recommendable: !covering,
+    });
+    return !covering;
+  } catch (err) {
+    debugLog("frontend-o11y-recommendable", `skipped: faro.list() threw — ${err instanceof Error ? err.message : String(err)}`);
     return false;
   }
 }
@@ -211,12 +225,15 @@ type AnalyzeSubPhase = "analyzing" | "browser-confirm" | "discovering";
 // leaving the menu, and IS its own confirmation (no further y/n) since it
 // never opens a browser. Not shown as its own row in StepsList — completed
 // picks (including a declined "Find additional synthetic checks") append
-// their own row instead (see nextStepsLog). "handing-off" is
-// "frontend-o11y"'s own equivalent of "exporting" — a brief visible pause
-// (see runFrontendO11yHandoff) rather than an instant cut to the other
-// wizard, so picking it reads as "loading the next thing" instead of a
-// jump cut.
-type NextStepsSubPhase = "menu" | "exporting" | "handing-off";
+// their own row instead (see nextStepsLog). "confirm" is "frontend-o11y"'s
+// own y/n, unlike export — handing off ends this run outright (unlike every
+// other next-step action, which returns to this same menu), so it earns a
+// real confirmation on its own dedicated, decluttered screen (see the
+// "next-steps"+"confirm" branch in the render below) rather than firing the
+// instant a menu item is picked. "handing-off" is the brief visible pause
+// once actually confirmed (see runFrontendO11yHandoff) — reads as "loading
+// the next thing" rather than an instant jump cut.
+type NextStepsSubPhase = "menu" | "confirm" | "exporting" | "handing-off";
 
 // No "Finish"/"exit" entry — there's nothing left to pick once every one
 // of these is used, and the menu quietly finishes itself then (see
@@ -234,7 +251,7 @@ const NEXT_STEP_OPTIONS: SelectMenuItem[] = [
 // through "analyze"/"create" — it hands off straight to the `frontend`
 // wizard instead (see runFrontendO11yHandoff and the "done" effect below).
 const FRONTEND_O11Y_KEY = "frontend-o11y";
-const FRONTEND_O11Y_LABEL = "Configure Frontend Observability for your app";
+const FRONTEND_O11Y_LABEL = "Configure Frontend Observability";
 
 // Reused as-is for both the dynamic "in progress" row in StepsList (while
 // a pick runs — see runAnalyze) and its final logged entry (see
@@ -374,7 +391,7 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
   // the log update and the finish can happen in the same tick (see
   // runFrontendO11yHandoff), and state set with a setter still holds its
   // previous value inside that same closure.
-  const frontendO11yActionRef = useRef<"accepted" | "not_taken">("not_taken");
+  const frontendO11yActionRef = useRef<"accepted" | "declined" | "not_taken">("not_taken");
 
   const session = useRef<Session>(undefined as unknown as Session);
   // The exact config the latest "create" pass built (target/probes/settings
@@ -395,6 +412,9 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
   // "next-steps" is reached again (see runNextSteps), appending it to
   // nextStepsLog.
   const pendingNextStepLog = useRef<NextStepLogEntry | undefined>(undefined);
+  // "frontend-o11y"'s own y/n before actually handing off — see
+  // runFrontendO11yHandoff and NextStepsSubPhase's "confirm".
+  const frontendO11yConfirm = useConfirmScreen();
 
   const isWaiting =
     (currentStep === "gcx" && gcx.isWaiting) ||
@@ -470,6 +490,18 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
   // pick and finishes the menu the same way running out of picks or 'q'
   // already does.
   async function runFrontendO11yHandoff() {
+    setNextStepsSubPhase("confirm");
+    const proceed = await frontendO11yConfirm.ask();
+    if (!proceed) {
+      // Not logged — "no" here means "not now," not "never," so this
+      // stays pickable again rather than disappearing from the menu like
+      // a fully completed pick would (see nextStepsLog/
+      // availableNextStepOptions).
+      frontendO11yActionRef.current = "declined";
+      setNextStepsSubPhase("menu");
+      return;
+    }
+
     setNextStepsSubPhase("handing-off");
     await sleep(MIN_SPINNER_MS);
     setNextStepsLog((prev) => [
@@ -534,8 +566,12 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
       // entry to pick instead (see NEXT_STEP_OPTIONS) — so this finishes
       // the same graceful way an exhausted menu does on its own, rather
       // than exiting through the generic "Cancelled." path everywhere
-      // else 'q' means bailing out early.
+      // else 'q' means bailing out early. At the handoff confirm screen,
+      // 'q' is the same as 'n' — backing out of a run-ending
+      // confirmation is exactly what declining already means, not a
+      // reason to hard-exit the whole process.
       if (currentStep === "next-steps" && nextStepsSubPhase === "menu") finishNextSteps();
+      else if (currentStep === "next-steps" && nextStepsSubPhase === "confirm") frontendO11yConfirm.resolve(false);
       else exit("Cancelled.");
     },
     { isActive: !quittingBlocked }
@@ -567,6 +603,15 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
     { isActive: currentStep === "analyze" && analyzeSubPhase === "browser-confirm" }
   );
 
+  // "frontend-o11y"'s own y/n before actually handing off.
+  useInput(
+    (input, key) => {
+      if (key.return || input.toLowerCase() === "y") frontendO11yConfirm.resolve(true);
+      else if (input.toLowerCase() === "n") frontendO11yConfirm.resolve(false);
+    },
+    { isActive: currentStep === "next-steps" && nextStepsSubPhase === "confirm" }
+  );
+
   // Drives whichever step is current. Re-runs whenever currentStep changes —
   // including on back-navigation, since the effect cleanup (`cancelled`)
   // orphans the previous step's in-flight promise harmlessly (it's just
@@ -591,12 +636,19 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
       const authOutcome = await auth.run(initialStackUrl, () => cancelled);
       if (cancelled) return;
       advance({ status: authOutcome === "yes" ? "ok" : authOutcome, auth_outcome: authOutcome });
-      // Fire-and-forget: runs alongside "skills"/"analyze"/"create" rather
-      // than adding its own wait once "next-steps" is reached. Never throws
+      // Only when auth actually succeeded — ensureAssistantAuth (inside
+      // tryFaroClient) has no memory of a decline/failure here and would
+      // otherwise happily retry the full interactive login on its own,
+      // popping a second, unannounced browser window right after the user
+      // already said no (or hit a real failure) at this step. Fire-and-
+      // forget: runs alongside "skills"/"analyze"/"create" rather than
+      // adding its own wait once "next-steps" is reached. Never throws
       // into this step (see checkFrontendO11yRecommendable) and setting
       // state here after this run is no longer current is harmless — the
       // component itself stays mounted for the whole wizard.
-      void checkFrontendO11yRecommendable(initialStackUrl, initialTargetUrl).then(setFrontendO11yRecommended);
+      if (authOutcome === "yes") {
+        void checkFrontendO11yRecommendable(initialStackUrl, initialTargetUrl).then(setFrontendO11yRecommended);
+      }
     }
 
     async function runSkills() {
@@ -1393,6 +1445,19 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
           <ChecksSummary />
         </Box>
       </Box>
+    );
+  }
+
+  // Its own dedicated, decluttered screen rather than a line under the
+  // menu — handing off ends this run outright (unlike every other
+  // next-step action, which returns to the same menu), so it earns a
+  // real confirmation rather than a note buried above the picker (see
+  // useConfirmScreen for why this replaces the whole checklist view).
+  if (currentStep === "next-steps" && nextStepsSubPhase === "confirm") {
+    return frontendO11yConfirm.render(
+      initialStackUrl,
+      "Configure Frontend Observability now?",
+      "You won't come back to this menu afterward — run `synthetics` again if you need anything else here."
     );
   }
 

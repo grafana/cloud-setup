@@ -64,6 +64,18 @@ export function checkNodeVersion(): void {
   }
 }
 
+// scheme+host+port only, never a full URL with a path/query — shared by
+// both wizards' cross-product recommendation checks (matching a Faro
+// app's corsOrigins shape, and an SM check's target) regardless of what
+// shape the input URL was originally passed in as.
+export function originOf(rawUrl: string): string {
+  try {
+    return new URL(/^https?:\/\//.test(rawUrl) ? rawUrl : `https://${rawUrl}`).origin;
+  } catch {
+    return rawUrl;
+  }
+}
+
 // Ink needs a TTY on stdin for keyboard input, so a non-interactive run cannot
 // work at all. Reported before throwing, because otherwise the runs that never
 // got started are the one failure mode that leaves no trace.
@@ -110,7 +122,14 @@ export function useHardExit(
     // cursor and raw mode; printing before that would just get clobbered
     // by Ink's own rendering.
     exit(error);
-    if (typeof errorOrMessage === "string") console.log(errorOrMessage);
+    // Leading newline: Ink's own unmount doesn't guarantee the cursor is
+    // sitting at the start of a fresh line — most screens happen to end
+    // on a blank margin line so this goes unnoticed, but a screen whose
+    // very last character is the last thing on screen (e.g. the
+    // next-steps menu's own hint line) leaves the cursor right there,
+    // and this would otherwise get appended straight onto it instead of
+    // printing on its own line.
+    if (typeof errorOrMessage === "string") console.log(`\n${errorOrMessage}`);
 
     const outcome: Outcome = error ? "error" : errorOrMessage !== undefined ? "canceled" : setupOutcome ?? "ok";
     recordRun(command, stackUrl, outcome, Date.now() - startedAt.current);

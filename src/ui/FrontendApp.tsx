@@ -29,10 +29,11 @@ import type { FaroInstrumentation, FrontendTarget, ReplayMasking } from "../prod
 import { instrumentNextjs } from "../products/frontendO11y/nextjs.js";
 import { instrumentReact } from "../products/frontendO11y/react.js";
 import { SelectMenu, type SelectMenuItem } from "./SelectMenu.js";
-import { accent, bad, EnterHint, Header, MIN_SPINNER_MS, muted, ok, requireInteractiveTerminal, startFakeProgress, url, useHardExit } from "./shared.js";
+import { accent, bad, EnterHint, Header, MIN_SPINNER_MS, muted, ok, originOf, requireInteractiveTerminal, startFakeProgress, url, useHardExit } from "./shared.js";
 import { recordStep, type Outcome, type StepProperties, type StepStatus } from "../telemetry.js";
 import { useGcxStep } from "./steps/useGcxStep.js";
 import { useAuthStep } from "./steps/useAuthStep.js";
+import { useConfirmScreen } from "./steps/useConfirmScreen.js";
 
 // The standalone `frontend` subcommand — just the pieces of the main
 // wizard that Frontend Observability actually needs (gcx, sign-in),
@@ -174,19 +175,26 @@ const PICK_APP_TRANSITION_MS = 500;
 // today — more land here later, same as SetupApp.tsx's own next-steps
 // menu.
 const SM_KEY = "synthetic-monitoring";
-const SM_LABEL = "Set up Synthetic Monitoring for your app";
+const SM_LABEL = "Set up Synthetic Monitoring";
 const NEXT_STEP_OPTIONS: SelectMenuItem[] = [{ key: SM_KEY, label: SM_LABEL }];
 
-function availableNextStepOptions(log: { key: string }[]): SelectMenuItem[] {
+// Never offers "Set up Synthetic Monitoring" on a chained run — this run
+// exists *because* the user just came from the `synthetics` wizard (see
+// origin), so recommending they go back to it, even for a different app
+// than whatever triggered the original recommendation, is a pointless
+// (and potentially circular) loop back to where they started.
+function availableNextStepOptions(log: { key: string }[], origin: "direct" | "chained"): SelectMenuItem[] {
   const used = new Set(log.map((e) => e.key));
-  return NEXT_STEP_OPTIONS.filter((o) => !used.has(o.key));
+  return NEXT_STEP_OPTIONS.filter((o) => !used.has(o.key) && !(origin === "chained" && o.key === SM_KEY));
 }
 
-// Picking "Set up Synthetic Monitoring for your app" IS its own
-// confirmation (no separate y/n first) — same as SetupApp.tsx's own
-// "Export checks as Terraform" next-step, which also runs inline without
-// asking again. "suggesting": pickSyntheticTarget deciding which of the
-// Faro app's own CORS origins (if any look real — see
+// "confirm": picking "Set up Synthetic Monitoring" asks its own y/n on a
+// dedicated, decluttered screen (see the "next-steps"+"confirm" branch in
+// the render below) before doing anything else — unlike a plain next-step
+// action (there's only this one today), accepting it ends this run
+// outright, so it earns a real confirmation rather than firing the
+// instant it's picked. "suggesting": pickSyntheticTarget deciding which
+// of the Faro app's own CORS origins (if any look real — see
 // looksLikeRealOrigin) is worth a check. "target-input": that suggestion
 // (if any) prefills the URL prompt rather than skipping it, so a bad
 // guess is still caught by the same confirm-by-submitting the user
@@ -197,7 +205,7 @@ function availableNextStepOptions(log: { key: string }[]): SelectMenuItem[] {
 // MIN_SPINNER_MS beat every other loading moment in this wizard gets, so
 // the handoff reads as loading the next thing rather than an instant
 // jump cut.
-type NextStepsSubPhase = "menu" | "suggesting" | "target-input" | "checking" | "handing-off";
+type NextStepsSubPhase = "menu" | "confirm" | "suggesting" | "target-input" | "checking" | "handing-off";
 const NEXT_STEPS_WAITING_SUBPHASES: NextStepsSubPhase[] = ["target-input"];
 
 // One entry per completed next-step pick, rendered as its own checkmark
@@ -277,7 +285,7 @@ export function FrontendApp({ initialStackUrl, forceGcxInstall, initialAppName, 
   // a log update and the finish can happen in the same tick, and state
   // set with a setter still holds its previous value inside that same
   // closure. Same shape as SetupApp.tsx's own frontendO11yActionRef.
-  const recommendSmActionRef = useRef<"not_taken" | "already_monitored" | "unavailable" | "accepted">("not_taken");
+  const recommendSmActionRef = useRef<"not_taken" | "declined" | "already_monitored" | "unavailable" | "accepted">("not_taken");
   const recommendSmUrlSourceRef = useRef<"ai_suggested" | "manual" | undefined>(undefined);
 
   const [sessionReplayEnabled, setSessionReplayEnabled] = useState(false);
@@ -298,6 +306,8 @@ export function FrontendApp({ initialStackUrl, forceGcxInstall, initialAppName, 
   const createAppConfirmResolver = useRef<((allow: boolean) => void) | undefined>(undefined);
   const collectorUrlResolver = useRef<((url: string) => void) | undefined>(undefined);
   const smUrlResolver = useRef<((url: string) => void) | undefined>(undefined);
+  // "Set up Synthetic Monitoring"'s own y/n before actually handing off.
+  const smConfirm = useConfirmScreen();
   const replayConfirmResolver = useRef<((enabled: boolean) => void) | undefined>(undefined);
   const maskingResolver = useRef<((masking: ReplayMasking) => void) | undefined>(undefined);
   const samplingResolver = useRef<((rate: number) => void) | undefined>(undefined);
@@ -363,7 +373,11 @@ export function FrontendApp({ initialStackUrl, forceGcxInstall, initialAppName, 
       // auto-finish effect below), rather than exiting through the
       // generic "Cancelled." path everywhere else 'q' means bailing out
       // early. Same shape as SetupApp.tsx's own next-steps 'q' handling.
+      // At the handoff confirm screen, 'q' is the same as 'n' — backing
+      // out of a run-ending confirmation is exactly what declining
+      // already means, not a reason to hard-exit the whole process.
       if (currentStep === "next-steps" && nextStepsSubPhase === "menu") finishNextSteps();
+      else if (currentStep === "next-steps" && nextStepsSubPhase === "confirm") smConfirm.resolve(false);
       else exit("Cancelled.");
     },
     { isActive: !quittingBlocked }
@@ -403,6 +417,14 @@ export function FrontendApp({ initialStackUrl, forceGcxInstall, initialAppName, 
 
   useInput(
     (input, key) => {
+      if (key.return || input.toLowerCase() === "y") smConfirm.resolve(true);
+      else if (input.toLowerCase() === "n") smConfirm.resolve(false);
+    },
+    { isActive: currentStep === "next-steps" && nextStepsSubPhase === "confirm" }
+  );
+
+  useInput(
+    (input, key) => {
       if (key.upArrow) setMaskingCursor((c) => (c - 1 + MASKING_OPTIONS.length) % MASKING_OPTIONS.length);
       else if (key.downArrow) setMaskingCursor((c) => (c + 1) % MASKING_OPTIONS.length);
       else if (key.return) maskingResolver.current?.(MASKING_OPTIONS[maskingCursor]!.key);
@@ -412,9 +434,23 @@ export function FrontendApp({ initialStackUrl, forceGcxInstall, initialAppName, 
 
   // Runs inline from the next-steps menu, independent of the step-driving
   // effect below (currentStep stays "next-steps" throughout — same shape
-  // as SetupApp.tsx's own runExportNow) — picking it IS the confirmation,
-  // so this starts immediately rather than asking a further y/n.
+  // as SetupApp.tsx's own runExportNow) — but unlike a plain next-step
+  // action, accepting ends this run outright, so this asks its own y/n
+  // first (see NextStepsSubPhase's "confirm") rather than firing the
+  // instant it's picked.
   async function runSyntheticMonitoringPick() {
+    setNextStepsSubPhase("confirm");
+    const proceed = await smConfirm.ask();
+    if (!proceed) {
+      // Not logged — "no" here means "not now," not "never," so this
+      // stays pickable again rather than disappearing from the menu like
+      // a fully completed pick would (see nextStepsLog/
+      // availableNextStepOptions).
+      recommendSmActionRef.current = "declined";
+      setNextStepsSubPhase("menu");
+      return;
+    }
+
     const realOrigins = faroAppCorsOriginsRef.current.filter(looksLikeRealOrigin);
     let suggestion: { url: string; reason: string } | undefined;
     if (realOrigins.length > 0) {
@@ -451,8 +487,15 @@ export function FrontendApp({ initialStackUrl, forceGcxInstall, initialAppName, 
     let alreadyMonitored = false;
     try {
       const checks = await auto.client.listChecks();
-      const normalize = (u: string) => u.replace(/^https?:\/\//, "").replace(/\/$/, "");
-      alreadyMonitored = checks.some((c) => normalize(c.target) === normalize(targetUrl));
+      const targetOrigin = originOf(targetUrl);
+      // Origin match, not full-URL match — reliable for every check kind
+      // this wizard's own SM flow creates (uptime/SSL/browser/broken-
+      // links, all a single request or page.goto against one exact URL).
+      // Won't catch a scripted/multihttp check created some other way
+      // (gcx, SM's own UI, Terraform, k6 Cloud) whose URL lives inside a
+      // script body or entries[] instead of `target` — an accepted gap,
+      // not attempted here.
+      alreadyMonitored = checks.some((c) => originOf(c.target) === targetOrigin);
     } catch {
       // Can't tell — treated the same as "not already monitored" rather
       // than blocking the handoff on a failed listing.
@@ -863,7 +906,7 @@ export function FrontendApp({ initialStackUrl, forceGcxInstall, initialAppName, 
   // there's nothing left to offer. Same shape as SetupApp.tsx's own
   // auto-finish effect.
   useEffect(() => {
-    if (currentStep === "next-steps" && nextStepsSubPhase === "menu" && availableNextStepOptions(nextStepsLog).length === 0) {
+    if (currentStep === "next-steps" && nextStepsSubPhase === "menu" && availableNextStepOptions(nextStepsLog, origin).length === 0) {
       finishNextSteps();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1121,7 +1164,7 @@ export function FrontendApp({ initialStackUrl, forceGcxInstall, initialAppName, 
       <Box flexDirection="column">
         <Box flexDirection="column">
           <Text bold>Next actions</Text>
-          <SelectMenu items={availableNextStepOptions(nextStepsLog)} accentColor={accent ?? "white"} onSelect={handleNextStepChoice} />
+          <SelectMenu items={availableNextStepOptions(nextStepsLog, origin)} accentColor={accent ?? "white"} onSelect={handleNextStepChoice} />
         </Box>
         <Box marginTop={1}>
           <Text color={muted}>
@@ -1165,6 +1208,19 @@ export function FrontendApp({ initialStackUrl, forceGcxInstall, initialAppName, 
           )}
         </Box>
       </Box>
+    );
+  }
+
+  // Its own dedicated, decluttered screen rather than a line under the
+  // menu — accepting ends this run outright (unlike every other
+  // next-step action, and there's only this one today), so it earns a
+  // real confirmation rather than a note buried above the picker (see
+  // useConfirmScreen for why this replaces the whole checklist view).
+  if (currentStep === "next-steps" && nextStepsSubPhase === "confirm") {
+    return smConfirm.render(
+      initialStackUrl,
+      "Set up Synthetic Monitoring now?",
+      "You won't come back to this menu afterward — run `frontend` again if you need anything else here."
     );
   }
 

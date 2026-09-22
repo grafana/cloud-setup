@@ -167,7 +167,9 @@ export interface StepProperties {
 
   // synthetics: next-steps
   frontend_o11y_recommended?: boolean;
-  frontend_o11y_action?: "accepted" | "not_taken";
+  // "declined" is picked-then-said-no at its own confirm screen, distinct
+  // from "not_taken" (never picked at all — menu ran out or 'q').
+  frontend_o11y_action?: "accepted" | "declined" | "not_taken";
 
   // frontend: pick-app
   app_resolution?: "named" | "auto_single" | "picker" | "created" | "manual";
@@ -187,7 +189,9 @@ export interface StepProperties {
   // "not_taken" mirrors frontend_o11y_action above — the option was on the
   // menu but never picked (finished via 'q' or an empty menu, not a
   // separate decline, since picking IS the confirmation here).
-  recommend_sm_action?: "accepted" | "not_taken" | "already_monitored" | "unavailable";
+  // "declined" is picked-then-said-no at its own confirm screen, distinct
+  // from "not_taken" (never picked at all — menu ran out or 'q').
+  recommend_sm_action?: "accepted" | "declined" | "not_taken" | "already_monitored" | "unavailable";
   // Whether the URL that ended up used came from pickSyntheticTarget's own
   // suggestion (accepted as-is) or was typed/edited by hand.
   recommend_sm_url_source?: "ai_suggested" | "manual";
