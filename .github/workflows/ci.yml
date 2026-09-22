@@ -7,6 +7,37 @@ on:
       - main
 
 jobs:
+  # Separate from `test` so a formatting nit and a broken wizard are not the
+  # same red X, and so all three checks report even when the first one fails.
+  checks:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version-file: .nvmrc
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Lint
+        if: ${{ !cancelled() }}
+        run: npm run lint
+
+      - name: Check formatting
+        if: ${{ !cancelled() }}
+        run: npm run format:check
+
   test:
     runs-on: ubuntu-latest
     permissions:
@@ -14,14 +45,55 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
 
       - name: Setup Node.js
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
-          node-version: '22'
+          node-version-file: .nvmrc
 
       - name: Install dependencies
         run: npm ci
 
       - name: Test
         run: npm test
+
+  # engines.node is a promise to users, so something has to check it is still
+  # true. It runs the built CLI rather than `npm test`: the suite's
+  # mock.module() needs a newer node:test than the floor ships, but the wizard
+  # itself works there, and the wizard is what users get.
+  oldest-supported-node:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Read the floor from engines.node
+        id: engines
+        run: node -p "'version=' + require('./package.json').engines.node.replace(/[^0-9.]/g, '')" >> "$GITHUB_OUTPUT"
+
+      - name: Setup Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: ${{ steps.engines.outputs.version }}
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      # Loads the whole import graph, Ink included, which is what would break
+      # first if a dependency quietly raised its own floor.
+      - name: The CLI starts
+        run: node dist/cli.js --help
+
+      # checkNodeVersion() derives its minimum from engines.node, so this fails
+      # if the two ever disagree.
+      - name: The version gate accepts this version
+        run: node --input-type=module -e "import { checkNodeVersion } from './dist/ui/shared.js'; checkNodeVersion();"

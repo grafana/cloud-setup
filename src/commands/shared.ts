@@ -35,7 +35,7 @@ export function printCliError(command: Command, message: string): never {
       ...command.example.map((line) => `  ${line}`),
       "",
       `Run npx @grafana/cloud-setup ${command.name} --help for all options.`,
-    ].join("\n")
+    ].join("\n"),
   );
   process.exit(1);
 }
@@ -70,6 +70,6 @@ export function printCommandHelp(command: Command): void {
       "",
       "FLAGS",
       ...command.flags.map((f) => `  ${f.flag.padEnd(flagWidth)}    ${f.description}`),
-    ].join("\n")
+    ].join("\n"),
   );
 }

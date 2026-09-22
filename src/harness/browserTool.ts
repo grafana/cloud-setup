@@ -23,7 +23,14 @@ const MAC_CANDIDATES = [
   "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
   "/Applications/Chromium.app/Contents/MacOS/Chromium",
 ];
-const LINUX_CANDIDATES = ["google-chrome-stable", "google-chrome", "chromium-browser", "chromium", "brave-browser", "microsoft-edge"];
+const LINUX_CANDIDATES = [
+  "google-chrome-stable",
+  "google-chrome",
+  "chromium-browser",
+  "chromium",
+  "brave-browser",
+  "microsoft-edge",
+];
 const WINDOWS_CANDIDATES = [
   "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
   "C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe",
@@ -141,8 +148,7 @@ export function browserTools(options: BrowserToolOptions): AgentTool[] {
       description:
         "Open a URL in a real local browser and return its agent-readable page text. Use this to see what a live page actually renders — not for reading local project files.",
       inputSchema: { type: "object", properties: { url: { type: "string" } }, required: ["url"] },
-      execute: (input) =>
-        withPage(options, String(input.url), () => agentBrowser(["read", String(input.url)], 30000)),
+      execute: (input) => withPage(options, String(input.url), () => agentBrowser(["read", String(input.url)], 30000)),
     },
     {
       name: "list_network_requests",

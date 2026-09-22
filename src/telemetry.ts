@@ -251,7 +251,9 @@ export async function waitForTelemetry(): Promise<void> {
   try {
     await Promise.race([
       Promise.all([...pending]),
-      new Promise<void>((resolve) => { timer = setTimeout(resolve, SHUTDOWN_TIMEOUT_MS); }),
+      new Promise<void>((resolve) => {
+        timer = setTimeout(resolve, SHUTDOWN_TIMEOUT_MS);
+      }),
     ]);
   } finally {
     if (timer) clearTimeout(timer);

@@ -1,0 +1,9 @@
+#!/usr/bin/env sh
+
+# lint-staged handles the staged files (eslint --fix, then prettier --write).
+npx --no-install lint-staged
+
+# Whole-project, because a type error usually shows up in a file the commit
+# does not touch. It runs in well under a second, so it stays in the hook
+# rather than waiting for CI.
+npm run typecheck

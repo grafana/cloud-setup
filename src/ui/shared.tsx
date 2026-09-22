@@ -2,14 +2,11 @@ import { readFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import React, { useEffect, useRef } from "react";
+import { useEffect, useRef } from "react";
 import { Box, Text, useApp, useInput } from "ink";
 import Spinner from "ink-spinner";
 import { detectFramework } from "../framework.js";
 import { recordRun, waitForTelemetry, type Command, type Outcome } from "../telemetry.js";
-
-export const MIN_NODE_MAJOR = 22;
-export const MIN_NODE_MINOR = 6;
 
 // Every automatic spinner/loading-bar phase stays visible at least this
 // long, even when the real work behind it finishes faster.
@@ -46,21 +43,46 @@ function formatStackUrl(stackUrl: string): string {
 // process.cwd() at import time would freeze in the wrong directory.
 
 // Read from package.json rather than hardcoded, so the two can't drift.
-function readPackageVersion(): string {
+interface PackageManifest {
+  version?: string;
+  engines?: { node?: string };
+}
+
+function readPackageJson(): PackageManifest {
   try {
     const packageJsonPath = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "package.json");
-    const pkg = JSON.parse(readFileSync(packageJsonPath, "utf8")) as { version?: string };
-    return pkg.version ?? "0.0.0";
+    return JSON.parse(readFileSync(packageJsonPath, "utf8")) as PackageManifest;
   } catch {
-    return "0.0.0";
+    return {};
   }
 }
-export const PACKAGE_VERSION = readPackageVersion();
+
+const PACKAGE_JSON = readPackageJson();
+
+export const PACKAGE_VERSION = PACKAGE_JSON.version ?? "0.0.0";
+
+// engines.node in package.json is the only place the supported floor is
+// written down — npm checks it, CI reads it for the test matrix, and the gate
+// below enforces it at runtime. It is a range like ">=22.6.0", so take the
+// version out of it.
+//
+// A manifest that cannot be read leaves the floor at 0.0, which waves every
+// version through rather than guessing a number that could drift from the real
+// one. That is the same graceful degradation PACKAGE_VERSION already does, and
+// it only loses a friendly error message: an unsupported Node still fails, just
+// later and less clearly.
+function parseNodeFloor(range: string | undefined): { major: number; minor: number } {
+  const match = /(\d+)\.(\d+)/.exec(range ?? "");
+  if (!match) return { major: 0, minor: 0 };
+  return { major: Number(match[1]), minor: Number(match[2]) };
+}
+
+const MIN_NODE = parseNodeFloor(PACKAGE_JSON.engines?.node);
 
 export function checkNodeVersion(): void {
-  const [major, minor] = process.versions.node.split(".").map(Number);
-  if (major < MIN_NODE_MAJOR || (major === MIN_NODE_MAJOR && minor < MIN_NODE_MINOR)) {
-    throw new Error(`Node ${MIN_NODE_MAJOR}.${MIN_NODE_MINOR}+ is required (found ${process.versions.node}).`);
+  const [major = 0, minor = 0] = process.versions.node.split(".").map(Number);
+  if (major < MIN_NODE.major || (major === MIN_NODE.major && minor < MIN_NODE.minor)) {
+    throw new Error(`Node ${MIN_NODE.major}.${MIN_NODE.minor}+ is required (found ${process.versions.node}).`);
   }
 }
 
@@ -90,7 +112,10 @@ export async function requireInteractiveTerminal(command: Command, stackUrl: str
 // already rendered by the failing screen itself, so it isn't repeated
 // here. Undefined is a clean, silent exit (the "done" screen already
 // showed its own success message).
-export function useHardExit(command: Command, stackUrl: string): (errorOrMessage?: Error | string, setupOutcome?: Outcome) => void {
+export function useHardExit(
+  command: Command,
+  stackUrl: string,
+): (errorOrMessage?: Error | string, setupOutcome?: Outcome) => void {
   const { exit } = useApp();
   const startedAt = useRef(Date.now());
   const exiting = useRef(false);
@@ -109,14 +134,14 @@ export function useHardExit(command: Command, stackUrl: string): (errorOrMessage
     exit(error);
     if (typeof errorOrMessage === "string") console.log(errorOrMessage);
 
-    const outcome: Outcome = error ? "error" : errorOrMessage !== undefined ? "canceled" : setupOutcome ?? "ok";
+    const outcome: Outcome = error ? "error" : errorOrMessage !== undefined ? "canceled" : (setupOutcome ?? "ok");
     recordRun(command, stackUrl, outcome, Date.now() - startedAt.current);
 
     // setImmediate, not a same-tick process.exit() — Ink's own unmount
     // cleanup and the console.log above both write to the terminal, and
     // need a turn of the event loop to actually flush before the process
     // dies, or they can get silently dropped.
-    waitForTelemetry().finally(() => {
+    void waitForTelemetry().finally(() => {
       setImmediate(() => process.exit(error ? 1 : 0));
     });
   }
@@ -193,7 +218,11 @@ export interface FakeProgress {
 // always finishes before that target — finish() is the deliberate "speed
 // up" for when it does, sprinting the number up to 100 instead of letting
 // it jump there.
-export function startFakeProgress(onProgress: (percent: number) => void, isCancelled: () => boolean, targetMs: number): FakeProgress {
+export function startFakeProgress(
+  onProgress: (percent: number) => void,
+  isCancelled: () => boolean,
+  targetMs: number,
+): FakeProgress {
   const startedAt = Date.now();
   // Time spent paused doesn't count toward elapsed — otherwise resuming
   // after, say, a slow answer to a confirm question would jump the number

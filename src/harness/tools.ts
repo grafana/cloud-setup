@@ -24,15 +24,29 @@ function resolveSafe(cwd: string, relPath: string): string {
   return resolved;
 }
 
+// Tool arguments come from the model, so a field can be any JSON shape. A bare
+// String() would turn an object into "[object Object]" and hand that to
+// resolveSafe or writeFileSync as if it were a real path; throwing instead
+// surfaces the mistake to the agent, which can retry with a correct argument.
+function stringArg(input: Record<string, unknown>, key: string, fallback?: string): string {
+  const value = input[key];
+  if (typeof value === "string") return value;
+  if (value === undefined || value === null) {
+    if (fallback !== undefined) return fallback;
+    throw new Error(`"${key}" is required and must be a string`);
+  }
+  throw new Error(`"${key}" must be a string, got ${typeof value}`);
+}
+
 function listDir(cwd: string, input: Record<string, unknown>): string {
-  const full = resolveSafe(cwd, String(input.path ?? "."));
+  const full = resolveSafe(cwd, stringArg(input, "path", "."));
   return readdirSync(full)
     .map((name) => (statSync(path.join(full, name)).isDirectory() ? `${name}/` : name))
     .join("\n");
 }
 
 function readFile(cwd: string, input: Record<string, unknown>): string {
-  const full = resolveSafe(cwd, String(input.path));
+  const full = resolveSafe(cwd, stringArg(input, "path"));
   const content = readFileSync(full, "utf8");
   return content.length > MAX_FILE_BYTES ? `${content.slice(0, MAX_FILE_BYTES)}\n...(truncated)` : content;
 }
@@ -53,11 +67,11 @@ function walk(dir: string, out: string[]): void {
 }
 
 function grep(cwd: string, input: Record<string, unknown>): string {
-  const pattern = String(input.pattern ?? "");
+  const pattern = stringArg(input, "pattern", "");
   if (!pattern) throw new Error("grep requires a non-empty pattern");
   const regex = new RegExp(pattern);
 
-  const root = resolveSafe(cwd, String(input.path ?? "."));
+  const root = resolveSafe(cwd, stringArg(input, "path", "."));
   const files: string[] = [];
   walk(root, files);
 
@@ -81,9 +95,9 @@ function grep(cwd: string, input: Record<string, unknown>): string {
 }
 
 function writeFile(cwd: string, input: Record<string, unknown>): string {
-  const full = resolveSafe(cwd, String(input.path));
+  const full = resolveSafe(cwd, stringArg(input, "path"));
   mkdirSync(path.dirname(full), { recursive: true });
-  writeFileSync(full, String(input.content ?? ""), "utf8");
+  writeFileSync(full, stringArg(input, "content", ""), "utf8");
   return `Wrote ${path.relative(cwd, full)}`;
 }
 

@@ -30,7 +30,7 @@ const FARO_BASE_PATH = "/api/plugin-proxy/grafana-kowalski-app/api-proxy/api/v1/
 export class FaroClient {
   constructor(
     private proxyBase: string,
-    private accessToken: string
+    private accessToken: string,
   ) {}
 
   private async request<T>(method: string, path: string, body?: unknown): Promise<T> {

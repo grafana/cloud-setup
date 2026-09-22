@@ -3,9 +3,17 @@
 Grafana Cloud's interactive setup wizard. Two commands, `synthetics` and `frontend`, each an Ink (React-in-the-terminal) wizard built from a shared set of steps.
 
 ```sh
-npm run build   # tsc
+npm run check   # typecheck + lint + format:check + test, same as CI
+npm run build   # tsc, src -> dist
 npm test        # builds, then runs tests/*.test.mjs
 ```
+
+CONTRIBUTING.md covers the toolchain: the two tsconfigs, the Node version split, the ESLint rule exclusions and why each is set the way it is. Read it before changing a config file. The traps worth knowing up front:
+
+- **The supported Node floor lives in `engines.node`, once.** `checkNodeVersion()` in `src/ui/shared.tsx` parses it out of the manifest and CI installs exactly that version. Do not add a hardcoded minimum next to the gate.
+- **`lib` tracks `engines.node`, not the newest spec.** Raising it past what the floor's Node provides lets the compiler bless calls that crash for real users.
+- **Four `react-hooks` rules are off on purpose** (`purity`, `refs`, `static-components`, `set-state-in-effect`). They target React Compiler, which this app does not run. Turning them back on means restructuring `SetupApp.tsx` and `FrontendApp.tsx`, so it is its own change, not a cleanup.
+- **`npm test` cannot run on the `engines.node` floor**, for a `mock.module()` bug in that Node rather than anything wrong with the wizard. Raising `engines.node` is not the fix.
 
 ## Telemetry
 

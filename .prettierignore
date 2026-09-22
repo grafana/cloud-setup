@@ -1,0 +1,5 @@
+dist/
+node_modules/
+package-lock.json
+.agents/skills/synthetic-monitoring-checks
+.claude/skills/synthetic-monitoring-checks

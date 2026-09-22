@@ -24,9 +24,10 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
-          node-version: '22'
-          registry-url: 'https://registry.npmjs.org'
-          scope: '@grafana'
+          # Pinned in .nvmrc, the single source of truth for the toolchain.
+          node-version-file: .nvmrc
+          registry-url: "https://registry.npmjs.org"
+          scope: "@grafana"
           # This is a publishing workflow; disable caching so a cache entry
           # poisoned from a less-trusted context can't influence what gets
           # published (zizmor cache-poisoning).

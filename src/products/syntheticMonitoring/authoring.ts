@@ -24,7 +24,7 @@ function isDiscoveredEndpoint(value: unknown): value is DiscoveredEndpoint {
 
 function parseEndpoints(response: string): DiscoveredEndpoint[] {
   try {
-    const parsed = JSON.parse(stripJsonFences(response));
+    const parsed: unknown = JSON.parse(stripJsonFences(response));
     return Array.isArray(parsed) ? parsed.filter(isDiscoveredEndpoint) : [];
   } catch {
     return [];
@@ -92,7 +92,7 @@ export async function proposeApiEndpoints(cwd: string, stackUrl: string): Promis
 export async function proposeLiveEndpoints(
   targetUrl: string,
   stackUrl: string,
-  requestPermission: () => Promise<boolean> | boolean
+  requestPermission: () => Promise<boolean> | boolean,
 ): Promise<DiscoveredEndpoint[]> {
   const task = [
     "I am setting up Grafana Synthetic Monitoring and want to know which backend API endpoints a live website actually",
@@ -132,7 +132,7 @@ export async function proposeLiveEndpoints(
 export async function judgeEndpoints(
   candidates: DiscoveredEndpoint[],
   targetUrl: string,
-  stackUrl: string
+  stackUrl: string,
 ): Promise<DiscoveredEndpoint[]> {
   if (candidates.length === 0) return [];
 
@@ -165,7 +165,7 @@ export async function judgeEndpoints(
 export async function authorChecks(
   targetUrl: string,
   stackUrl: string,
-  requestPermission: () => Promise<boolean> | boolean
+  requestPermission: () => Promise<boolean> | boolean,
 ): Promise<DiscoveredEndpoint[]> {
   await ensureAssistantAuth(stackUrl);
 

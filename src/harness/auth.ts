@@ -96,7 +96,9 @@ function isAllowedEndpoint(endpoint: string, stackUrl: string): boolean {
   try {
     const endpointHost = new URL(endpoint).hostname;
     const stackHost = new URL(normalizeStackUrl(stackUrl)).hostname;
-    return endpointHost === stackHost || endpointHost.endsWith(".grafana.net") || endpointHost.endsWith(".grafana-dev.net");
+    return (
+      endpointHost === stackHost || endpointHost.endsWith(".grafana.net") || endpointHost.endsWith(".grafana-dev.net")
+    );
   } catch {
     return false;
   }

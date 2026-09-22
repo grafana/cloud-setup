@@ -35,5 +35,9 @@ export function successPage(): string {
 }
 
 export function cancelledPage(): string {
-  return terminalPage("Authorization cancelled", false, "You can close this tab and return to your terminal to try again.");
+  return terminalPage(
+    "Authorization cancelled",
+    false,
+    "You can close this tab and return to your terminal to try again.",
+  );
 }
