@@ -1017,7 +1017,7 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
               // time this fires, so there's nothing left here worth keeping
               // on screen once the other wizard takes over.
               console.clear();
-              return runFrontendUI(initialStackUrl, false, undefined, false, "chained");
+              return runFrontendUI(initialStackUrl, false, undefined, "chained");
             }
           : undefined
       );
