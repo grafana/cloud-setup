@@ -21,6 +21,8 @@ npx @grafana/cloud-setup <command> # e.g. synthetics
 
 ### `synthetics`
 
+Set up Synthetic Monitoring checks.
+
 ```sh
 npx @grafana/cloud-setup synthetics --url https://example.com --stack https://my-team.grafana.net
 ```
@@ -33,6 +35,8 @@ npx @grafana/cloud-setup synthetics --url https://example.com --stack https://my
 | `--debug` | Log raw Assistant tool calls/responses to a temp file, for troubleshooting |
 
 ### `frontend`
+
+Instrument local app with Frontend Observability.
 
 ```sh
 npx @grafana/cloud-setup frontend --stack https://my-team.grafana.net
