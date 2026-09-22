@@ -1,0 +1,14 @@
+// The emit config: src only, and no JS, so dist mirrors src exactly.
+// tsconfig.json is the wider editor/typecheck view.
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "allowJs": false,
+    "rootDir": "src",
+    "outDir": "dist",
+    "declaration": false,
+    "sourceMap": false
+  },
+  "include": ["src/**/*.ts", "src/**/*.tsx"]
+}

@@ -3,13 +3,17 @@
 Grafana Cloud's interactive setup wizard. Two commands, `synthetics` and `frontend`, each an Ink (React-in-the-terminal) wizard built from a shared set of steps.
 
 ```sh
-npm run build      # tsc
-npm run typecheck  # tsc --noEmit, no output written
+npm run build      # tsc, src -> dist
+npm run typecheck  # tsc, no output written
 npm run lint       # eslint (type-aware, so it needs no build first)
 npm run format     # prettier --write
 npm test           # builds, then runs tests/*.test.mjs
 npm run check      # typecheck + lint + format:check + test, same as CI
 ```
+
+There are two tsconfigs, and the split is deliberate. `tsconfig.json` is the wide one: it covers `src`, the tests and `eslint.config.js`, and emits nothing. Every file in the repo belongs to it, so an editor never falls back to an inferred project — that fallback has no `@types/node`, which is what makes `console`, `process` and `setTimeout` look undefined. `tsconfig.build.json` extends it, narrows to `src` and does the emit.
+
+The tests are plain ESM JavaScript that import the built output from `dist`, so `tsconfig.json` sets `allowJs` (to put them in the project) but leaves `checkJs` off (turning it on would typecheck emitted `dist` files, which checks nothing useful).
 
 A `pre-commit` hook runs lint-staged (eslint --fix, then prettier --write, on staged files) and a whole-project typecheck. It is installed by `npm install` via the `prepare` script, so a fresh clone gets it without a separate step.
 
