@@ -29,7 +29,9 @@ There are two tsconfigs, and the split is deliberate.
 
 `tsconfig.build.json` extends it, narrows to `src` and does the emit. `npm run build` uses it, so `dist` mirrors `src` exactly.
 
-Three options in there are worth knowing about:
+`target` and `lib` are `ES2024`, and the number that decides them is `engines.node`, not the latest spec or the pinned LTS. Everything in ES2024 works on 22.6.0 — checked feature by feature, including the RegExp `v` flag. `ESNext` would not be safe: `Promise.try`, `RegExp.escape`, `Float16Array` and `Error.isError` are all absent on 22.6.0, so it would let the compiler bless calls that crash for a user on the oldest Node the package claims to support. Raise `lib` when `engines.node` rises, not before. (TypeScript 5.9 has no `ES2025`; `ES2024` is the highest real value, then `ESNext`.)
+
+Three more options are worth knowing about:
 
 - `types: ["node", "react"]` is explicit rather than letting TypeScript pull in whatever happens to be under `node_modules/@types`. A transitive `@types` package can otherwise leak globals into the build and change what compiles.
 - `allowJs` with `checkJs` off puts the tests in the project so Node's globals resolve there. `checkJs` stays off because the tests import the built output from `dist`, and turning it on would typecheck emitted files, which checks nothing useful.
