@@ -1,26 +1,15 @@
-// The editor's and `npm run typecheck`'s view of the repo. It covers every
-// file, not just src, so that an editor never falls back to an inferred
-// project for the tests or a root config file — that fallback has no
-// @types/node, which is what makes `console`, `process` and `setTimeout`
-// look undefined.
-//
-// Emit lives in tsconfig.build.json, which narrows this down to src.
 {
   "compilerOptions": {
     "target": "ES2022",
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
     "lib": ["ES2022"],
+    "types": ["node", "react"],
     "jsx": "react-jsx",
     "esModuleInterop": true,
     "resolveJsonModule": true,
     "skipLibCheck": true,
     "noEmit": true,
-
-    // The tests are plain ESM JavaScript, and they import the built output in
-    // dist rather than src. allowJs puts them in the project so Node's globals
-    // resolve; checkJs stays off because turning it on would typecheck the
-    // emitted dist files they import, which is not a meaningful thing to check.
     "allowJs": true,
     "checkJs": false,
 
@@ -32,10 +21,6 @@
     "noUnusedLocals": true,
     "noUnusedParameters": true,
     "forceConsistentCasingInFileNames": true,
-
-    // Emit is per-file, so every import that only carries types has to say so.
-    // Without this, a `import { Foo }` that erases to nothing can leave a
-    // side-effect-free import in the output that Node then fails to resolve.
     "verbatimModuleSyntax": true,
     "isolatedModules": true
   },

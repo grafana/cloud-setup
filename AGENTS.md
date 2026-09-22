@@ -11,9 +11,21 @@ npm test           # builds, then runs tests/*.test.mjs
 npm run check      # typecheck + lint + format:check + test, same as CI
 ```
 
-There are two tsconfigs, and the split is deliberate. `tsconfig.json` is the wide one: it covers `src`, the tests and `eslint.config.js`, and emits nothing. Every file in the repo belongs to it, so an editor never falls back to an inferred project — that fallback has no `@types/node`, which is what makes `console`, `process` and `setTimeout` look undefined. `tsconfig.build.json` extends it, narrows to `src` and does the emit.
+## TypeScript configuration
 
-The tests are plain ESM JavaScript that import the built output from `dist`, so `tsconfig.json` sets `allowJs` (to put them in the project) but leaves `checkJs` off (turning it on would typecheck emitted `dist` files, which checks nothing useful).
+There are two tsconfigs, and the split is deliberate.
+
+`tsconfig.json` is the wide one: it covers `src`, the tests and `eslint.config.js`, and emits nothing. Every file in the repo belongs to it, so an editor never falls back to an inferred project. That fallback has no `@types/node`, which is what makes `console`, `process` and `setTimeout` look undefined in an editor while `npm run typecheck` stays clean.
+
+`tsconfig.build.json` extends it, narrows to `src` and does the emit. `npm run build` uses it, so `dist` mirrors `src` exactly.
+
+Three options in there are worth knowing about:
+
+- `types: ["node", "react"]` is explicit rather than letting TypeScript pull in whatever happens to be under `node_modules/@types`. A transitive `@types` package can otherwise leak globals into the build and change what compiles.
+- `allowJs` with `checkJs` off puts the tests in the project so Node's globals resolve there. `checkJs` stays off because the tests import the built output from `dist`, and turning it on would typecheck emitted files, which checks nothing useful.
+- `verbatimModuleSyntax` and `isolatedModules` matter because emit is per-file. Without them an import that only carries types can erase to nothing and leave an unresolvable import in `dist`.
+
+`exactOptionalPropertyTypes` is deliberately off: it produces 85 errors, almost all React prop plumbing, and is not worth the churn.
 
 A `pre-commit` hook runs lint-staged (eslint --fix, then prettier --write, on staged files) and a whole-project typecheck. It is installed by `npm install` via the `prepare` script, so a fresh clone gets it without a separate step.
 
