@@ -36,3 +36,17 @@ test('multiple exit callbacks produce only one finished event', () => {
   exit(undefined, 'ok');
   assert.equal(events.length, before + 1);
 });
+
+// A cross-product recommendation hands off to the other wizard through this
+// continuation. It must run, and a failure in it must not throw back into
+// the caller — the process should still make its own way out.
+test('an andThen continuation runs, and a rejection does not throw', async () => {
+  let ranAndThen = false;
+  const exit = useHardExit('frontend', 'stack');
+  exit(undefined, 'ok', async () => {
+    ranAndThen = true;
+    throw new Error('boom');
+  });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(ranAndThen, true);
+});

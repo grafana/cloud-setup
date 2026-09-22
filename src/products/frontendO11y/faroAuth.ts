@@ -5,6 +5,12 @@ export interface FaroApp {
   name: string;
   appKey: string;
   collectEndpointURL: string;
+  // The app's CORS allow-list — verified against gcx's own types.go
+  // (github.com/grafana/gcx internal/providers/faro/types.go) as the one
+  // field on a Faro app that actually names the site(s) it covers. Origins
+  // only (scheme+host+port, e.g. "https://example.com"), never a full URL
+  // with a path.
+  corsOrigins: string[];
 }
 
 interface FaroAppApi {
@@ -12,6 +18,7 @@ interface FaroAppApi {
   name: string;
   appKey?: string;
   collectEndpointURL?: string;
+  corsOrigins?: { url: string }[];
 }
 
 function fromApi(api: FaroAppApi): FaroApp {
@@ -20,6 +27,7 @@ function fromApi(api: FaroAppApi): FaroApp {
     name: api.name,
     appKey: api.appKey ?? "",
     collectEndpointURL: api.collectEndpointURL ?? "",
+    corsOrigins: (api.corsOrigins ?? []).map((o) => o.url),
   };
 }
 

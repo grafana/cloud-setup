@@ -11,6 +11,13 @@ import { aiEndpointCandidatesFor, candidatesFor, type Candidate } from "../produ
 import { getSkillStatus, installSkill } from "../skills.js";
 import { tryAutoSmSession } from "../products/syntheticMonitoring/smAuth.js";
 import { writeTerraformExport } from "../products/syntheticMonitoring/terraform.js";
+import { tryFaroClient } from "../products/frontendO11y/faroAuth.js";
+import { detectFrontendTarget } from "../products/frontendO11y/instrument.js";
+// Circular at the module level (FrontendApp.tsx imports runSetupUI back from
+// this file, for the opposite handoff) — safe here because both sides only
+// ever call the other's export from inside a runtime callback, long after
+// both modules have finished loading, never at import time.
+import { runFrontendUI } from "./FrontendApp.js";
 import { CheckboxList } from "./CheckboxList.js";
 import { SelectMenu, type SelectMenuItem } from "./SelectMenu.js";
 import { accent, bad, EnterHint, Header, MIN_SPINNER_MS, muted, ok, requireInteractiveTerminal, startFakeProgress, url, useHardExit, Working } from "./shared.js";
@@ -45,6 +52,51 @@ async function probeReachable(url: string): Promise<void> {
   await fetch(url, { signal: AbortSignal.timeout(5000) }).catch((err) => {
     throw new Error(`Could not reach ${url}: ${err instanceof Error ? err.message : String(err)}`);
   });
+}
+
+// scheme+host+port only, matching a Faro app's own corsOrigins shape (see
+// FaroApp) — never a full URL with a path/query, regardless of what shape
+// the SM target itself was passed in as.
+function originOf(rawUrl: string): string {
+  try {
+    return new URL(/^https?:\/\//.test(rawUrl) ? rawUrl : `https://${rawUrl}`).origin;
+  } catch {
+    return rawUrl;
+  }
+}
+
+// A corsOrigins entry can itself contain "*" wildcards (e.g.
+// "https://*.example.com"), so this can't be plain string equality — and
+// running a wildcard entry through originOf/new URL would just throw (a
+// literal "*" isn't a valid hostname character), silently falling back to
+// comparing it as a literal that can never match. Escape everything else
+// and treat "*" as a glob instead.
+function originMatchesPattern(pattern: string, targetOrigin: string): boolean {
+  const escaped = pattern.replace(/[.*+?^${}()|[\]\\]/g, (c) => (c === "*" ? ".*" : `\\${c}`));
+  try {
+    return new RegExp(`^${escaped}$`).test(targetOrigin);
+  } catch {
+    return false;
+  }
+}
+
+// Never nags on an unknown — a failed Faro lookup (no OAuth session,
+// insufficient role, ...) means "can't tell", not "definitely missing", so
+// this just skips the recommendation rather than risk pestering someone who
+// already has Frontend Observability set up. Matches by origin against each
+// app's own CORS allow-list rather than "the stack has any app at all" —
+// plenty of stacks have Frontend Observability apps for other properties.
+async function checkFrontendO11yRecommendable(stackUrl: string, targetUrl: string): Promise<boolean> {
+  if (detectFrontendTarget(process.cwd()).kind === "unsupported") return false;
+  const faro = await tryFaroClient(stackUrl);
+  if (!faro) return false;
+  try {
+    const targetOrigin = originOf(targetUrl);
+    const apps = await faro.list();
+    return !apps.some((app) => app.corsOrigins.some((pattern) => originMatchesPattern(pattern, targetOrigin)));
+  } catch {
+    return false;
+  }
 }
 
 function formatFrequency(ms: number): string {
@@ -117,8 +169,10 @@ interface NextStepLogEntry {
 // case, and only run on-demand when explicitly chosen there (which
 // re-enters "analyze" with a different mode — see AnalyzeMode below — then
 // routes back through "create" before returning to the menu). Frontend
-// Observability instrumentation is a separate concern, not chained onto
-// this flow — see the standalone `frontend` subcommand (FrontendApp.tsx).
+// Observability instrumentation is otherwise a separate concern (the
+// standalone `frontend` subcommand, FrontendApp.tsx) — "next-steps" can
+// hand off into it directly, though, when it looks recommendable; see
+// checkFrontendO11yRecommendable and the "done" effect below.
 type StepId = "gcx" | "auth" | "skills" | "analyze" | "create" | "next-steps";
 
 const STEP_ORDER: StepId[] = ["gcx", "auth", "skills", "analyze", "create", "next-steps"];
@@ -157,8 +211,12 @@ type AnalyzeSubPhase = "analyzing" | "browser-confirm" | "discovering";
 // leaving the menu, and IS its own confirmation (no further y/n) since it
 // never opens a browser. Not shown as its own row in StepsList — completed
 // picks (including a declined "Find additional synthetic checks") append
-// their own row instead (see nextStepsLog).
-type NextStepsSubPhase = "menu" | "exporting";
+// their own row instead (see nextStepsLog). "handing-off" is
+// "frontend-o11y"'s own equivalent of "exporting" — a brief visible pause
+// (see runFrontendO11yHandoff) rather than an instant cut to the other
+// wizard, so picking it reads as "loading the next thing" instead of a
+// jump cut.
+type NextStepsSubPhase = "menu" | "exporting" | "handing-off";
 
 // No "Finish"/"exit" entry — there's nothing left to pick once every one
 // of these is used, and the menu quietly finishes itself then (see
@@ -169,6 +227,14 @@ const NEXT_STEP_OPTIONS: SelectMenuItem[] = [
   { key: "browser-discovery", label: "Find additional synthetic checks" },
   { key: "export", label: "Export checks as Terraform" },
 ];
+
+// A third, conditional next-steps option — only appended (see
+// availableNextStepOptions) once checkFrontendO11yRecommendable resolves
+// true. Unlike the two static options above, picking it doesn't loop back
+// through "analyze"/"create" — it hands off straight to the `frontend`
+// wizard instead (see runFrontendO11yHandoff and the "done" effect below).
+const FRONTEND_O11Y_KEY = "frontend-o11y";
+const FRONTEND_O11Y_LABEL = "Configure Frontend Observability for your app";
 
 // Reused as-is for both the dynamic "in progress" row in StepsList (while
 // a pick runs — see runAnalyze) and its final logged entry (see
@@ -184,9 +250,13 @@ function nextStepOptionLabel(key: string): string {
 // A pick disappears from the menu once it's logged as done, regardless of
 // outcome. Once nothing's left, this returns empty — see the auto-finish
 // effect below, which is what actually ends the menu at that point.
-function availableNextStepOptions(log: { key: string }[]): SelectMenuItem[] {
+function availableNextStepOptions(log: { key: string }[], frontendO11yRecommended: boolean): SelectMenuItem[] {
   const used = new Set(log.map((e) => e.key));
-  return NEXT_STEP_OPTIONS.filter((o) => !used.has(o.key));
+  const options = NEXT_STEP_OPTIONS.filter((o) => !used.has(o.key));
+  if (frontendO11yRecommended && !used.has(FRONTEND_O11Y_KEY)) {
+    options.push({ key: FRONTEND_O11Y_KEY, label: FRONTEND_O11Y_LABEL });
+  }
+  return options;
 }
 
 // "create": "reviewing" is the checkbox-list selection UI (formerly its own
@@ -210,13 +280,24 @@ interface Props {
   initialTargetUrl: string;
   initialStackUrl: string;
   forceGcxInstall: boolean;
+  // "chained": this run was launched by the `frontend` wizard's own
+  // cross-product recommendation rather than started directly — see the
+  // "gcx" step's origin property in telemetry.ts.
+  origin?: "direct" | "chained";
 }
 
-export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, forceGcxInstall }: Props) {
+export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, forceGcxInstall, origin = "direct" }: Props) {
   const exit = useHardExit("synthetics", initialStackUrl);
 
-  const [started, setStarted] = useState(false);
-  const [currentStep, setCurrentStep] = useState<StepId>("gcx");
+  // A chained run skips the "start?" gate entirely — picking the
+  // recommendation (or answering yes to it) in the other wizard already
+  // was that confirmation. It also skips "gcx" and "auth" outright, not
+  // just their own confirm prompts (see useAuthStep's skipConfirm) — the
+  // wizard that chained into this one already verified both, in this same
+  // process, so re-running either here would just be redundant work with
+  // nothing left to ask or check.
+  const [started, setStarted] = useState(origin === "chained");
+  const [currentStep, setCurrentStep] = useState<StepId>(origin === "chained" ? "skills" : "gcx");
   const [completed, setCompleted] = useState<Set<StepId>>(new Set());
   const [done, setDone] = useState(false);
   const [failureSummary, setFailureSummary] = useState<string>();
@@ -236,7 +317,7 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
   // failing it here never re-prompts; both of those just fall back on
   // their own.
   const gcx = useGcxStep(forceGcxInstall, currentStep === "gcx");
-  const auth = useAuthStep("Sign in to Grafana Cloud using your browser?", currentStep === "auth");
+  const auth = useAuthStep("Sign in to Grafana Cloud using your browser?", currentStep === "auth", origin === "chained");
 
   // create step — "reviewing"'s selectedKeys seeded once (in runAnalyze),
   // then kept live via CheckboxList's onSelectionChange so a back-then-
@@ -281,6 +362,19 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
   // we done anything yet" for whether NextStepsBody shows its one-time
   // intro line.
   const [nextStepsLog, setNextStepsLog] = useState<NextStepLogEntry[]>([]);
+  // Resolved once, in parallel with "skills"/"analyze"/"create" (kicked off
+  // right after "auth" — see runAuth), so it's ready well before the menu
+  // ever renders instead of adding its own wait there.
+  const [frontendO11yRecommended, setFrontendO11yRecommended] = useState(false);
+  // Set once "frontend-o11y" is actually picked (see runFrontendO11yHandoff)
+  // — read by the "done" effect below to decide whether to hand off into
+  // the `frontend` wizard once this one finishes.
+  const pendingFrontendHandoff = useRef(false);
+  // Local, not derived by re-scanning nextStepsLog from finishNextSteps —
+  // the log update and the finish can happen in the same tick (see
+  // runFrontendO11yHandoff), and state set with a setter still holds its
+  // previous value inside that same closure.
+  const frontendO11yActionRef = useRef<"accepted" | "not_taken">("not_taken");
 
   const session = useRef<Session>(undefined as unknown as Session);
   // The exact config the latest "create" pass built (target/probes/settings
@@ -359,12 +453,37 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
   }
 
   function finishNextSteps() {
-    advance({ status: "ok" });
+    advance({
+      status: "ok",
+      frontend_o11y_recommended: frontendO11yRecommended,
+      ...(frontendO11yRecommended ? { frontend_o11y_action: frontendO11yActionRef.current } : {}),
+    });
     setDone(true);
+  }
+
+  // Unlike the other next-step picks, this doesn't loop back through
+  // "analyze"/"create" — it hands off to the `frontend` wizard once this
+  // one's own done screen has shown (see the "done" effect below). A brief
+  // visible "loading" pause first (same MIN_SPINNER_MS beat every other
+  // loading moment in this wizard gets), so the handoff reads as loading
+  // the next thing rather than an instant jump cut — then this logs the
+  // pick and finishes the menu the same way running out of picks or 'q'
+  // already does.
+  async function runFrontendO11yHandoff() {
+    setNextStepsSubPhase("handing-off");
+    await sleep(MIN_SPINNER_MS);
+    setNextStepsLog((prev) => [
+      ...prev,
+      { key: FRONTEND_O11Y_KEY, label: FRONTEND_O11Y_LABEL, detail: "Continuing into Frontend Observability setup…" },
+    ]);
+    frontendO11yActionRef.current = "accepted";
+    pendingFrontendHandoff.current = true;
+    finishNextSteps();
   }
 
   function handleNextStepChoice(key: string) {
     if (key === "export") runExportNow();
+    else if (key === FRONTEND_O11Y_KEY) runFrontendO11yHandoff();
     else runNextStepChoice(key as AnalyzeMode);
   }
 
@@ -464,6 +583,7 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
         status: result.installDeclined ? "declined" : "ok",
         already_installed: result.alreadyInstalled,
         install_declined: result.installDeclined,
+        origin,
       });
     }
 
@@ -471,6 +591,12 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
       const authOutcome = await auth.run(initialStackUrl, () => cancelled);
       if (cancelled) return;
       advance({ status: authOutcome === "yes" ? "ok" : authOutcome, auth_outcome: authOutcome });
+      // Fire-and-forget: runs alongside "skills"/"analyze"/"create" rather
+      // than adding its own wait once "next-steps" is reached. Never throws
+      // into this step (see checkFrontendO11yRecommendable) and setting
+      // state here after this run is no longer current is harmless — the
+      // component itself stays mounted for the whole wizard.
+      void checkFrontendO11yRecommendable(initialStackUrl, initialTargetUrl).then(setFrontendO11yRecommended);
     }
 
     async function runSkills() {
@@ -880,8 +1006,23 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
   }, [currentStep, started]);
 
   useEffect(() => {
-    if (done) exit();
-  }, [done, exit]);
+    if (done) {
+      exit(
+        undefined,
+        undefined,
+        pendingFrontendHandoff.current
+          ? () => {
+              // A clean handoff, not a jump cut mid-scrollback — this run's
+              // own summary has already been recordRun()'d and read by the
+              // time this fires, so there's nothing left here worth keeping
+              // on screen once the other wizard takes over.
+              console.clear();
+              return runFrontendUI(initialStackUrl, false, undefined, false, "chained");
+            }
+          : undefined
+      );
+    }
+  }, [done, exit, initialStackUrl]);
   useEffect(() => {
     if (failureSummary) exit(new Error(failureSummary));
   }, [failureSummary, exit]);
@@ -891,11 +1032,15 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
   // leaving "next-steps" (like export) can't skip this check the way a
   // one-off inline call would if a future action forgot to make it.
   useEffect(() => {
-    if (currentStep === "next-steps" && nextStepsSubPhase === "menu" && availableNextStepOptions(nextStepsLog).length === 0) {
+    if (
+      currentStep === "next-steps" &&
+      nextStepsSubPhase === "menu" &&
+      availableNextStepOptions(nextStepsLog, frontendO11yRecommended).length === 0
+    ) {
       finishNextSteps();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [nextStepsLog, currentStep, nextStepsSubPhase]);
+  }, [nextStepsLog, currentStep, nextStepsSubPhase, frontendO11yRecommended]);
 
   // Shared by the fixed "current" row and the dynamic next-steps row below
   // — frozen (not animated) while individual checks are creating, or while
@@ -913,7 +1058,9 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
   function StepsList() {
     return (
       <Box flexDirection="column">
-        {STEP_ORDER.filter((step) => step !== "next-steps").map((step) => {
+        {STEP_ORDER.filter(
+          (step) => step !== "next-steps" && !(origin === "chained" && (step === "gcx" || step === "auth"))
+        ).map((step) => {
           // Completed wins over "current" — matters for the last visible
           // step ("create"), which stays completed forever once the first
           // pass finishes (a later next-steps pass re-enters "analyze"/
@@ -989,6 +1136,12 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
           <Text>
             {" "}
             {liveIcon()} <Text bold>{nextStepOptionLabel("export")}</Text>
+          </Text>
+        )}
+        {currentStep === "next-steps" && nextStepsSubPhase === "handing-off" && (
+          <Text>
+            {" "}
+            {liveIcon()} <Text bold>Loading Frontend Observability setup…</Text>
           </Text>
         )}
       </Box>
@@ -1078,20 +1231,24 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
   }
 
   function NextStepsBody() {
-    // While exporting, its own live row is in StepsList instead (right
-    // under the checklist — see the dynamic row there), the same spot its
-    // permanent checkmark entry lands in once it's done. Nothing shows
-    // here for that whole stretch, rather than a separate loading view
-    // in an entirely different spot that then has to hand off to
-    // StepsList once it finishes.
-    if (nextStepsSubPhase === "exporting") return null;
+    // While exporting or handing off, its own live row is in StepsList
+    // instead (right under the checklist — see the dynamic row there), the
+    // same spot its permanent checkmark entry lands in once it's done.
+    // Nothing shows here for that whole stretch, rather than a separate
+    // loading view in an entirely different spot that then has to hand off
+    // to StepsList once it finishes.
+    if (nextStepsSubPhase === "exporting" || nextStepsSubPhase === "handing-off") return null;
     return (
       <Box flexDirection="column">
         <ChecksSummary />
         {nextStepsNotice && <Text color={muted}>{nextStepsNotice}</Text>}
         <Box marginTop={1} flexDirection="column">
           <Text bold>Next actions</Text>
-          <SelectMenu items={availableNextStepOptions(nextStepsLog)} accentColor={accent ?? "white"} onSelect={handleNextStepChoice} />
+          <SelectMenu
+            items={availableNextStepOptions(nextStepsLog, frontendO11yRecommended)}
+            accentColor={accent ?? "white"}
+            onSelect={handleNextStepChoice}
+          />
         </Box>
         <Box marginTop={1}>
           <Text color={muted}>
@@ -1284,7 +1441,8 @@ export async function runSetupUI(
   initialBaseUrl: string | undefined,
   initialTargetUrl: string,
   initialStackUrl: string,
-  forceGcxInstall: boolean
+  forceGcxInstall: boolean,
+  origin: "direct" | "chained" = "direct"
 ): Promise<void> {
   await requireInteractiveTerminal("synthetics", initialStackUrl);
   // exitOnCtrlC disabled — Ink's own default Ctrl+C handling runs before
@@ -1298,6 +1456,7 @@ export async function runSetupUI(
       initialTargetUrl={initialTargetUrl}
       initialStackUrl={initialStackUrl}
       forceGcxInstall={forceGcxInstall}
+      origin={origin}
     />,
     { exitOnCtrlC: false }
   );

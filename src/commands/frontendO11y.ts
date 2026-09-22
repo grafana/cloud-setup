@@ -27,7 +27,7 @@ async function run(rest: string[]): Promise<void> {
   applyFolder(folder, frontendO11yCommand);
   const debugFile = setDebugEnabled(debug);
   if (debugFile) console.log(`Debug log: ${debugFile}`);
-  await runFrontendUI(stackUrl, forceGcxInstall, appName, sessionReplay);
+  await runFrontendUI(stackUrl, forceGcxInstall, appName, sessionReplay, "direct");
 }
 
 export const frontendO11yCommand: Command = {

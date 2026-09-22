@@ -5,7 +5,7 @@ export interface DiscoveredEndpoint {
   description: string;
 }
 
-function stripJsonFences(text: string): string {
+export function stripJsonFences(text: string): string {
   return text
     .trim()
     .replace(/^```(?:json)?/, "")
@@ -156,6 +156,56 @@ export async function judgeEndpoints(
     return parseEndpoints(await runTask(stackUrl, task, []));
   } catch {
     return candidates;
+  }
+}
+
+export interface SyntheticTargetSuggestion {
+  url: string;
+  reason: string;
+}
+
+function isSyntheticTargetSuggestion(value: unknown): value is SyntheticTargetSuggestion {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    typeof (value as SyntheticTargetSuggestion).url === "string" &&
+    typeof (value as SyntheticTargetSuggestion).reason === "string"
+  );
+}
+
+// Picks which of a Frontend Observability app's own CORS origins is worth
+// a Synthetic Monitoring check — used by FrontendApp.tsx's cross-product
+// recommendation (see runRecommendSm). That list mixes production with
+// staging/preview/internal origins by design (the SDK needs to work
+// everywhere it's loaded from, not just prod), so a plain "first" or
+// "shortest" heuristic isn't reliable; this is a judgment call, not a
+// discovery task, so it needs no tools of its own. The caller still shows
+// the pick as an editable, confirmable suggestion rather than creating a
+// check with it directly — getting this wrong means monitoring the wrong
+// site. Returns undefined on any failure, or when the model itself can't
+// tell — never invents a target for a monitoring check.
+export async function pickSyntheticTarget(candidates: string[], stackUrl: string): Promise<SyntheticTargetSuggestion | undefined> {
+  if (candidates.length === 0) return undefined;
+  if (candidates.length === 1) return { url: candidates[0], reason: "the only real origin listed" };
+
+  const task = [
+    "I am setting up Grafana Synthetic Monitoring for a web app and need to pick ONE origin to create an uptime check",
+    `against, out of this list of origins allowed by its Frontend Observability app: ${JSON.stringify(candidates)}.`,
+    "This list can mix production with staging, preview, or internal origins — that's normal, since a Frontend",
+    "Observability app's CORS allow-list covers every environment the SDK is loaded from, not just production.",
+    "Pick the one that is the actual public production site a real user would visit — prefer an apex/production-",
+    'looking domain over anything containing "staging", "dev", "preview", "test", "internal", a PR/branch number, or',
+    "a non-standard port. If you genuinely cannot tell which one is production, say so rather than guessing.",
+    "This is part of a Grafana Synthetic Monitoring setup workflow.",
+    "Respond with ONLY JSON, no prose, no markdown fences, shaped like either:",
+    '{"url": "https://example.com", "reason": "short reason"} or {"url": null, "reason": "why you could not tell"}',
+  ].join(" ");
+
+  try {
+    const parsed = JSON.parse(stripJsonFences(await runTask(stackUrl, task, [])));
+    return isSyntheticTargetSuggestion(parsed) ? parsed : undefined;
+  } catch {
+    return undefined;
   }
 }
 

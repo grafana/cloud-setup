@@ -90,12 +90,15 @@ export async function requireInteractiveTerminal(command: Command, stackUrl: str
 // already rendered by the failing screen itself, so it isn't repeated
 // here. Undefined is a clean, silent exit (the "done" screen already
 // showed its own success message).
-export function useHardExit(command: Command, stackUrl: string): (errorOrMessage?: Error | string, setupOutcome?: Outcome) => void {
+export function useHardExit(
+  command: Command,
+  stackUrl: string
+): (errorOrMessage?: Error | string, setupOutcome?: Outcome, andThen?: () => Promise<void>) => void {
   const { exit } = useApp();
   const startedAt = useRef(Date.now());
   const exiting = useRef(false);
 
-  function hardExit(errorOrMessage?: Error | string, setupOutcome?: Outcome): void {
+  function hardExit(errorOrMessage?: Error | string, setupOutcome?: Outcome, andThen?: () => Promise<void>): void {
     // Registering a SIGINT listener means nothing else will kill the process,
     // so a second Ctrl+C has to exit here or it would look ignored.
     if (exiting.current) {
@@ -112,12 +115,24 @@ export function useHardExit(command: Command, stackUrl: string): (errorOrMessage
     const outcome: Outcome = error ? "error" : errorOrMessage !== undefined ? "canceled" : setupOutcome ?? "ok";
     recordRun(command, stackUrl, outcome, Date.now() - startedAt.current);
 
+    // A cross-product recommendation chains straight into the other
+    // wizard here — after this tree has unmounted (exit() above) and this
+    // run's own recordRun has fired, but before the process actually
+    // dies, so the two wizards never run at once and this one's own
+    // "hard exit exactly once at the true end" still holds; the chained
+    // wizard owns the real end and its own process.exit(). Swallows a
+    // throw from andThen — a failed handoff should still let this process
+    // exit normally rather than hang or crash on the way out.
+    const proceed = andThen ? andThen().catch(() => {}) : Promise.resolve();
+
     // setImmediate, not a same-tick process.exit() — Ink's own unmount
     // cleanup and the console.log above both write to the terminal, and
     // need a turn of the event loop to actually flush before the process
     // dies, or they can get silently dropped.
-    waitForTelemetry().finally(() => {
-      setImmediate(() => process.exit(error ? 1 : 0));
+    proceed.finally(() => {
+      waitForTelemetry().finally(() => {
+        setImmediate(() => process.exit(error ? 1 : 0));
+      });
     });
   }
 
