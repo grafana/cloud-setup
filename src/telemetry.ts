@@ -141,9 +141,12 @@ export type StepStatus = "ok" | "failed" | "declined" | "skipped" | "aborted";
 export interface StepProperties {
   status: StepStatus;
 
-  // gcx
+  // gcx. `origin` is carried on this step because it's the one both wizards
+  // always hit first — it tells a run launched by the other wizard's own
+  // cross-product recommendation apart from one the user started directly.
   already_installed?: boolean;
   install_declined?: boolean;
+  origin?: "direct" | "chained";
 
   // auth
   auth_outcome?: "yes" | "declined" | "aborted" | "failed";
@@ -162,6 +165,12 @@ export interface StepProperties {
   skipped?: number;
   failed?: number;
 
+  // synthetics: next-steps
+  frontend_o11y_recommended?: boolean;
+  // "declined" is picked-then-said-no at its own confirm screen, distinct
+  // from "not_taken" (never picked at all — menu ran out or 'q').
+  frontend_o11y_action?: "accepted" | "declined" | "not_taken";
+
   // frontend: pick-app
   app_resolution?: "named" | "auto_single" | "picker" | "created" | "manual";
   session_replay?: boolean;
@@ -175,6 +184,17 @@ export interface StepProperties {
   package_install?: "ok" | "failed";
   router_wired?: boolean;
   layout_wired?: boolean;
+
+  // frontend: recommend-sm
+  // "not_taken" mirrors frontend_o11y_action above — the option was on the
+  // menu but never picked (finished via 'q' or an empty menu, not a
+  // separate decline, since picking IS the confirmation here).
+  // "declined" is picked-then-said-no at its own confirm screen, distinct
+  // from "not_taken" (never picked at all — menu ran out or 'q').
+  recommend_sm_action?: "accepted" | "declined" | "not_taken" | "already_monitored" | "unavailable";
+  // Whether the URL that ended up used came from pickSyntheticTarget's own
+  // suggestion (accepted as-is) or was typed/edited by hand.
+  recommend_sm_url_source?: "ai_suggested" | "manual";
 }
 
 const pending = new Set<Promise<void>>();

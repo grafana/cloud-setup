@@ -18,8 +18,15 @@ export function setDebugEnabled(value: boolean): string | undefined {
   return debugFile;
 }
 
+// Diagnostic-only — a failed write (disk full, unwritable tmpdir) must
+// never throw into a caller that isn't expecting it, especially a
+// fire-and-forget one with no .catch of its own.
 export function debugLog(label: string, data: unknown): void {
   if (!debugFile) return;
-  const text = typeof data === "string" ? data : JSON.stringify(data, null, 2);
-  appendFileSync(debugFile, `\n--- [debug] ${label} ---\n${text}\n`);
+  try {
+    const text = typeof data === "string" ? data : JSON.stringify(data, null, 2);
+    appendFileSync(debugFile, `\n--- [debug] ${label} ---\n${text}\n`);
+  } catch {
+    // Dropped.
+  }
 }

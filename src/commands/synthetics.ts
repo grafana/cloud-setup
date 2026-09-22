@@ -40,7 +40,7 @@ async function run(rest: string[]): Promise<void> {
   // safe here only because Ink hasn't started rendering yet.
   const debugFile = setDebugEnabled(debug);
   if (debugFile) console.log(`Debug log: ${debugFile}`);
-  await runSetupUI(baseUrl, targetUrl, stackUrl, forceGcxInstall);
+  await runSetupUI(baseUrl, targetUrl, stackUrl, forceGcxInstall, "direct");
 }
 
 export const syntheticsCommand: Command = {

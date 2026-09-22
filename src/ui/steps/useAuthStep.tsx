@@ -25,8 +25,16 @@ export interface AuthStep {
 // just means whatever comes after skips its AI-assisted half — `error` is
 // still surfaced (never swallowed) so a real failure stays diagnosable, but
 // it's never treated as fatal here.
-export function useAuthStep(confirmText: string, isActive: boolean): AuthStep {
-  const [subPhase, setSubPhase] = useState<AuthSubPhase>("browser-confirm");
+//
+// `skipConfirm` is for a chained run (see origin in SetupApp.tsx/
+// FrontendApp.tsx): the other wizard's own "auth" step already asked this
+// exact question, in this same process, for this same stack — asking again
+// would just be friction, since ensureAssistantAuth's in-memory session
+// cache (harness/auth.ts) makes the actual call underneath effectively
+// free. The initial subPhase is chosen from it too, so a skipped confirm
+// never renders even for one frame.
+export function useAuthStep(confirmText: string, isActive: boolean, skipConfirm = false): AuthStep {
+  const [subPhase, setSubPhase] = useState<AuthSubPhase>(skipConfirm ? "authenticating" : "browser-confirm");
   const [error, setError] = useState<string>();
   const permissionResolver = useRef<((allow: boolean) => void) | undefined>(undefined);
   // Lets the "authenticating" wait be cancelled well before the 5-minute
@@ -50,16 +58,18 @@ export function useAuthStep(confirmText: string, isActive: boolean): AuthStep {
   );
 
   async function run(stackUrl: string, isCancelled: () => boolean): Promise<AuthOutcome> {
-    setSubPhase("browser-confirm");
     setError(undefined);
-    const allow = await new Promise<boolean>((resolve) => {
-      permissionResolver.current = resolve;
-    });
-    if (isCancelled()) return "declined";
+    if (!skipConfirm) {
+      setSubPhase("browser-confirm");
+      const allow = await new Promise<boolean>((resolve) => {
+        permissionResolver.current = resolve;
+      });
+      if (isCancelled()) return "declined";
 
-    if (!allow) {
-      setError("declined");
-      return "declined";
+      if (!allow) {
+        setError("declined");
+        return "declined";
+      }
     }
 
     setSubPhase("authenticating");

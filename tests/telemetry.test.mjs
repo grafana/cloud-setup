@@ -189,6 +189,46 @@ test('step properties travel alongside the envelope but cannot shadow it', async
   sent.forEach((s) => s.settle({ ok: true }));
 });
 
+// The cross-product recommendation properties (SM's next-steps offering
+// Frontend Observability, and vice versa) are just more step properties —
+// this pins that they travel through recordStep the same as any other.
+test('cross-product recommendation properties travel through recordStep', async (t) => {
+  const sent = captureSends(t);
+  const api = await telemetry();
+  api.recordStep('synthetics', stack, 'gcx', { status: 'ok', origin: 'chained' });
+  api.recordStep('synthetics', stack, 'next-steps', {
+    status: 'ok',
+    frontend_o11y_recommended: true,
+    frontend_o11y_action: 'accepted',
+  });
+  api.recordStep('frontend', stack, 'next-steps', { status: 'ok', recommend_sm_action: 'already_monitored' });
+
+  assert.equal(sent[0].payload.origin, 'chained');
+  assert.equal(sent[1].payload.frontend_o11y_recommended, true);
+  assert.equal(sent[1].payload.frontend_o11y_action, 'accepted');
+  assert.equal(sent[2].payload.recommend_sm_action, 'already_monitored');
+  sent.forEach((s) => s.settle({ ok: true }));
+});
+
+// "declined" (picked the recommendation, then said no at its own confirm
+// screen) is distinct from "not_taken" (never picked at all) for both
+// directions — pinned separately since it's easy for a future refactor of
+// either decline branch to silently collapse back to "not_taken".
+test('a declined cross-product recommendation is distinguishable from not_taken', async (t) => {
+  const sent = captureSends(t);
+  const api = await telemetry();
+  api.recordStep('synthetics', stack, 'next-steps', {
+    status: 'ok',
+    frontend_o11y_recommended: true,
+    frontend_o11y_action: 'declined',
+  });
+  api.recordStep('frontend', stack, 'next-steps', { status: 'ok', recommend_sm_action: 'declined' });
+
+  assert.equal(sent[0].payload.frontend_o11y_action, 'declined');
+  assert.equal(sent[1].payload.recommend_sm_action, 'declined');
+  sent.forEach((s) => s.settle({ ok: true }));
+});
+
 test('shutdown waits for older deliveries even when the newest finishes first', async (t) => {
   const sent = captureSends(t);
   const api = await telemetry();

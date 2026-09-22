@@ -64,6 +64,18 @@ export function checkNodeVersion(): void {
   }
 }
 
+// scheme+host+port only, never a full URL with a path/query — shared by
+// both wizards' cross-product recommendation checks (matching a Faro
+// app's corsOrigins shape, and an SM check's target) regardless of what
+// shape the input URL was originally passed in as.
+export function originOf(rawUrl: string): string {
+  try {
+    return new URL(/^https?:\/\//.test(rawUrl) ? rawUrl : `https://${rawUrl}`).origin;
+  } catch {
+    return rawUrl;
+  }
+}
+
 // Ink needs a TTY on stdin for keyboard input, so a non-interactive run cannot
 // work at all. Reported before throwing, because otherwise the runs that never
 // got started are the one failure mode that leaves no trace.
@@ -90,12 +102,15 @@ export async function requireInteractiveTerminal(command: Command, stackUrl: str
 // already rendered by the failing screen itself, so it isn't repeated
 // here. Undefined is a clean, silent exit (the "done" screen already
 // showed its own success message).
-export function useHardExit(command: Command, stackUrl: string): (errorOrMessage?: Error | string, setupOutcome?: Outcome) => void {
+export function useHardExit(
+  command: Command,
+  stackUrl: string
+): (errorOrMessage?: Error | string, setupOutcome?: Outcome, andThen?: () => Promise<void>) => void {
   const { exit } = useApp();
   const startedAt = useRef(Date.now());
   const exiting = useRef(false);
 
-  function hardExit(errorOrMessage?: Error | string, setupOutcome?: Outcome): void {
+  function hardExit(errorOrMessage?: Error | string, setupOutcome?: Outcome, andThen?: () => Promise<void>): void {
     // Registering a SIGINT listener means nothing else will kill the process,
     // so a second Ctrl+C has to exit here or it would look ignored.
     if (exiting.current) {
@@ -107,17 +122,36 @@ export function useHardExit(command: Command, stackUrl: string): (errorOrMessage
     // cursor and raw mode; printing before that would just get clobbered
     // by Ink's own rendering.
     exit(error);
-    if (typeof errorOrMessage === "string") console.log(errorOrMessage);
+    // Leading newline: Ink's own unmount doesn't guarantee the cursor is
+    // sitting at the start of a fresh line — most screens happen to end
+    // on a blank margin line so this goes unnoticed, but a screen whose
+    // very last character is the last thing on screen (e.g. the
+    // next-steps menu's own hint line) leaves the cursor right there,
+    // and this would otherwise get appended straight onto it instead of
+    // printing on its own line.
+    if (typeof errorOrMessage === "string") console.log(`\n${errorOrMessage}`);
 
     const outcome: Outcome = error ? "error" : errorOrMessage !== undefined ? "canceled" : setupOutcome ?? "ok";
     recordRun(command, stackUrl, outcome, Date.now() - startedAt.current);
+
+    // A cross-product recommendation chains straight into the other
+    // wizard here — after this tree has unmounted (exit() above) and this
+    // run's own recordRun has fired, but before the process actually
+    // dies, so the two wizards never run at once and this one's own
+    // "hard exit exactly once at the true end" still holds; the chained
+    // wizard owns the real end and its own process.exit(). Swallows a
+    // throw from andThen — a failed handoff should still let this process
+    // exit normally rather than hang or crash on the way out.
+    const proceed = andThen ? andThen().catch(() => {}) : Promise.resolve();
 
     // setImmediate, not a same-tick process.exit() — Ink's own unmount
     // cleanup and the console.log above both write to the terminal, and
     // need a turn of the event loop to actually flush before the process
     // dies, or they can get silently dropped.
-    waitForTelemetry().finally(() => {
-      setImmediate(() => process.exit(error ? 1 : 0));
+    proceed.finally(() => {
+      waitForTelemetry().finally(() => {
+        setImmediate(() => process.exit(error ? 1 : 0));
+      });
     });
   }
 
