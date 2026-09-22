@@ -4,7 +4,7 @@
   "description": "Grafana Cloud's interactive setup wizard, powered by Grafana Assistant.",
   "repository": {
     "type": "git",
-    "url": "https://github.com/grafana/cloud-setup.git"
+    "url": "git+https://github.com/grafana/cloud-setup.git"
   },
   "license": "Apache-2.0",
   "publishConfig": {
@@ -12,7 +12,7 @@
   },
   "type": "module",
   "bin": {
-    "cloud-setup": "./dist/cli.js"
+    "cloud-setup": "dist/cli.js"
   },
   "files": [
     "dist"
