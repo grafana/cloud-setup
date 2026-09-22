@@ -56,9 +56,9 @@ interface MaskingOption {
   description: string;
 }
 const MASKING_OPTIONS: MaskingOption[] = [
-  { key: "strict", label: "Strict", description: "block all media, no text masking" },
-  { key: "balanced", label: "Balanced", description: "mask text content" },
-  { key: "open", label: "Open", description: "only mask password/email inputs" },
+  { key: "strict", label: "Strict", description: "mask all text, inputs and images" },
+  { key: "balanced", label: "Balanced", description: "all inputs" },
+  { key: "open", label: "Open", description: "sensitive inputs only" },
 ];
 
 // Blank means "use the SDK's own default" (100%) rather than an explicit
