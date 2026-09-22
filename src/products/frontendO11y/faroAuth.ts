@@ -54,15 +54,29 @@ export class FaroClient {
     return apps.map(fromApi);
   }
 
-  // Creating an app via this route is NOT attempted — verified live
-  // (reproduced with gcx's own official implementation, not just ours)
-  // that it 403s for OAuth tokens regardless of scope: this specific
-  // plugin-proxy route only accepts a real Service Account token for
-  // writes. See github.com/grafana/gcx issues #435 and #433 — Grafana's
-  // own team extended OAuth to cover *reads* on this route, but never
-  // extended it to writes. list() above only works because of that fix.
   async findExisting(name: string): Promise<FaroApp | undefined> {
     return (await this.list()).find((a) => a.name === name);
+  }
+
+  // Still 403s for OAuth tokens as of 2026-09-22 (re-verified live against
+  // a real stack: "plugin proxy route access denied") — the May 2026
+  // permission rollout for github.com/grafana/gcx issues #435/#433 only
+  // ever covered reads on this route, matching this file's original
+  // finding. gcx's own Create() (internal/providers/faro/client.go)
+  // hits this exact same path with no OAuth/SA distinction, so it's
+  // presumably in the same boat, just untested there. Attempted anyway,
+  // with callers expected to fall back on failure (see FrontendApp.tsx):
+  // cheap to try, and it starts working for free the day Grafana extends
+  // that permission to writes too.
+  //
+  // The create response is missing collectEndpointURL/appKey (a known
+  // API quirk gcx works around the same way), so this re-lists to find
+  // the just-created app by name rather than trusting the response body.
+  async create(name: string): Promise<FaroApp> {
+    await this.request<FaroAppApi>("POST", FARO_BASE_PATH, { name });
+    const created = (await this.list()).find((a) => a.name === name);
+    if (!created) throw new Error(`Faro app "${name}" was created but didn't show up in the app list afterward`);
+    return created;
   }
 }
 

@@ -2,7 +2,7 @@ import { existsSync, readFileSync, readdirSync, statSync, writeFileSync } from "
 import path from "node:path";
 import ts from "typescript";
 import { fileToolsWithWrite, runTask } from "../../harness/index.js";
-import type { FaroInstrumentation } from "./instrument.js";
+import { replayInstrumentationLines, sessionTrackingLines, type FaroInstrumentation } from "./instrument.js";
 
 const IGNORED_DIRS = new Set(["node_modules", ".git", "dist", "build", ".turbo", ".next"]);
 const SOURCE_EXTENSIONS = new Set([".ts", ".tsx", ".js", ".jsx"]);
@@ -14,25 +14,18 @@ const DATA_ROUTER_PATTERN = /\bcreate(?:Browser|Hash|Memory)Router\s*\(/;
 // Base shape matches the documented basic-init snippet (verified against
 // grafana.com/docs/.../instrument-react/) — @grafana/faro-react's own
 // initializeFaro wrapper, not the generic @grafana/faro-web-sdk one used
-// for non-React projects. Notably no explicit instrumentations array —
-// confirmed against the real page twice, not a fetch artifact: the React
-// package apparently applies its own defaults internally (it re-exports
-// @grafana/faro-web-sdk's initializeFaro verbatim, which defaults
-// `instrumentations` to getWebInstrumentations() when the key is omitted —
-// checked in that package's own makeCoreConfig source). version/
-// environment/session fields added on top match Grafana's own faro-setup
-// skill, which includes them for React too (see FaroInstrumentation).
-// Session Replay (sessionReplay) isn't covered by that page at all — its
-// own docs only show the vanilla @grafana/faro-web-sdk shape — but since
-// initializeFaro is the same function, adding it here means the
-// `instrumentations` key can no longer be omitted (the default only
-// applies when it's absent), so getWebInstrumentations() has to be spelled
-// out explicitly once ReplayInstrumentation joins it.
+// for non-React projects. That page's own snippet omits the
+// `instrumentations` key entirely and relies on the React package's
+// default (it re-exports @grafana/faro-web-sdk's initializeFaro verbatim,
+// which defaults to getWebInstrumentations() alone when the key is
+// absent) — but TracingInstrumentation (for HTTP request visibility) and,
+// when enabled, Session Replay both need to be added explicitly, same as
+// the vanilla and Next.js snippets, so the array is always spelled out
+// here instead of relying on that default.
 function basicInitSnippet(instrumentation: FaroInstrumentation): string {
   return [
-    instrumentation.sessionReplay
-      ? "import { getWebInstrumentations, initializeFaro } from '@grafana/faro-react';"
-      : "import { initializeFaro } from '@grafana/faro-react';",
+    "import { getWebInstrumentations, initializeFaro } from '@grafana/faro-react';",
+    "import { TracingInstrumentation } from '@grafana/faro-web-tracing';",
     ...(instrumentation.sessionReplay ? ["import { ReplayInstrumentation } from '@grafana/faro-instrumentation-replay';"] : []),
     "",
     "initializeFaro({",
@@ -42,30 +35,40 @@ function basicInitSnippet(instrumentation: FaroInstrumentation): string {
     `    version: '${instrumentation.version}',`,
     `    environment: ${instrumentation.environmentExpr},`,
     "  },",
-    ...(instrumentation.sessionPersistent ? ["  sessionTracking: {", "    persistent: true,", "  },"] : []),
+    ...sessionTrackingLines(instrumentation, "  "),
+    "  instrumentations: [",
+    "    // Mandatory, omits default instrumentations otherwise.",
+    "    ...getWebInstrumentations(),",
+    "    // Tracing package to get end-to-end visibility for HTTP requests.",
+    "    new TracingInstrumentation(),",
     ...(instrumentation.sessionReplay
-      ? [
-          "  instrumentations: [",
-          "    ...getWebInstrumentations(),",
-          "    // Beta: requires Session Replay enabled on this stack, or it's a no-op.",
-          "    new ReplayInstrumentation(),",
-          "  ],",
-        ]
+      ? ["    // Beta: requires Session Replay enabled on this stack, or it's a no-op.", ...replayInstrumentationLines(instrumentation.replayMasking, "    ")]
       : []),
+    "  ],",
     "});",
     "",
   ].join("\n");
 }
 
-// Same idempotent-prepend approach as the generic JS path — deterministic,
-// no agent needed, since both the content and the target file are fully
-// known ahead of time.
+// Same first-line-to-closing-`});` anchor as instrument.ts's
+// FARO_WEB_SDK_BLOCK — see that constant's comment for why it's safe
+// against the snippet's own nested closes.
+const FARO_REACT_BLOCK = /import \{ getWebInstrumentations, initializeFaro \} from '@grafana\/faro-react';[\s\S]*?\n\}\);\n/;
+
+// Same re-syncing prepend as instrument.ts's insertFaroSnippet — a later
+// run with different answers replaces the previously-inserted block
+// instead of leaving it stale. Deterministic, no agent needed, since both
+// the content and the target file are fully known ahead of time.
 function insertBasicInit(cwd: string, entryFile: string, instrumentation: FaroInstrumentation): void {
   const full = path.join(cwd, entryFile);
   const existing = existsSync(full) ? readFileSync(full, "utf8") : "";
-  if (existing.includes("@grafana/faro-react")) return;
+  const match = existing.match(FARO_REACT_BLOCK);
+  const rest = (match ? existing.slice(match.index! + match[0].length) : existing).replace(/^\n+/, "");
+
   const snippet = basicInitSnippet(instrumentation);
-  writeFileSync(full, existing ? `${snippet}\n${existing}` : snippet, "utf8");
+  const next = rest ? `${snippet}\n${rest}` : snippet;
+  if (next === existing) return;
+  writeFileSync(full, next, "utf8");
 }
 
 function walk(dir: string, out: string[]): void {

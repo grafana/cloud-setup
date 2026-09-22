@@ -163,7 +163,10 @@ export interface StepProperties {
   failed?: number;
 
   // frontend: pick-app
-  app_resolution?: "named" | "auto_single" | "picker" | "manual";
+  app_resolution?: "named" | "auto_single" | "picker" | "created" | "manual";
+  session_replay?: boolean;
+  replay_masking?: "strict" | "balanced" | "open";
+  sampling_rate?: number;
 
   // frontend: instrument. Not named "outcome": that belongs to the run, and
   // reusing it here made one run report two conflicting outcomes.
