@@ -17,9 +17,9 @@ Two different numbers, each written down exactly once.
 
 `.nvmrc` pins the **toolchain**: the exact Node that contributors and CI use, currently the latest LTS. `actions/setup-node` reads it via `node-version-file` in both workflows, so no workflow hardcodes a version. Bumping it is a one-line change, and Renovate's `nvm` manager keeps it moving.
 
-`engines.node` in package.json states the **floor the published CLI promises its users**, currently `>=22.6.0`. It is deliberately wider than `.nvmrc` — narrowing it to the pinned LTS would lock out users on 22 for no reason. Three things read it: npm warns on install, the CI `versions` job feeds it to the test matrix, and `checkNodeVersion()` in `src/ui/shared.tsx` parses it out of the manifest at runtime. Do not reintroduce a hardcoded minimum next to that gate.
+`engines.node` in package.json states the **floor the published CLI promises its users**, currently `>=22.6.0`. It is deliberately wider than `.nvmrc` — narrowing it to the pinned LTS would lock out users on 22 for no reason. Three things read it: npm warns on install, the `oldest-supported-node` CI job installs exactly that version, and `checkNodeVersion()` in `src/ui/shared.tsx` parses it out of the manifest at runtime. Do not reintroduce a hardcoded minimum next to that gate.
 
-CI tests both ends, the exact floor and the pinned LTS, so raising `engines.node` without meaning to shows up as a failing job rather than a surprise for someone on old Node.
+The `oldest-supported-node` job runs the built CLI rather than `npm test`, and that is not laziness. The test suite's `mock.module()` mis-resolves a bare specifier inside Ink on 22.6.0 (`Cannot find module .../ink/build/@alcalzone/ansi-tokenize`), fixed in a later 22.x. The wizard itself runs fine there, verified directly, so the floor is honest even though the suite cannot run on it. If you need the suite green on the floor too, raising `engines.node` is the wrong fix — the product works; the harness is what needs the newer Node.
 
 ## TypeScript configuration
 
