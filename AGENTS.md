@@ -3,45 +3,17 @@
 Grafana Cloud's interactive setup wizard. Two commands, `synthetics` and `frontend`, each an Ink (React-in-the-terminal) wizard built from a shared set of steps.
 
 ```sh
-npm run build      # tsc, src -> dist
-npm run typecheck  # tsc, no output written
-npm run lint       # eslint (type-aware, so it needs no build first)
-npm run format     # prettier --write
-npm test           # builds, then runs tests/*.test.mjs
-npm run check      # typecheck + lint + format:check + test, same as CI
+npm run check   # typecheck + lint + format:check + test, same as CI
+npm run build   # tsc, src -> dist
+npm test        # builds, then runs tests/*.test.mjs
 ```
 
-## Node versions
+CONTRIBUTING.md covers the toolchain: the two tsconfigs, the Node version split, the ESLint rule exclusions and why each is set the way it is. Read it before changing a config file. The traps worth knowing up front:
 
-Two different numbers, each written down exactly once.
-
-`.nvmrc` pins the **toolchain**: the exact Node that contributors and CI use, currently the latest LTS. `actions/setup-node` reads it via `node-version-file` in both workflows, so no workflow hardcodes a version. Bumping it is a one-line change, and Renovate's `nvm` manager keeps it moving.
-
-`engines.node` in package.json states the **floor the published CLI promises its users**, currently `>=22.6.0`. It is deliberately wider than `.nvmrc` — narrowing it to the pinned LTS would lock out users on 22 for no reason. Three things read it: npm warns on install, the `oldest-supported-node` CI job installs exactly that version, and `checkNodeVersion()` in `src/ui/shared.tsx` parses it out of the manifest at runtime. Do not reintroduce a hardcoded minimum next to that gate.
-
-The `oldest-supported-node` job runs the built CLI rather than `npm test`, and that is not laziness. The test suite's `mock.module()` mis-resolves a bare specifier inside Ink on 22.6.0 (`Cannot find module .../ink/build/@alcalzone/ansi-tokenize`), fixed in a later 22.x. The wizard itself runs fine there, verified directly, so the floor is honest even though the suite cannot run on it. If you need the suite green on the floor too, raising `engines.node` is the wrong fix — the product works; the harness is what needs the newer Node.
-
-## TypeScript configuration
-
-There are two tsconfigs, and the split is deliberate.
-
-`tsconfig.json` is the wide one: it covers `src`, the tests and `eslint.config.js`, and emits nothing. Every file in the repo belongs to it, so an editor never falls back to an inferred project. That fallback has no `@types/node`, which is what makes `console`, `process` and `setTimeout` look undefined in an editor while `npm run typecheck` stays clean.
-
-`tsconfig.build.json` extends it, narrows to `src` and does the emit. `npm run build` uses it, so `dist` mirrors `src` exactly.
-
-`target` and `lib` are `ES2024`, and the number that decides them is `engines.node`, not the latest spec or the pinned LTS. Everything in ES2024 works on 22.6.0 — checked feature by feature, including the RegExp `v` flag. `ESNext` would not be safe: `Promise.try`, `RegExp.escape`, `Float16Array` and `Error.isError` are all absent on 22.6.0, so it would let the compiler bless calls that crash for a user on the oldest Node the package claims to support. Raise `lib` when `engines.node` rises, not before. (TypeScript 5.9 has no `ES2025`; `ES2024` is the highest real value, then `ESNext`.)
-
-Three more options are worth knowing about:
-
-- `types: ["node", "react"]` is explicit rather than letting TypeScript pull in whatever happens to be under `node_modules/@types`. A transitive `@types` package can otherwise leak globals into the build and change what compiles.
-- `allowJs` with `checkJs` off puts the tests in the project so Node's globals resolve there. `checkJs` stays off because the tests import the built output from `dist`, and turning it on would typecheck emitted files, which checks nothing useful.
-- `verbatimModuleSyntax` and `isolatedModules` matter because emit is per-file. Without them an import that only carries types can erase to nothing and leave an unresolvable import in `dist`.
-
-`exactOptionalPropertyTypes` is deliberately off: it produces 85 errors, almost all React prop plumbing, and is not worth the churn.
-
-A `pre-commit` hook runs lint-staged (eslint --fix, then prettier --write, on staged files) and a whole-project typecheck. It is installed by `npm install` via the `prepare` script, so a fresh clone gets it without a separate step.
-
-Four `react-hooks` rules are off in `eslint.config.js` (`purity`, `refs`, `static-components`, `set-state-in-effect`). They encode React Compiler's requirements, which this Ink app does not run, and satisfying them means restructuring `SetupApp.tsx` and `FrontendApp.tsx`. `rules-of-hooks` and `exhaustive-deps` are on.
+- **The supported Node floor lives in `engines.node`, once.** `checkNodeVersion()` in `src/ui/shared.tsx` parses it out of the manifest and CI installs exactly that version. Do not add a hardcoded minimum next to the gate.
+- **`lib` tracks `engines.node`, not the newest spec.** Raising it past what the floor's Node provides lets the compiler bless calls that crash for real users.
+- **Four `react-hooks` rules are off on purpose** (`purity`, `refs`, `static-components`, `set-state-in-effect`). They target React Compiler, which this app does not run. Turning them back on means restructuring `SetupApp.tsx` and `FrontendApp.tsx`, so it is its own change, not a cleanup.
+- **`npm test` cannot run on the `engines.node` floor**, for a `mock.module()` bug in that Node rather than anything wrong with the wizard. Raising `engines.node` is not the fix.
 
 ## Telemetry
 

@@ -66,6 +66,10 @@ The CLI reports anonymous usage statistics to Grafana's usage-stats service by d
 
 Runs from a source checkout report nothing, so local development stays out of the data. Set `CLOUD_SETUP_TELEMETRY=enabled` to override that, and `CLOUD_SETUP_TELEMETRY_ENDPOINT` to point at the staging receiver.
 
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the development setup and toolchain.
+
 ## License
 
 Apache-2.0
