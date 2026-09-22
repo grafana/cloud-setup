@@ -11,6 +11,16 @@ npm test           # builds, then runs tests/*.test.mjs
 npm run check      # typecheck + lint + format:check + test, same as CI
 ```
 
+## Node versions
+
+Two different numbers, each written down exactly once.
+
+`.nvmrc` pins the **toolchain**: the exact Node that contributors and CI use, currently the latest LTS. `actions/setup-node` reads it via `node-version-file` in both workflows, so no workflow hardcodes a version. Bumping it is a one-line change, and Renovate's `nvm` manager keeps it moving.
+
+`engines.node` in package.json states the **floor the published CLI promises its users**, currently `>=22.6.0`. It is deliberately wider than `.nvmrc` — narrowing it to the pinned LTS would lock out users on 22 for no reason. Three things read it: npm warns on install, the CI `versions` job feeds it to the test matrix, and `checkNodeVersion()` in `src/ui/shared.tsx` parses it out of the manifest at runtime. Do not reintroduce a hardcoded minimum next to that gate.
+
+CI tests both ends, the exact floor and the pinned LTS, so raising `engines.node` without meaning to shows up as a failing job rather than a surprise for someone on old Node.
+
 ## TypeScript configuration
 
 There are two tsconfigs, and the split is deliberate.

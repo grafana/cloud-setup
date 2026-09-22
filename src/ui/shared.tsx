@@ -8,9 +8,6 @@ import Spinner from "ink-spinner";
 import { detectFramework } from "../framework.js";
 import { recordRun, waitForTelemetry, type Command, type Outcome } from "../telemetry.js";
 
-export const MIN_NODE_MAJOR = 22;
-export const MIN_NODE_MINOR = 6;
-
 // Every automatic spinner/loading-bar phase stays visible at least this
 // long, even when the real work behind it finishes faster.
 export const MIN_SPINNER_MS = 3000;
@@ -46,21 +43,46 @@ function formatStackUrl(stackUrl: string): string {
 // process.cwd() at import time would freeze in the wrong directory.
 
 // Read from package.json rather than hardcoded, so the two can't drift.
-function readPackageVersion(): string {
+interface PackageManifest {
+  version?: string;
+  engines?: { node?: string };
+}
+
+function readPackageJson(): PackageManifest {
   try {
     const packageJsonPath = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "package.json");
-    const pkg = JSON.parse(readFileSync(packageJsonPath, "utf8")) as { version?: string };
-    return pkg.version ?? "0.0.0";
+    return JSON.parse(readFileSync(packageJsonPath, "utf8")) as PackageManifest;
   } catch {
-    return "0.0.0";
+    return {};
   }
 }
-export const PACKAGE_VERSION = readPackageVersion();
+
+const PACKAGE_JSON = readPackageJson();
+
+export const PACKAGE_VERSION = PACKAGE_JSON.version ?? "0.0.0";
+
+// engines.node in package.json is the only place the supported floor is
+// written down — npm checks it, CI reads it for the test matrix, and the gate
+// below enforces it at runtime. It is a range like ">=22.6.0", so take the
+// version out of it.
+//
+// A manifest that cannot be read leaves the floor at 0.0, which waves every
+// version through rather than guessing a number that could drift from the real
+// one. That is the same graceful degradation PACKAGE_VERSION already does, and
+// it only loses a friendly error message: an unsupported Node still fails, just
+// later and less clearly.
+function parseNodeFloor(range: string | undefined): { major: number; minor: number } {
+  const match = /(\d+)\.(\d+)/.exec(range ?? "");
+  if (!match) return { major: 0, minor: 0 };
+  return { major: Number(match[1]), minor: Number(match[2]) };
+}
+
+const MIN_NODE = parseNodeFloor(PACKAGE_JSON.engines?.node);
 
 export function checkNodeVersion(): void {
   const [major = 0, minor = 0] = process.versions.node.split(".").map(Number);
-  if (major < MIN_NODE_MAJOR || (major === MIN_NODE_MAJOR && minor < MIN_NODE_MINOR)) {
-    throw new Error(`Node ${MIN_NODE_MAJOR}.${MIN_NODE_MINOR}+ is required (found ${process.versions.node}).`);
+  if (major < MIN_NODE.major || (major === MIN_NODE.major && minor < MIN_NODE.minor)) {
+    throw new Error(`Node ${MIN_NODE.major}.${MIN_NODE.minor}+ is required (found ${process.versions.node}).`);
   }
 }
 

@@ -7,8 +7,37 @@ on:
       - main
 
 jobs:
+  # No Node version is written down here. `.nvmrc` pins the toolchain, and
+  # `engines.node` in package.json states the floor the published CLI promises
+  # its users. This job reads both and hands them to the test matrix, so
+  # bumping either one is a single-file change.
+  versions:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      matrix: ${{ steps.read.outputs.matrix }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Read pinned and minimum Node versions
+        id: read
+        run: |
+          set -euo pipefail
+          PINNED="$(tr -d '[:space:]' < .nvmrc)"
+          # The floor is a range like ">=22.6.0"; setup-node needs a bare version.
+          FLOOR="$(node -p "require('./package.json').engines.node.replace(/[^0-9.]/g, '')")"
+          echo "pinned=$PINNED minimum=$FLOOR"
+          jq -cn --arg floor "$FLOOR" --arg pinned "$PINNED" \
+            '{"node-version": ([$floor, $pinned] | unique)}' \
+            | sed 's/^/matrix=/' >> "$GITHUB_OUTPUT"
+
   # Separate from `test` so a formatting nit and a broken wizard are not the
   # same red X, and so all three checks report even when the first one fails.
+  # These only need one Node version, so they use the pinned one.
   checks:
     runs-on: ubuntu-latest
     permissions:
@@ -22,7 +51,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
-          node-version: "22"
+          node-version-file: .nvmrc
 
       - name: Install dependencies
         run: npm ci
@@ -38,16 +67,16 @@ jobs:
         if: ${{ !cancelled() }}
         run: npm run format:check
 
+  # Both ends of what the package promises: the exact `engines.node` floor, and
+  # the pinned LTS most people will actually run it on.
   test:
+    needs: versions
     runs-on: ubuntu-latest
     permissions:
       contents: read
     strategy:
       fail-fast: false
-      matrix:
-        # Both ends of what `engines` promises: the 22.6 floor the wizard's
-        # node:test mocking needs, and the current release most users run.
-        node-version: ["22", "24"]
+      matrix: ${{ fromJSON(needs.versions.outputs.matrix) }}
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
