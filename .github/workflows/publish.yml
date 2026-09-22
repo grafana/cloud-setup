@@ -1,0 +1,57 @@
+name: Publish to npm
+
+on:
+  release:
+    types:
+      - published
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    # Must match the name of the GitHub Actions Environment configured in
+    # repo settings (restricted to protected branches/tags) and referenced
+    # in the package's Trusted Publishing config on npmjs.com.
+    environment: npm-publish
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: '22'
+          registry-url: 'https://registry.npmjs.org'
+          scope: '@grafana'
+
+      # Trusted (OIDC) publishing requires npm >= 11.5.1; pin it explicitly
+      # rather than relying on whatever npm ships bundled with Node.
+      - name: Update npm
+        run: npm install -g npm@^11.5.1
+
+      - name: Validate version matches release tag
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          EXPECTED_VERSION="${RELEASE_TAG#v}"
+          PACKAGE_VERSION=$(node -p "require('./package.json').version")
+
+          if [ "$PACKAGE_VERSION" != "$EXPECTED_VERSION" ]; then
+            echo "Error: package.json version ($PACKAGE_VERSION) does not match release tag ($RELEASE_TAG)"
+            exit 1
+          fi
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      # No NPM_TOKEN: npm detects it's running in GitHub Actions and
+      # authenticates via OIDC trusted publishing instead.
+      - name: Publish
+        run: npm publish
