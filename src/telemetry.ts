@@ -162,6 +162,18 @@ export interface StepProperties {
   skipped?: number;
   failed?: number;
 
+  // synthetics: alerting. The step's two halves land independently, so
+  // "rules_only" is alerts on the checks with no email destination, and
+  // "unavailable" is no session to reach the Alerting API with.
+  alerting_outcome?: "configured" | "rules_only" | "declined" | "unavailable";
+  alert_presets?: number;
+  checks_alerted?: number;
+  contact_point?: "created" | "updated" | "unchanged";
+  notification_route?: "created" | "unchanged";
+  // "not_placeholder" is a stack that already had a real default address,
+  // and "failed" is the user agreeing and the write not landing.
+  default_contact_point?: "repaired" | "declined" | "not_placeholder" | "failed";
+
   // frontend: pick-app
   app_resolution?: "named" | "auto_single" | "picker" | "created" | "manual";
   session_replay?: boolean;

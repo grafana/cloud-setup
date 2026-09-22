@@ -1,3 +1,5 @@
+import type { CheckAlert } from "./checkAlerts.js";
+
 export interface Probe {
   id: number;
   name: string;
@@ -106,5 +108,20 @@ export class SmClient {
 
   listProbes(): Promise<Probe[]> {
     return this.request("GET", "probe/list");
+  }
+
+  // Replaces the check's entire alert set, so a caller touching a
+  // pre-existing check should getCheckAlerts first. Answers 202 without
+  // the alerts, and the Grafana-managed rules it provisions appear a
+  // moment later rather than synchronously.
+  async putCheckAlerts(id: number, alerts: CheckAlert[]): Promise<void> {
+    await this.request("PUT", `check/${id}/alerts`, { alerts });
+  }
+
+  // Entries carry extra status/error fields this doesn't model, since the
+  // only question asked of them is whether any exist.
+  async getCheckAlerts(id: number): Promise<CheckAlert[]> {
+    const res = await this.request<{ alerts?: CheckAlert[] } | undefined>("GET", `check/${id}/alerts`);
+    return res?.alerts ?? [];
   }
 }

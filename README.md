@@ -31,7 +31,7 @@ You'll be relying on it directly from day 2 onward, which is why this wizard set
 
 ### `synthetics`
 
-Set up Synthetic Monitoring checks.
+Set up Synthetic Monitoring checks and alerts.
 
 ```sh
 npx @grafana/cloud-setup synthetics --url https://example.com --stack https://my-team.grafana.net

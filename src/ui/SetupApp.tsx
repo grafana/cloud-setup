@@ -8,6 +8,22 @@ import { SmApiError, SmClient, type Probe } from "../products/syntheticMonitorin
 import { plan as buildPlan } from "../products/syntheticMonitoring/reconcile.js";
 import { writeCredentials } from "../products/syntheticMonitoring/credentials.js";
 import { aiEndpointCandidatesFor, candidatesFor, type Candidate } from "../products/syntheticMonitoring/discover.js";
+import {
+  alertsForCheck,
+  presetDescription,
+  presetMeta,
+  presetsFor,
+  type AlertPresetName,
+} from "../products/syntheticMonitoring/checkAlerts.js";
+import {
+  isEmailish,
+  joinAddresses,
+  parseAddresses,
+  SM_CONTACT_POINT_NAME,
+  tryAlertingClient,
+  type AlertingClient,
+  type AlertingInspection,
+} from "../products/syntheticMonitoring/notifications.js";
 import { getSkillStatus, installSkill } from "../skills.js";
 import { tryAutoSmSession } from "../products/syntheticMonitoring/smAuth.js";
 import { writeTerraformExport } from "../products/syntheticMonitoring/terraform.js";
@@ -114,7 +130,7 @@ interface NextStepLogEntry {
   items?: CreationItem[];
 }
 
-// The six macro-steps shown in the persistent step list. "create" covers
+// The seven macro-steps shown in the persistent step list. "create" covers
 // reviewing candidates and creating them (see CreateSubPhase's "reviewing"
 // phase) — its one checkmark row only lands once both are done, and `b`
 // backs out of the connect/token sub-phases into "reviewing" rather than
@@ -129,18 +145,22 @@ interface NextStepLogEntry {
 // Terraform export move behind "next-steps" instead of blocking the common
 // case, and only run on-demand when explicitly chosen there (which
 // re-enters "analyze" with a different mode — see AnalyzeMode below — then
-// routes back through "create" before returning to the menu). Frontend
-// Observability instrumentation is a separate concern, not chained onto
-// this flow — see the standalone `frontend` subcommand (FrontendApp.tsx).
-type StepId = "gcx" | "auth" | "skills" | "analyze" | "create" | "next-steps";
+// routes back through "create" before returning to the menu). "alerting"
+// sits right after "create" because it needs the check IDs that step hands
+// back, which also makes every later discovery pass flow through it.
+// Frontend Observability
+// instrumentation is a separate concern, not chained onto this flow — see
+// the standalone `frontend` subcommand (FrontendApp.tsx).
+type StepId = "gcx" | "auth" | "skills" | "analyze" | "create" | "alerting" | "next-steps";
 
-const STEP_ORDER: StepId[] = ["gcx", "auth", "skills", "analyze", "create", "next-steps"];
+const STEP_ORDER: StepId[] = ["gcx", "auth", "skills", "analyze", "create", "alerting", "next-steps"];
 const STEP_LABELS: Record<StepId, string> = {
   gcx: "Install Grafana Cloud CLI (gcx)",
   auth: "Authenticate with OAuth",
   skills: "Configure skills",
   analyze: "Analyze target",
   create: "Create synthetic checks",
+  alerting: "Set up alerting",
   "next-steps": "Next steps",
 };
 
@@ -210,6 +230,23 @@ function availableNextStepOptions(log: { key: string }[]): SelectMenuItem[] {
 // "next-steps", skips straight to "creating" once `session` is populated.
 type CreateSubPhase =
   "reviewing" | "auto-discovering" | "base-url-input" | "connecting" | "token-input" | "validating" | "creating";
+
+// The sub-phases split along the step's two halves. "picking"/"applying"
+// configure the checks' own alerts over the SM API and work on either
+// transport. "inspecting"/"email-input"/"default-confirm" configure where
+// those alerts go, need the OAuth session, and are skipped without one.
+// "default-confirm" appears only when the stack's default contact point
+// still holds a placeholder.
+type AlertingSubPhase = "confirm" | "inspecting" | "picking" | "email-input" | "default-confirm" | "applying";
+
+const ALERTING_WAITING_SUBPHASES: AlertingSubPhase[] = ["confirm", "picking", "email-input", "default-confirm"];
+
+// Kept so a later discovery pass applies the same alerts without asking
+// again. `addresses` is undefined when no email destination was set.
+interface AlertingChoice {
+  presets: AlertPresetName[];
+  addresses?: string;
+}
 
 interface Session {
   // Display/export only (e.g. the Terraform export's sm_url) — never used
@@ -281,6 +318,16 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
   // in naively.
   const [extraCreatedItems, setExtraCreatedItems] = useState<CreationItem[]>([]);
 
+  // alerting step
+  const [alertingSubPhase, setAlertingSubPhase] = useState<AlertingSubPhase>("confirm");
+  const [alertingPresets, setAlertingPresets] = useState<string[]>([]);
+  const [emailInput, setEmailInput] = useState("");
+  const [emailError, setEmailError] = useState<string>();
+  const [placeholderAddresses, setPlaceholderAddresses] = useState<string>();
+  // Muted lines under the "Set up alerting" row. A list because the step's
+  // two halves report separately.
+  const [alertingDetail, setAlertingDetail] = useState<string[]>([]);
+
   // next-steps menu
   const [nextStepsSubPhase, setNextStepsSubPhase] = useState<NextStepsSubPhase>("menu");
   // A one-line status shown at the top of the menu after a pass that
@@ -315,13 +362,23 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
   // "next-steps" is reached again (see runNextSteps), appending it to
   // nextStepsLog.
   const pendingNextStepLog = useRef<NextStepLogEntry | undefined>(undefined);
+  // The items from whichever "create" pass just finished, so "alerting"
+  // knows which check IDs to configure. A ref, like every other piece of
+  // cross-step data here.
+  const lastPassItems = useRef<CreationItem[]>([]);
+  const alertingChoice = useRef<AlertingChoice | undefined>(undefined);
+  const alertingConfirmResolver = useRef<((proceed: boolean) => void) | undefined>(undefined);
+  const alertingPresetsResolver = useRef<((keys: string[]) => void) | undefined>(undefined);
+  const emailResolver = useRef<((raw: string) => void) | undefined>(undefined);
+  const defaultConfirmResolver = useRef<((repair: boolean) => void) | undefined>(undefined);
 
   const isWaiting =
     (currentStep === "gcx" && gcx.isWaiting) ||
     (currentStep === "auth" && auth.isWaiting) ||
     (currentStep === "analyze" && analyzeSubPhase === "browser-confirm") ||
     (currentStep === "create" &&
-      (createSubPhase === "reviewing" || createSubPhase === "base-url-input" || createSubPhase === "token-input"));
+      (createSubPhase === "reviewing" || createSubPhase === "base-url-input" || createSubPhase === "token-input")) ||
+    (currentStep === "alerting" && ALERTING_WAITING_SUBPHASES.includes(alertingSubPhase));
   // "reviewing" has nowhere earlier to go back to within this step, and
   // "creating" is already mutating remote state — everything in between
   // (connect/token entry) can still back out to "reviewing".
@@ -426,10 +483,12 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
     { isActive: !started },
   );
 
-  // Quit is disabled while free text is being typed (a token or URL could
-  // legitimately contain the letter q) — Ctrl+C still works there.
+  // Quit is disabled while free text is being typed (a token, URL or email
+  // address could legitimately contain the letter q) — Ctrl+C still works
+  // there.
   const quittingBlocked =
-    currentStep === "create" && (createSubPhase === "base-url-input" || createSubPhase === "token-input");
+    (currentStep === "create" && (createSubPhase === "base-url-input" || createSubPhase === "token-input")) ||
+    (currentStep === "alerting" && alertingSubPhase === "email-input");
   useInput(
     (input) => {
       if (input.toLowerCase() !== "q") return;
@@ -468,6 +527,22 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
       else if (input.toLowerCase() === "n") browserPermissionResolver.current?.(false);
     },
     { isActive: currentStep === "analyze" && analyzeSubPhase === "browser-confirm" },
+  );
+
+  // The alerting step's two y/n prompts, both defaulting to yes on Enter.
+  useInput(
+    (input, key) => {
+      if (key.return || input.toLowerCase() === "y") alertingConfirmResolver.current?.(true);
+      else if (input.toLowerCase() === "n") alertingConfirmResolver.current?.(false);
+    },
+    { isActive: currentStep === "alerting" && alertingSubPhase === "confirm" },
+  );
+  useInput(
+    (input, key) => {
+      if (key.return || input.toLowerCase() === "y") defaultConfirmResolver.current?.(true);
+      else if (input.toLowerCase() === "n") defaultConfirmResolver.current?.(false);
+    },
+    { isActive: currentStep === "alerting" && alertingSubPhase === "default-confirm" },
   );
 
   // Drives whichever step is current. Re-runs whenever currentStep changes —
@@ -837,6 +912,10 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
       }
       if (cancelled) return;
 
+      // Set before the failure check below, so a pass that partly
+      // succeeded still gets alerts on what it did create.
+      lastPassItems.current = workingItems;
+
       const failed = workingItems.find((it) => it.status === "failed");
       if (failed) {
         const createdCount = workingItems.filter((it) => it.status === "created" || it.status === "updated").length;
@@ -873,6 +952,260 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
       });
     }
 
+    // Per-check failures are isolated, like the create loop's: one check
+    // the API won't take alerts for shouldn't cost the others theirs.
+    async function applyCheckAlerts(
+      targets: CreationItem[],
+      presets: AlertPresetName[],
+    ): Promise<{ alerted: number; preserved: number; failed: number; firstError?: string }> {
+      let alerted = 0;
+      let preserved = 0;
+      let failed = 0;
+      let firstError: string | undefined;
+
+      for (const item of targets) {
+        const alerts = alertsForCheck(item.candidate, presets);
+        // Nothing picked applies to this check's type (see ALERT_PRESETS).
+        if (alerts.length === 0) continue;
+        try {
+          // A check that already existed may carry alerts the user set up
+          // themselves, and the PUT replaces the whole set.
+          if (item.status === "skipped") {
+            const existing = await session.current.client.getCheckAlerts(item.id!);
+            if (existing.length > 0) {
+              preserved++;
+              continue;
+            }
+          }
+          await session.current.client.putCheckAlerts(item.id!, alerts);
+          alerted++;
+        } catch (err) {
+          failed++;
+          firstError ??= err instanceof SmApiError ? err.body : err instanceof Error ? err.message : String(err);
+        }
+      }
+      return { alerted, preserved, failed, firstError };
+    }
+
+    async function runAlerting() {
+      // A pass that created nothing routes straight through.
+      const targets = lastPassItems.current.filter((it) => it.id !== undefined);
+      if (!session.current || targets.length === 0) {
+        advance({ status: "skipped" });
+        return;
+      }
+
+      const applicable = presetsFor(targets.map((it) => it.candidate));
+      // Unreachable for anything discover.ts generates today, but
+      // CheckboxList with no items crashes rather than rendering empty.
+      if (applicable.length === 0) {
+        advance({ status: "skipped" });
+        return;
+      }
+      const defaultPresets = applicable.filter((e) => e.preset.selectedByDefault).map((e) => e.preset.name);
+
+      // A later pass inherits the first pass's decision without asking
+      // again, silently: the step's row is already checkmarked.
+      const prior = alertingChoice.current;
+      if (prior) {
+        setAlertingSubPhase("applying");
+        const result = await applyCheckAlerts(targets, prior.presets);
+        if (cancelled) return;
+        // Reported on the next-steps entry for the pass that created these
+        // checks, since the alerting row's own detail describes the first
+        // pass. runNextSteps hasn't consumed the entry yet.
+        if (pendingNextStepLog.current && result.alerted > 0) {
+          pendingNextStepLog.current = {
+            ...pendingNextStepLog.current,
+            detail: `Alerts enabled on ${result.alerted} more check${result.alerted === 1 ? "" : "s"}.`,
+          };
+        }
+        advance({
+          // No presets means the first pass was declined at the picker, and
+          // inheriting that is still a decline, not a successful no-op.
+          status: prior.presets.length === 0 ? "declined" : result.failed > 0 ? "failed" : "ok",
+          alerting_outcome: prior.presets.length === 0 ? "declined" : prior.addresses ? "configured" : "rules_only",
+          alert_presets: prior.presets.length,
+          checks_alerted: result.alerted,
+        });
+        return;
+      }
+
+      setAlertingSubPhase("confirm");
+      const proceed = await new Promise<boolean>((resolve) => {
+        alertingConfirmResolver.current = resolve;
+      });
+      if (cancelled) return;
+
+      // Declining skips the email destination, not the alerts themselves,
+      // which still route wherever the stack already routes things.
+      if (!proceed) {
+        alertingChoice.current = { presets: defaultPresets };
+        setAlertingSubPhase("applying");
+        const result = await applyCheckAlerts(targets, defaultPresets);
+        if (cancelled) return;
+        setAlertingDetail([
+          `Alerts enabled on ${result.alerted} check${result.alerted === 1 ? "" : "s"}.`,
+          "No email configured — notifications use the stack's default contact point.",
+        ]);
+        advance({
+          status: "declined",
+          alerting_outcome: "rules_only",
+          alert_presets: defaultPresets.length,
+          checks_alerted: result.alerted,
+        });
+        return;
+      }
+
+      // Gated on auth.error the same way runCreate's auto-discovery is:
+      // ensureAssistantAuth has no memory of an earlier decline and would
+      // pop a second browser window here.
+      let client: AlertingClient | undefined;
+      let inspection: AlertingInspection | undefined;
+      if (!auth.error) {
+        setAlertingSubPhase("inspecting");
+        const [candidateClient] = await Promise.all([tryAlertingClient(initialStackUrl), sleep(MIN_SPINNER_MS)]);
+        if (cancelled) return;
+        if (candidateClient) {
+          try {
+            inspection = await candidateClient.inspect();
+            client = candidateClient;
+          } catch {
+            // Can't read the alerting config, so no point writing it. The
+            // checks' own alerts still apply below.
+          }
+        }
+        if (cancelled) return;
+      }
+
+      setAlertingPresets(defaultPresets);
+      setAlertingSubPhase("picking");
+      const picked = (await new Promise<string[]>((resolve) => {
+        alertingPresetsResolver.current = resolve;
+      })) as AlertPresetName[];
+      if (cancelled) return;
+
+      // Unticking everything is saying no after all, so stop before
+      // creating a contact point for alerts that will never exist.
+      if (picked.length === 0) {
+        alertingChoice.current = { presets: [] };
+        setAlertingDetail(["No alerts enabled."]);
+        advance({ status: "declined", alerting_outcome: "declined", alert_presets: 0, checks_alerted: 0 });
+        return;
+      }
+
+      let addresses: string | undefined;
+      if (client && inspection) {
+        // A previous run's addresses first, so a re-run confirms rather
+        // than retypes.
+        setEmailInput(inspection.existingAddresses ?? inspection.userEmail ?? "");
+        setEmailError(undefined);
+        for (;;) {
+          setAlertingSubPhase("email-input");
+          const raw = await new Promise<string>((resolve) => {
+            emailResolver.current = resolve;
+          });
+          if (cancelled) return;
+          const parsed = parseAddresses(raw);
+          // Submitting nothing is the way out, same as declining.
+          if (parsed.length === 0) break;
+          const invalid = parsed.find((a) => !isEmailish(a));
+          if (!invalid) {
+            addresses = joinAddresses(parsed);
+            break;
+          }
+          setEmailError(`"${invalid}" doesn't look like an email address`);
+        }
+        if (cancelled) return;
+      }
+
+      let repairPlaceholder = false;
+      if (addresses && inspection?.placeholderDefault) {
+        setPlaceholderAddresses(inspection.placeholderDefault.addresses);
+        setAlertingSubPhase("default-confirm");
+        repairPlaceholder = await new Promise<boolean>((resolve) => {
+          defaultConfirmResolver.current = resolve;
+        });
+        if (cancelled) return;
+      }
+
+      setAlertingSubPhase("applying");
+      alertingChoice.current = { presets: picked, addresses };
+      const [result] = await Promise.all([applyCheckAlerts(targets, picked), sleep(MIN_SPINNER_MS)]);
+      if (cancelled) return;
+
+      const detail: string[] = [];
+      const checkLine = [
+        `Alerts enabled on ${result.alerted} check${result.alerted === 1 ? "" : "s"}`,
+        result.preserved > 0 ? `${result.preserved} left as configured` : "",
+        result.failed > 0 ? `${result.failed} failed` : "",
+      ].filter(Boolean);
+      detail.push(`${checkLine.join(" · ")}.`);
+      if (result.firstError) detail.push(result.firstError);
+
+      let contactPoint: StepProperties["contact_point"];
+      let notificationRoute: StepProperties["notification_route"];
+      let defaultContactPoint: StepProperties["default_contact_point"];
+      let notificationsFailed = false;
+
+      if (client && addresses) {
+        try {
+          contactPoint = await client.ensureContactPoint(addresses);
+          notificationRoute = await client.ensureRoute();
+          if (cancelled) return;
+          // Re-split because the wire format joins on ";".
+          detail.push(`Email to ${parseAddresses(addresses).join(", ")} via ${SM_CONTACT_POINT_NAME}.`);
+        } catch (err) {
+          notificationsFailed = true;
+          detail.push(
+            `Couldn't configure email (${err instanceof Error ? err.message : String(err)}) — add a contact point at ${initialStackUrl.replace(/\/$/, "")}/alerting/notifications`,
+          );
+        }
+
+        // Separate try: repairing the stack default failing shouldn't
+        // cast doubt on the contact point and route that already landed.
+        if (!notificationsFailed && inspection?.placeholderDefault) {
+          if (!repairPlaceholder) {
+            defaultContactPoint = "declined";
+          } else {
+            try {
+              await client.repairDefault(inspection.placeholderDefault, addresses);
+              if (cancelled) return;
+              defaultContactPoint = "repaired";
+              detail.push(`Replaced the placeholder address on ${inspection.placeholderDefault.name}.`);
+            } catch (err) {
+              // Not "declined": the user said yes and the write failed.
+              defaultContactPoint = "failed";
+              detail.push(
+                `Couldn't update ${inspection.placeholderDefault.name} (${err instanceof Error ? err.message : String(err)}).`,
+              );
+            }
+          }
+        } else if (!notificationsFailed) {
+          defaultContactPoint = "not_placeholder";
+        }
+      } else {
+        // No session, or a blank email prompt. Neither is a failure: the
+        // checks alert, they just route to the stack default.
+        detail.push(
+          client
+            ? "No email configured — notifications use the stack's default contact point."
+            : `Couldn't reach Grafana Alerting — add a contact point at ${initialStackUrl.replace(/\/$/, "")}/alerting/notifications`,
+        );
+      }
+
+      setAlertingDetail(detail);
+      advance({
+        status: result.failed > 0 || notificationsFailed ? "failed" : "ok",
+        alerting_outcome: !client ? "unavailable" : addresses && !notificationsFailed ? "configured" : "rules_only",
+        alert_presets: picked.length,
+        checks_alerted: result.alerted,
+        contact_point: contactPoint,
+        notification_route: notificationRoute,
+        default_contact_point: defaultContactPoint,
+      });
+    }
+
     // Kept async even though its body has no await: it is one branch of the
     // awaited step dispatch below, and the others do await.
     // eslint-disable-next-line @typescript-eslint/require-await
@@ -901,6 +1234,7 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
         else if (currentStep === "skills") await runSkills();
         else if (currentStep === "analyze") await runAnalyze();
         else if (currentStep === "create") await runCreate();
+        else if (currentStep === "alerting") await runAlerting();
         else if (currentStep === "next-steps") await runNextSteps();
       } catch (err) {
         if (cancelled) return;
@@ -989,6 +1323,16 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
               {step === "create" && firstPassItems.length > 0 && (
                 <Box flexDirection="column">{ItemsList(firstPassItems)}</Box>
               )}
+              {step === "alerting" && alertingDetail.length > 0 && (
+                <Box flexDirection="column">
+                  {alertingDetail.map((line, i) => (
+                    <Text key={`alerting-detail-${i}`} color={muted}>
+                      {"     "}
+                      {line}
+                    </Text>
+                  ))}
+                </Box>
+              )}
               {step === "auth" && completed.has(step) && auth.error && (
                 <Text color={muted}>
                   {"     "}Skipping AI-powered suggestions — you'll be asked for a Synthetic Monitoring access token
@@ -1036,7 +1380,10 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
   }
 
   function Footer() {
-    if (currentStep !== "create" || createSubPhase !== "reviewing" || (candidates?.length ?? 0) === 0) return null;
+    // Shared by the wizard's two checkbox screens.
+    const pickingChecks = currentStep === "create" && createSubPhase === "reviewing" && (candidates?.length ?? 0) > 0;
+    const pickingPresets = currentStep === "alerting" && alertingSubPhase === "picking";
+    if (!pickingChecks && !pickingPresets) return null;
     // Same blank-line-before-the-hint spacing as the next-steps menu's own
     // hint (see NextStepsBody) — one line, same "· "-separated shape,
     // rather than three stacked lines (a selected-count line plus two more
@@ -1208,6 +1555,66 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
     });
   }
 
+  function AlertingBody() {
+    if (alertingSubPhase === "confirm") {
+      const count = lastPassItems.current.filter((it) => it.id !== undefined).length;
+      return (
+        <Box flexDirection="column">
+          <Text>Set up alerting for {count === 1 ? "this check" : `these ${count} checks`}?</Text>
+          <EnterHint suffix="or n to skip" />
+        </Box>
+      );
+    }
+    // The step row's own spinner covers these, same as "create"'s
+    // connect/auto-discover phases.
+    if (alertingSubPhase === "inspecting" || alertingSubPhase === "applying") return null;
+    if (alertingSubPhase === "picking") {
+      const applicable = presetsFor(
+        lastPassItems.current.filter((it) => it.id !== undefined).map((it) => it.candidate),
+      );
+      return (
+        <Box flexDirection="column">
+          <Text>Which alerts should these checks raise?</Text>
+          <CheckboxList
+            items={applicable.map((entry) => ({
+              key: entry.preset.name,
+              label: entry.preset.label,
+              description: presetDescription(entry.preset),
+              meta: presetMeta(entry),
+            }))}
+            initialSelected={new Set(alertingPresets)}
+            accentColor={accent ?? "white"}
+            onSubmit={(keys) => alertingPresetsResolver.current?.(keys)}
+            onSelectionChange={setAlertingPresets}
+          />
+        </Box>
+      );
+    }
+    if (alertingSubPhase === "email-input")
+      return (
+        <Box flexDirection="column">
+          {emailError && <Text color={bad}>{emailError}</Text>}
+          <Text>Where should these alerts go? Separate several addresses with a comma</Text>
+          <Box>
+            <Text>Email: </Text>
+            <TextInput value={emailInput} onChange={setEmailInput} onSubmit={(v) => emailResolver.current?.(v)} />
+          </Box>
+        </Box>
+      );
+    if (alertingSubPhase === "default-confirm")
+      return (
+        <Box flexDirection="column">
+          <Text>
+            This stack's default contact point is still set to <Text color={muted}>{placeholderAddresses}</Text>, so
+            alerts outside Synthetic Monitoring reach nobody.
+          </Text>
+          <Text>Point it at the same address too?</Text>
+          <EnterHint suffix="or n to leave it alone" />
+        </Box>
+      );
+    return null;
+  }
+
   function CreateBody() {
     if (createSubPhase === "reviewing") return SelectBody();
     // No body here — the step list's own spinner next to "Create Synthetic
@@ -1294,6 +1701,7 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
           (currentStep === "gcx" && gcx.subPhase === "gcx-install-confirm") ||
           (currentStep === "auth" && (auth.subPhase === "browser-confirm" || auth.subPhase === "authenticating")) ||
           (currentStep === "analyze" && analyzeSubPhase === "browser-confirm") ||
+          (currentStep === "alerting" && alertingSubPhase !== "inspecting" && alertingSubPhase !== "applying") ||
           currentStep === "next-steps"
             ? 1
             : 0
@@ -1310,6 +1718,7 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
             {currentStep === "auth" && auth.body}
             {currentStep === "analyze" && AnalyzeBody()}
             {currentStep === "create" && CreateBody()}
+            {currentStep === "alerting" && AlertingBody()}
             {currentStep === "next-steps" && NextStepsBody()}
           </>
         )}
