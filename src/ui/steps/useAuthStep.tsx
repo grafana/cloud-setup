@@ -40,13 +40,13 @@ export function useAuthStep(confirmText: string, isActive: boolean): AuthStep {
       if (key.return || input.toLowerCase() === "y") permissionResolver.current?.(true);
       else if (input.toLowerCase() === "n") permissionResolver.current?.(false);
     },
-    { isActive: isActive && subPhase === "browser-confirm" }
+    { isActive: isActive && subPhase === "browser-confirm" },
   );
   useInput(
     (input, key) => {
       if (key.escape || input.toLowerCase() === "n") abortController.current?.abort();
     },
-    { isActive: isActive && subPhase === "authenticating" }
+    { isActive: isActive && subPhase === "authenticating" },
   );
 
   async function run(stackUrl: string, isCancelled: () => boolean): Promise<AuthOutcome> {

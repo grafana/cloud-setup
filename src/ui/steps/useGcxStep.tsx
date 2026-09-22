@@ -33,7 +33,7 @@ export function useGcxStep(forceGcxInstall: boolean, isActive: boolean): GcxStep
       if (key.return || input.toLowerCase() === "y") installResolver.current?.(true);
       else if (input.toLowerCase() === "n") installResolver.current?.(false);
     },
-    { isActive: isActive && subPhase === "gcx-install-confirm" }
+    { isActive: isActive && subPhase === "gcx-install-confirm" },
   );
 
   async function run(isCancelled: () => boolean): Promise<GcxRunResult> {

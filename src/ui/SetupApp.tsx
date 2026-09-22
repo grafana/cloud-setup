@@ -1,6 +1,6 @@
 import path from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
-import React, { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Box, render, Text, useInput } from "ink";
 import Spinner from "ink-spinner";
 import TextInput from "ink-text-input";
@@ -13,7 +13,20 @@ import { tryAutoSmSession } from "../products/syntheticMonitoring/smAuth.js";
 import { writeTerraformExport } from "../products/syntheticMonitoring/terraform.js";
 import { CheckboxList } from "./CheckboxList.js";
 import { SelectMenu, type SelectMenuItem } from "./SelectMenu.js";
-import { accent, bad, EnterHint, Header, MIN_SPINNER_MS, muted, ok, requireInteractiveTerminal, startFakeProgress, url, useHardExit, Working } from "./shared.js";
+import {
+  accent,
+  bad,
+  EnterHint,
+  Header,
+  MIN_SPINNER_MS,
+  muted,
+  ok,
+  requireInteractiveTerminal,
+  startFakeProgress,
+  url,
+  useHardExit,
+  Working,
+} from "./shared.js";
 import { recordStep, type StepProperties } from "../telemetry.js";
 import { useGcxStep } from "./steps/useGcxStep.js";
 import { useAuthStep } from "./steps/useAuthStep.js";
@@ -195,7 +208,8 @@ function availableNextStepOptions(log: { key: string }[]): SelectMenuItem[] {
 // in "gcx") since it's unrelated to the gcx CLI — it only needs to happen
 // once, so a revisit via back-navigation, or a later pass triggered from
 // "next-steps", skips straight to "creating" once `session` is populated.
-type CreateSubPhase = "reviewing" | "auto-discovering" | "base-url-input" | "connecting" | "token-input" | "validating" | "creating";
+type CreateSubPhase =
+  "reviewing" | "auto-discovering" | "base-url-input" | "connecting" | "token-input" | "validating" | "creating";
 
 interface Session {
   // Display/export only (e.g. the Terraform export's sm_url) — never used
@@ -364,7 +378,7 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
   }
 
   function handleNextStepChoice(key: string) {
-    if (key === "export") runExportNow();
+    if (key === "export") void runExportNow();
     else runNextStepChoice(key as AnalyzeMode);
   }
 
@@ -384,7 +398,14 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
     let detail: string;
     try {
       const [writtenPath] = await Promise.all([
-        writeTerraformExport(createdConfigRef.current, session.current.probes, remoteIds, initialStackUrl, session.current.url, process.cwd()),
+        writeTerraformExport(
+          createdConfigRef.current,
+          session.current.probes,
+          remoteIds,
+          initialStackUrl,
+          session.current.url,
+          process.cwd(),
+        ),
         sleep(MIN_SPINNER_MS),
       ]);
       detail = `Wrote to ${path.relative(process.cwd(), writtenPath)}`;
@@ -402,12 +423,13 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
       if (key.return || input.toLowerCase() === "y") setStarted(true);
       else if (input.toLowerCase() === "n") exit("Cancelled.");
     },
-    { isActive: !started }
+    { isActive: !started },
   );
 
   // Quit is disabled while free text is being typed (a token or URL could
   // legitimately contain the letter q) — Ctrl+C still works there.
-  const quittingBlocked = currentStep === "create" && (createSubPhase === "base-url-input" || createSubPhase === "token-input");
+  const quittingBlocked =
+    currentStep === "create" && (createSubPhase === "base-url-input" || createSubPhase === "token-input");
   useInput(
     (input) => {
       if (input.toLowerCase() !== "q") return;
@@ -419,23 +441,23 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
       if (currentStep === "next-steps" && nextStepsSubPhase === "menu") finishNextSteps();
       else exit("Cancelled.");
     },
-    { isActive: !quittingBlocked }
+    { isActive: !quittingBlocked },
   );
   useInput(
     (input) => {
       if (input.toLowerCase() === "b") goBack();
     },
-    { isActive: backAllowed }
+    { isActive: backAllowed },
   );
 
   // CheckboxList isn't rendered at all when there's nothing new to select
   // (see SelectBody) — its own Enter-to-submit handler goes with it, so
   // this covers that case directly.
   useInput(
-    (input, key) => {
+    (_input, key) => {
       if (key.return) selectResolver.current?.([]);
     },
-    { isActive: currentStep === "create" && createSubPhase === "reviewing" && (candidates?.length ?? 0) === 0 }
+    { isActive: currentStep === "create" && createSubPhase === "reviewing" && (candidates?.length ?? 0) === 0 },
   );
 
   // "browser-discovery"'s own y/n before opening a browser — same
@@ -445,7 +467,7 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
       if (key.return || input.toLowerCase() === "y") browserPermissionResolver.current?.(true);
       else if (input.toLowerCase() === "n") browserPermissionResolver.current?.(false);
     },
-    { isActive: currentStep === "analyze" && analyzeSubPhase === "browser-confirm" }
+    { isActive: currentStep === "analyze" && analyzeSubPhase === "browser-confirm" },
   );
 
   // Drives whichever step is current. Re-runs whenever currentStep changes —
@@ -747,12 +769,17 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
       // to however many actually exist, same as the flat slice(0, 2) this
       // replaced did for a fixed count.
       const probesByCandidate = new Map<string, string[]>(
-        selected.map((c) => [c.key, session.current.probes.slice(0, c.probeCount).map((p) => p.name)])
+        selected.map((c) => [c.key, session.current.probes.slice(0, c.probeCount).map((p) => p.name)]),
       );
 
       const config: SyntheticConfig = {};
       for (const c of selected) {
-        config[c.label] = { target: c.target, probes: probesByCandidate.get(c.key)!, settings: c.settings, frequency: c.frequencyMs };
+        config[c.label] = {
+          target: c.target,
+          probes: probesByCandidate.get(c.key)!,
+          settings: c.settings,
+          frequency: c.frequencyMs,
+        };
       }
       // Merged, not replaced — `plan` above only ever runs against this
       // pass's own (now filtered-down) `config`, so the entries from
@@ -763,7 +790,7 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
 
       let workingItems: CreationItem[] = selected.map((candidate) => ({
         candidate,
-        status: "pending" as ItemStatus,
+        status: "pending",
         probes: probesByCandidate.get(candidate.key)!,
       }));
       setItems(workingItems);
@@ -796,7 +823,9 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
         }
         try {
           const [remote] = await Promise.all([
-            action.kind === "create" ? session.current.client.createCheck(action.payload) : session.current.client.updateCheck(action.payload),
+            action.kind === "create"
+              ? session.current.client.createCheck(action.payload)
+              : session.current.client.updateCheck(action.payload),
             sleep(MIN_SPINNER_MS),
           ]);
           const status: ItemStatus = action.kind === "create" ? "created" : "updated";
@@ -813,7 +842,7 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
         const createdCount = workingItems.filter((it) => it.status === "created" || it.status === "updated").length;
         throw new Error(
           `${createdCount} of ${workingItems.length} check${workingItems.length === 1 ? "" : "s"} was created.\n\n` +
-            `Could not create ${failed.candidate.title}: ${failed.detail}`
+            `Could not create ${failed.candidate.title}: ${failed.detail}`,
         );
       }
       // `workingItems` is already just this pass's own new candidates —
@@ -829,7 +858,11 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
         pendingNextStepLog.current =
           workingItems.length > 0
             ? { key: "browser-discovery", label: "Additional synthetic checks", items: workingItems }
-            : { key: "browser-discovery", label: nextStepOptionLabel("browser-discovery"), detail: "No checks created." };
+            : {
+                key: "browser-discovery",
+                label: nextStepOptionLabel("browser-discovery"),
+                detail: "No checks created.",
+              };
       }
       advance({
         status: "ok",
@@ -840,6 +873,9 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
       });
     }
 
+    // Kept async even though its body has no await: it is one branch of the
+    // awaited step dispatch below, and the others do await.
+    // eslint-disable-next-line @typescript-eslint/require-await
     async function runNextSteps() {
       // Captured into a plain local first, and only then cleared — the
       // updater below runs later, not synchronously, so reading the ref
@@ -872,7 +908,7 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
       }
     }
 
-    run();
+    void run();
     return () => {
       cancelled = true;
     };
@@ -891,7 +927,11 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
   // leaving "next-steps" (like export) can't skip this check the way a
   // one-off inline call would if a future action forgot to make it.
   useEffect(() => {
-    if (currentStep === "next-steps" && nextStepsSubPhase === "menu" && availableNextStepOptions(nextStepsLog).length === 0) {
+    if (
+      currentStep === "next-steps" &&
+      nextStepsSubPhase === "menu" &&
+      availableNextStepOptions(nextStepsLog).length === 0
+    ) {
       finishNextSteps();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -936,11 +976,7 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
               </Text>
             );
           } else {
-            row = (
-              <Text color={muted}>
-                {" "}· {STEP_LABELS[step]}
-              </Text>
-            );
+            row = <Text color={muted}> · {STEP_LABELS[step]}</Text>;
           }
 
           // The checks themselves live nested under their own step, rather
@@ -968,7 +1004,12 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
               {" "}
               <Text color={ok}>✓</Text> {entry.label}
             </Text>
-            {entry.detail && <Text color={muted}>{"     "}{entry.detail}</Text>}
+            {entry.detail && (
+              <Text color={muted}>
+                {"     "}
+                {entry.detail}
+              </Text>
+            )}
             {entry.items && entry.items.length > 0 && <Box flexDirection="column">{ItemsList(entry.items)}</Box>}
           </Box>
         ))}
@@ -977,10 +1018,9 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
             <Text>
               {" "}
               {liveIcon()} <Text bold>{nextStepOptionLabel(analyzeMode)}</Text>
-              {currentStep === "analyze" &&
-                (analyzeSubPhase === "analyzing" || analyzeSubPhase === "discovering") && (
-                  <Text color={muted}> — {analyzeProgress}%</Text>
-                )}
+              {currentStep === "analyze" && (analyzeSubPhase === "analyzing" || analyzeSubPhase === "discovering") && (
+                <Text color={muted}> — {analyzeProgress}%</Text>
+              )}
             </Text>
             {items.length > 0 && <Box flexDirection="column">{ItemsList(items)}</Box>}
           </Box>
@@ -1024,8 +1064,7 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
       return (
         <Box flexDirection="column">
           <Text>
-            Open a real browser to look for additional synthetic checks on{" "}
-            <Text color={url}>{initialTargetUrl}</Text>?
+            Open a real browser to look for additional synthetic checks on <Text color={url}>{initialTargetUrl}</Text>?
           </Text>
           <EnterHint suffix="or n to skip" />
         </Box>
@@ -1071,7 +1110,8 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
       <Box flexDirection="column">
         <Text>{checksCreatedLine()}</Text>
         <Text color={muted}>
-          View checks: <Text color={url}>{initialStackUrl.replace(/\/$/, "")}/a/grafana-synthetic-monitoring-app/checks</Text>
+          View checks:{" "}
+          <Text color={url}>{initialStackUrl.replace(/\/$/, "")}/a/grafana-synthetic-monitoring-app/checks</Text>
         </Text>
       </Box>
     );
@@ -1091,7 +1131,11 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
         {nextStepsNotice && <Text color={muted}>{nextStepsNotice}</Text>}
         <Box marginTop={1} flexDirection="column">
           <Text bold>Next actions</Text>
-          <SelectMenu items={availableNextStepOptions(nextStepsLog)} accentColor={accent ?? "white"} onSelect={handleNextStepChoice} />
+          <SelectMenu
+            items={availableNextStepOptions(nextStepsLog)}
+            accentColor={accent ?? "white"}
+            onSelect={handleNextStepChoice}
+          />
         </Box>
         <Box marginTop={1}>
           <Text color={muted}>
@@ -1284,7 +1328,7 @@ export async function runSetupUI(
   initialBaseUrl: string | undefined,
   initialTargetUrl: string,
   initialStackUrl: string,
-  forceGcxInstall: boolean
+  forceGcxInstall: boolean,
 ): Promise<void> {
   await requireInteractiveTerminal("synthetics", initialStackUrl);
   // exitOnCtrlC disabled — Ink's own default Ctrl+C handling runs before
@@ -1299,7 +1343,7 @@ export async function runSetupUI(
       initialStackUrl={initialStackUrl}
       forceGcxInstall={forceGcxInstall}
     />,
-    { exitOnCtrlC: false }
+    { exitOnCtrlC: false },
   );
   await app.waitUntilExit();
 }

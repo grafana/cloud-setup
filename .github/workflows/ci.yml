@@ -7,18 +7,57 @@ on:
       - main
 
 jobs:
-  test:
+  # Separate from `test` so a formatting nit and a broken wizard are not the
+  # same red X, and so all three checks report even when the first one fails.
+  checks:
     runs-on: ubuntu-latest
     permissions:
       contents: read
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
 
       - name: Setup Node.js
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
-          node-version: '22'
+          node-version: "22"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Lint
+        if: ${{ !cancelled() }}
+        run: npm run lint
+
+      - name: Check formatting
+        if: ${{ !cancelled() }}
+        run: npm run format:check
+
+  test:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        # Both ends of what `engines` promises: the 22.6 floor the wizard's
+        # node:test mocking needs, and the current release most users run.
+        node-version: ["22", "24"]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: ${{ matrix.node-version }}
 
       - name: Install dependencies
         run: npm ci

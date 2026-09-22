@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import { useState } from "react";
 import { Box, Text, useInput } from "ink";
 import { muted } from "./shared.js";
 
@@ -19,7 +19,7 @@ interface Props {
 export function SelectMenu({ items, accentColor, onSelect }: Props) {
   const [cursor, setCursor] = useState(0);
 
-  useInput((input, key) => {
+  useInput((_input, key) => {
     if (key.upArrow) setCursor((c) => (c - 1 + items.length) % items.length);
     else if (key.downArrow) setCursor((c) => (c + 1) % items.length);
     else if (key.return) {

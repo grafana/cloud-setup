@@ -86,7 +86,11 @@ const REPLAY_MASKING_OPTIONS: Record<ReplayMasking, string[]> = {
 // at in that generator's instrumentations array, since it differs per
 // framework's snippet shape.
 export function replayInstrumentationLines(masking: ReplayMasking, indent: string): string[] {
-  return [`${indent}new ReplayInstrumentation({`, ...REPLAY_MASKING_OPTIONS[masking].map((line) => `${indent}  ${line}`), `${indent}}),`];
+  return [
+    `${indent}new ReplayInstrumentation({`,
+    ...REPLAY_MASKING_OPTIONS[masking].map((line) => `${indent}  ${line}`),
+    `${indent}}),`,
+  ];
 }
 
 // Also shared across the three generators. `indent` is the column the
@@ -115,10 +119,7 @@ export function sessionTrackingLines(instrumentation: FaroInstrumentation, inden
 // syntax-validation gate before anything is trusted; "javascript" never
 // needs that since the whole edit is fixed and known ahead of time.
 export type FrontendTarget =
-  | { kind: "javascript"; file: string }
-  | { kind: "react"; file: string }
-  | { kind: "nextjs" }
-  | { kind: "unsupported" };
+  { kind: "javascript"; file: string } | { kind: "react"; file: string } | { kind: "nextjs" } | { kind: "unsupported" };
 
 function readPkg(cwd: string): Record<string, unknown> | undefined {
   try {
@@ -196,7 +197,9 @@ function webSdkSnippet(instrumentation: FaroInstrumentation): string {
   return [
     "import { getWebInstrumentations, initializeFaro } from '@grafana/faro-web-sdk';",
     "import { TracingInstrumentation } from '@grafana/faro-web-tracing';",
-    ...(instrumentation.sessionReplay ? ["import { ReplayInstrumentation } from '@grafana/faro-instrumentation-replay';"] : []),
+    ...(instrumentation.sessionReplay
+      ? ["import { ReplayInstrumentation } from '@grafana/faro-instrumentation-replay';"]
+      : []),
     "",
     "initializeFaro({",
     `  url: '${instrumentation.collectorUrl}',`,
@@ -212,7 +215,10 @@ function webSdkSnippet(instrumentation: FaroInstrumentation): string {
     "    // Tracing package to get end-to-end visibility for HTTP requests.",
     "    new TracingInstrumentation(),",
     ...(instrumentation.sessionReplay
-      ? ["    // Beta: requires Session Replay enabled on this stack, or it's a no-op.", ...replayInstrumentationLines(instrumentation.replayMasking, "    ")]
+      ? [
+          "    // Beta: requires Session Replay enabled on this stack, or it's a no-op.",
+          ...replayInstrumentationLines(instrumentation.replayMasking, "    "),
+        ]
       : []),
     "  ],",
     "});",
@@ -224,7 +230,8 @@ function webSdkSnippet(instrumentation: FaroInstrumentation): string {
 // to our call: the nested `app: {...}` / `instrumentations: [...]` closes
 // inside it are always "},"/"]," with a trailing comma, never a bare
 // "});" line, so this can't accidentally swallow unrelated code.
-const FARO_WEB_SDK_BLOCK = /import \{ getWebInstrumentations, initializeFaro \} from '@grafana\/faro-web-sdk';[\s\S]*?\n\}\);\n/;
+const FARO_WEB_SDK_BLOCK =
+  /import \{ getWebInstrumentations, initializeFaro \} from '@grafana\/faro-web-sdk';[\s\S]*?\n\}\);\n/;
 
 // Prepends the init snippet so it runs before the file's existing code —
 // "load as early as possible" only works if it's first. Re-syncing, not
@@ -277,6 +284,10 @@ export async function installFaroPackages(cwd: string, packages: string[]): Prom
   // warnings, and pnpm doesn't hard-fail on them either, so neither needs
   // an equivalent flag.
   const args =
-    pm === "yarn" ? ["add", ...packages] : pm === "npm" ? ["install", "--legacy-peer-deps", ...packages] : ["install", ...packages];
+    pm === "yarn"
+      ? ["add", ...packages]
+      : pm === "npm"
+        ? ["install", "--legacy-peer-deps", ...packages]
+        : ["install", ...packages];
   await execFileAsync(pm, args, { cwd, timeout: 120000 });
 }

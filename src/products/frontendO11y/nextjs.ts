@@ -49,7 +49,9 @@ function componentSource(instrumentation: FaroInstrumentation): string {
     "",
     "import { faro, getWebInstrumentations, initializeFaro } from '@grafana/faro-web-sdk';",
     "import { TracingInstrumentation } from '@grafana/faro-web-tracing';",
-    ...(instrumentation.sessionReplay ? ["import { ReplayInstrumentation } from '@grafana/faro-instrumentation-replay';"] : []),
+    ...(instrumentation.sessionReplay
+      ? ["import { ReplayInstrumentation } from '@grafana/faro-instrumentation-replay';"]
+      : []),
     "",
     "export default function FrontendObservability() {",
     "  if (faro.api) {",
@@ -69,7 +71,10 @@ function componentSource(instrumentation: FaroInstrumentation): string {
     "        ...getWebInstrumentations(),",
     "        new TracingInstrumentation(),",
     ...(instrumentation.sessionReplay
-      ? ["        // Beta: requires Session Replay enabled on this stack, or it's a no-op.", ...replayInstrumentationLines(instrumentation.replayMasking, "        ")]
+      ? [
+          "        // Beta: requires Session Replay enabled on this stack, or it's a no-op.",
+          ...replayInstrumentationLines(instrumentation.replayMasking, "        "),
+        ]
       : []),
     "      ],",
     "    });",
@@ -143,7 +148,11 @@ export interface NextjsInstrumentResult {
 // layout and the agent wired more than one. Never throws — a failure
 // just means less of the wiring happened, reported via the result, same
 // as every other nice-to-have in this tool.
-export async function instrumentNextjs(cwd: string, stackUrl: string, instrumentation: FaroInstrumentation): Promise<NextjsInstrumentResult> {
+export async function instrumentNextjs(
+  cwd: string,
+  stackUrl: string,
+  instrumentation: FaroInstrumentation,
+): Promise<NextjsInstrumentResult> {
   const layoutSnapshots = snapshotAll(cwd, LAYOUT_CANDIDATES);
   const componentSnapshots = snapshotAll(cwd, COMPONENT_CANDIDATES);
 
@@ -208,7 +217,10 @@ export async function instrumentNextjs(cwd: string, stackUrl: string, instrument
       const before = componentSnapshots.get(rel);
       return before !== undefined && !before.includes("@grafana/faro-web-sdk") && existsSync(path.join(cwd, rel));
     });
-    return { detail: collided ? "a file already exists at the expected component path for something else" : undefined, complete: false };
+    return {
+      detail: collided ? "a file already exists at the expected component path for something else" : undefined,
+      complete: false,
+    };
   }
 
   // Remove any OTHER component candidate the agent may have also created
@@ -229,7 +241,8 @@ export async function instrumentNextjs(cwd: string, stackUrl: string, instrument
 
     if (!content.includes("FrontendObservability")) continue;
 
-    const broken = changedThisRun && (hasSyntaxErrors(content) || (before !== undefined && looksTruncated(before, content)));
+    const broken =
+      changedThisRun && (hasSyntaxErrors(content) || (before !== undefined && looksTruncated(before, content)));
     if (broken) {
       revert(full, before);
       continue;

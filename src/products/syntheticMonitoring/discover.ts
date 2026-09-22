@@ -199,7 +199,9 @@ const MAX_AI_DESCRIPTION_LENGTH = 60;
 
 function truncateDescription(description: string): string {
   const trimmed = description.trim();
-  return trimmed.length > MAX_AI_DESCRIPTION_LENGTH ? `${trimmed.slice(0, MAX_AI_DESCRIPTION_LENGTH - 1).trimEnd()}…` : trimmed;
+  return trimmed.length > MAX_AI_DESCRIPTION_LENGTH
+    ? `${trimmed.slice(0, MAX_AI_DESCRIPTION_LENGTH - 1).trimEnd()}…`
+    : trimmed;
 }
 
 // A discovered path is otherwise unbounded (deeply nested routes, long
@@ -240,7 +242,7 @@ function resolveTarget(path: string, baseUrl: string): string {
 export async function aiEndpointCandidatesFor(
   targetUrl: string,
   stackUrl: string,
-  requestPermission: () => Promise<boolean> | boolean
+  requestPermission: () => Promise<boolean> | boolean,
 ): Promise<Candidate[]> {
   const endpoints = await authorChecks(targetUrl, stackUrl, requestPermission);
 

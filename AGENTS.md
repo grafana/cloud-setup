@@ -3,9 +3,17 @@
 Grafana Cloud's interactive setup wizard. Two commands, `synthetics` and `frontend`, each an Ink (React-in-the-terminal) wizard built from a shared set of steps.
 
 ```sh
-npm run build   # tsc
-npm test        # builds, then runs tests/*.test.mjs
+npm run build      # tsc
+npm run typecheck  # tsc --noEmit, no output written
+npm run lint       # eslint (type-aware, so it needs no build first)
+npm run format     # prettier --write
+npm test           # builds, then runs tests/*.test.mjs
+npm run check      # typecheck + lint + format:check + test, same as CI
 ```
+
+A `pre-commit` hook runs lint-staged (eslint --fix, then prettier --write, on staged files) and a whole-project typecheck. It is installed by `npm install` via the `prepare` script, so a fresh clone gets it without a separate step.
+
+Four `react-hooks` rules are off in `eslint.config.js` (`purity`, `refs`, `static-components`, `set-state-in-effect`). They encode React Compiler's requirements, which this Ink app does not run, and satisfying them means restructuring `SetupApp.tsx` and `FrontendApp.tsx`. `rules-of-hooks` and `exhaustive-deps` are on.
 
 ## Telemetry
 

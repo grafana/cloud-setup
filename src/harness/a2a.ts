@@ -5,7 +5,7 @@ export interface AgentTool {
   name: string;
   description: string;
   inputSchema: Record<string, unknown>;
-  execute: (input: Record<string, unknown>) => Promise<unknown> | unknown;
+  execute: (input: Record<string, unknown>) => unknown;
 }
 
 interface SSEEvent {
@@ -82,7 +82,7 @@ export async function runAgent(
   apiEndpoint: string,
   accessToken: string,
   userText: string,
-  tools: AgentTool[] = []
+  tools: AgentTool[] = [],
 ): Promise<string> {
   const baseUrl = `${apiEndpoint}/api/cli/v1/a2a`;
   const toolsByName = new Map(tools.map((t) => [t.name, t]));
@@ -121,7 +121,9 @@ export async function runAgent(
     throw new Error(`A2A request failed (${res.status}): ${await res.text().catch(() => "unknown error")}`);
   }
 
-  const reader = res.body.getReader();
+  // Annotated because @types/node types a chunk as `any` without the DOM lib,
+  // which would silently un-type decode() and everything downstream of it.
+  const reader: ReadableStreamDefaultReader<Uint8Array> = res.body.getReader();
   const decoder = new TextDecoder();
   const buffer = { text: "" };
 
@@ -140,7 +142,7 @@ export async function runAgent(
 
       let payload: Record<string, unknown>;
       try {
-        const input = typeof call.inputs === "string" ? JSON.parse(call.inputs) : call.inputs ?? {};
+        const input: unknown = typeof call.inputs === "string" ? JSON.parse(call.inputs) : (call.inputs ?? {});
         debugLog(`tool call: ${call.toolName}`, input);
         const tool = toolsByName.get(call.toolName);
         if (!tool) throw new Error(`no local tool registered for "${call.toolName}"`);

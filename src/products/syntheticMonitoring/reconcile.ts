@@ -71,7 +71,9 @@ function sortedLabels(labels: { name: string; value: string }[]): { name: string
 // server's filled-in version.
 function isSubsetDeepEqual(subset: unknown, full: unknown): boolean {
   if (Array.isArray(subset)) {
-    return Array.isArray(full) && subset.length === full.length && subset.every((v, i) => isSubsetDeepEqual(v, full[i]));
+    return (
+      Array.isArray(full) && subset.length === full.length && subset.every((v, i) => isSubsetDeepEqual(v, full[i]))
+    );
   }
   if (subset !== null && typeof subset === "object") {
     if (full === null || typeof full !== "object") return false;

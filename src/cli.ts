@@ -18,12 +18,20 @@ function printGlobalHelp(): void {
       ...COMMANDS.map((c) => `  ${c.name.padEnd(nameWidth)}    ${c.summary}`),
       "",
       "Run npx @grafana/cloud-setup <command> --help for usage and options.",
-    ].join("\n")
+    ].join("\n"),
   );
 }
 
 function printUnknownCommand(name: string): void {
-  console.error([titleLine(), "", bad(`✗ Unknown command: ${name}`), "", "Run npx @grafana/cloud-setup --help to see available commands."].join("\n"));
+  console.error(
+    [
+      titleLine(),
+      "",
+      bad(`✗ Unknown command: ${name}`),
+      "",
+      "Run npx @grafana/cloud-setup --help to see available commands.",
+    ].join("\n"),
+  );
 }
 
 async function main() {

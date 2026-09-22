@@ -72,9 +72,12 @@ function httpBlock(s: NonNullable<CheckSettings["http"]>, indent: string): strin
 }
 
 function tcpBlock(s: NonNullable<CheckSettings["tcp"]>, indent: string): string {
-  return [`${indent}tcp {`, `${indent}  ip_version = ${hclScalar(s.ipVersion ?? "Any")}`, `${indent}  tls = ${s.tls ?? false}`, `${indent}}`].join(
-    "\n"
-  );
+  return [
+    `${indent}tcp {`,
+    `${indent}  ip_version = ${hclScalar(s.ipVersion ?? "Any")}`,
+    `${indent}  tls = ${s.tls ?? false}`,
+    `${indent}}`,
+  ].join("\n");
 }
 
 // Un-indented closing marker (`<<EOF` not `<<-EOF`) to match Grafana's own
@@ -87,7 +90,8 @@ function browserBlock(s: NonNullable<CheckSettings["browser"]>, indent: string):
 function settingsBlock(settings: CheckSettings, indent: string): string {
   if (settings.http) return [`${indent}settings {`, httpBlock(settings.http, `${indent}  `), `${indent}}`].join("\n");
   if (settings.tcp) return [`${indent}settings {`, tcpBlock(settings.tcp, `${indent}  `), `${indent}}`].join("\n");
-  if (settings.browser) return [`${indent}settings {`, browserBlock(settings.browser, `${indent}  `), `${indent}}`].join("\n");
+  if (settings.browser)
+    return [`${indent}settings {`, browserBlock(settings.browser, `${indent}  `), `${indent}}`].join("\n");
 
   const entry = Object.entries(settings).find(([, v]) => v !== undefined);
   if (!entry) return `${indent}settings {}`;
@@ -95,7 +99,7 @@ function settingsBlock(settings: CheckSettings, indent: string): string {
   return [
     `${indent}settings {`,
     `${indent}  ${type} {`,
-    genericBlockBody(value as Record<string, unknown>, `${indent}    `),
+    genericBlockBody(value, `${indent}    `),
     `${indent}  }`,
     `${indent}}`,
   ].join("\n");
@@ -128,7 +132,12 @@ function checkResource(jobName: string, def: CheckDefinition, probeIds: Map<stri
   ].join("\n");
 }
 
-function generateTerraform(config: SyntheticConfig, probes: Probe[], stackUrl: string, smUrl: string | undefined): string {
+function generateTerraform(
+  config: SyntheticConfig,
+  probes: Probe[],
+  stackUrl: string,
+  smUrl: string | undefined,
+): string {
   const probeIds = new Map(probes.map((p) => [p.name, p.id]));
   const resources = Object.entries(config).map(([name, def]) => checkResource(name, def, probeIds));
 
@@ -229,7 +238,7 @@ export async function writeTerraformExport(
   remoteIds: Map<string, number>,
   stackUrl: string,
   smUrl: string | undefined,
-  cwd: string
+  cwd: string,
 ): Promise<string> {
   const dir = pickExportDir(cwd);
   await mkdir(dir, { recursive: true });
@@ -237,7 +246,9 @@ export async function writeTerraformExport(
   const importCommands = Object.entries(config)
     .map(([jobName, def]) => {
       const id = remoteIds.get(jobName);
-      return id === undefined ? undefined : `terraform import grafana_synthetic_monitoring_check.${resourceLocalName(jobName, def.target)} ${id}`;
+      return id === undefined
+        ? undefined
+        : `terraform import grafana_synthetic_monitoring_check.${resourceLocalName(jobName, def.target)} ${id}`;
     })
     .filter((line): line is string => line !== undefined);
 

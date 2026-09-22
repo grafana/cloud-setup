@@ -24,7 +24,7 @@ export class SmApiError extends Error {
   constructor(
     message: string,
     public status: number,
-    public body: string
+    public body: string,
   ) {
     super(message);
   }
@@ -63,7 +63,11 @@ export class SmClient {
     // gcx's identical use of this header on the same proxy route).
     if (this.transport.mode === "proxy") headers["X-Client-Id"] = "grafana-synthetics-cli";
 
-    const res = await fetch(this.urlFor(smPath), { method, headers, body: body !== undefined ? JSON.stringify(body) : undefined });
+    const res = await fetch(this.urlFor(smPath), {
+      method,
+      headers,
+      body: body !== undefined ? JSON.stringify(body) : undefined,
+    });
 
     const text = await res.text();
     if (!res.ok) {
@@ -78,7 +82,10 @@ export class SmClient {
 
   async findCheck(job: string, target: string): Promise<RemoteCheck | undefined> {
     try {
-      return await this.request<RemoteCheck>("GET", `check/query?job=${encodeURIComponent(job)}&target=${encodeURIComponent(target)}`);
+      return await this.request<RemoteCheck>(
+        "GET",
+        `check/query?job=${encodeURIComponent(job)}&target=${encodeURIComponent(target)}`,
+      );
     } catch (err) {
       if (err instanceof SmApiError && err.status === 404) return undefined;
       throw err;

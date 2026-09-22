@@ -2,7 +2,8 @@ import { setDebugEnabled } from "../debug.js";
 import { runFrontendUI } from "../ui/FrontendApp.js";
 import { applyFolder, printCliError, type Command } from "./shared.js";
 
-const USAGE_LINE = "npx @grafana/cloud-setup frontend --stack <stack-url> [--app <name>] [--folder <path>] [--force-gcx-install] [--debug]";
+const USAGE_LINE =
+  "npx @grafana/cloud-setup frontend --stack <stack-url> [--app <name>] [--folder <path>] [--force-gcx-install] [--debug]";
 const SHORT_USAGE_LINE = "npx @grafana/cloud-setup frontend --stack <url>";
 const EXAMPLE = ["npx @grafana/cloud-setup frontend \\", "  --stack https://my-team.grafana.net"];
 

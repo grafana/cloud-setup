@@ -1,7 +1,7 @@
 import path from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { debugLog } from "../debug.js";
-import React, { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Box, render, Text, useInput } from "ink";
 import Spinner from "ink-spinner";
 import TextInput from "ink-text-input";
@@ -21,7 +21,19 @@ import {
 import type { FaroInstrumentation, FrontendTarget, ReplayMasking } from "../products/frontendO11y/instrument.js";
 import { instrumentNextjs } from "../products/frontendO11y/nextjs.js";
 import { instrumentReact } from "../products/frontendO11y/react.js";
-import { accent, bad, EnterHint, Header, MIN_SPINNER_MS, muted, ok, requireInteractiveTerminal, startFakeProgress, url, useHardExit } from "./shared.js";
+import {
+  accent,
+  bad,
+  EnterHint,
+  Header,
+  MIN_SPINNER_MS,
+  muted,
+  ok,
+  requireInteractiveTerminal,
+  startFakeProgress,
+  url,
+  useHardExit,
+} from "./shared.js";
 import { recordStep, type Outcome, type StepProperties, type StepStatus } from "../telemetry.js";
 import { useGcxStep } from "./steps/useGcxStep.js";
 import { useAuthStep } from "./steps/useAuthStep.js";
@@ -213,7 +225,7 @@ export function FrontendApp({ initialStackUrl, forceGcxInstall, initialAppName }
       if (key.return || input.toLowerCase() === "y") setStarted(true);
       else if (input.toLowerCase() === "n") exit("Cancelled.");
     },
-    { isActive: !started }
+    { isActive: !started },
   );
 
   // Quit is disabled while free text is being typed (a URL, or the
@@ -225,14 +237,14 @@ export function FrontendApp({ initialStackUrl, forceGcxInstall, initialAppName }
     (input) => {
       if (input.toLowerCase() === "q") exit("Cancelled.");
     },
-    { isActive: !quittingBlocked }
+    { isActive: !quittingBlocked },
   );
 
   // The last row (index === faroApps.length) is "create a new app
   // instead" — resolving with undefined there falls through to the
   // manual collector-URL flow below, same as if no apps existed at all.
   useInput(
-    (input, key) => {
+    (_input, key) => {
       if (currentStep !== "pick-app" || pickAppSubPhase !== "picking-app") return;
       const total = faroApps.length + 1;
       if (key.upArrow) setAppPickerCursor((c) => (c - 1 + total) % total);
@@ -241,7 +253,7 @@ export function FrontendApp({ initialStackUrl, forceGcxInstall, initialAppName }
         appPickerResolver.current?.(appPickerCursor < faroApps.length ? faroApps[appPickerCursor] : undefined);
       }
     },
-    { isActive: currentStep === "pick-app" && pickAppSubPhase === "picking-app" }
+    { isActive: currentStep === "pick-app" && pickAppSubPhase === "picking-app" },
   );
 
   useInput(
@@ -249,7 +261,7 @@ export function FrontendApp({ initialStackUrl, forceGcxInstall, initialAppName }
       if (key.return || input.toLowerCase() === "y") createAppConfirmResolver.current?.(true);
       else if (input.toLowerCase() === "n") createAppConfirmResolver.current?.(false);
     },
-    { isActive: currentStep === "pick-app" && pickAppSubPhase === "create-app-confirm" }
+    { isActive: currentStep === "pick-app" && pickAppSubPhase === "create-app-confirm" },
   );
 
   useInput(
@@ -257,16 +269,16 @@ export function FrontendApp({ initialStackUrl, forceGcxInstall, initialAppName }
       if (key.return || input.toLowerCase() === "y") replayConfirmResolver.current?.(true);
       else if (input.toLowerCase() === "n") replayConfirmResolver.current?.(false);
     },
-    { isActive: currentStep === "pick-app" && pickAppSubPhase === "replay-confirm" }
+    { isActive: currentStep === "pick-app" && pickAppSubPhase === "replay-confirm" },
   );
 
   useInput(
-    (input, key) => {
+    (_input, key) => {
       if (key.upArrow) setMaskingCursor((c) => (c - 1 + MASKING_OPTIONS.length) % MASKING_OPTIONS.length);
       else if (key.downArrow) setMaskingCursor((c) => (c + 1) % MASKING_OPTIONS.length);
       else if (key.return) maskingResolver.current?.(MASKING_OPTIONS[maskingCursor]!.key);
     },
-    { isActive: currentStep === "pick-app" && pickAppSubPhase === "masking-picker" }
+    { isActive: currentStep === "pick-app" && pickAppSubPhase === "masking-picker" },
   );
 
   useEffect(() => {
@@ -296,7 +308,7 @@ export function FrontendApp({ initialStackUrl, forceGcxInstall, initialAppName }
       const target = detectFrontendTarget(process.cwd());
       if (target.kind === "unsupported") {
         throw new Error(
-          "This project doesn't match a shape this tool can instrument automatically (Next.js, or a JS/TS project — React or otherwise — with a findable src/main or src/index entry file)."
+          "This project doesn't match a shape this tool can instrument automatically (Next.js, or a JS/TS project — React or otherwise — with a findable src/main or src/index entry file).",
         );
       }
       targetRef.current = target;
@@ -346,7 +358,10 @@ export function FrontendApp({ initialStackUrl, forceGcxInstall, initialAppName }
 
         const base = initialStackUrl.replace(/\/$/, "");
         if (chosen) {
-          instrumentationBaseRef.current = { name: chosen.name, collectorUrl: `${chosen.collectEndpointURL}/${chosen.appKey}` };
+          instrumentationBaseRef.current = {
+            name: chosen.name,
+            collectorUrl: `${chosen.collectEndpointURL}/${chosen.appKey}`,
+          };
           setAppUrl(chosen.id ? `${base}/a/grafana-kowalski-app/apps/${chosen.id}` : `${base}/a/grafana-kowalski-app`);
           setAppName(chosen.name);
         } else {
@@ -386,8 +401,13 @@ export function FrontendApp({ initialStackUrl, forceGcxInstall, initialAppName }
 
             if (created) {
               resolution = "created";
-              instrumentationBaseRef.current = { name: created.name, collectorUrl: `${created.collectEndpointURL}/${created.appKey}` };
-              setAppUrl(created.id ? `${base}/a/grafana-kowalski-app/apps/${created.id}` : `${base}/a/grafana-kowalski-app`);
+              instrumentationBaseRef.current = {
+                name: created.name,
+                collectorUrl: `${created.collectEndpointURL}/${created.appKey}`,
+              };
+              setAppUrl(
+                created.id ? `${base}/a/grafana-kowalski-app/apps/${created.id}` : `${base}/a/grafana-kowalski-app`,
+              );
               setAppName(created.name);
             } else {
               openFrontendO11ySetupPage(initialStackUrl);
@@ -523,7 +543,9 @@ export function FrontendApp({ initialStackUrl, forceGcxInstall, initialAppName }
 
           instrumentationComplete = result.complete;
           routerWired = Boolean(result.routerFile);
-          const base = result.routerFile ? `${result.entryFile}, router wrapped in ${result.routerFile}` : result.entryFile;
+          const base = result.routerFile
+            ? `${result.entryFile}, router wrapped in ${result.routerFile}`
+            : result.entryFile;
           setFrontendFile(installError ? `${base} (package install failed: ${installError})` : base);
         } else {
           const result = await instrumentNextjs(process.cwd(), initialStackUrl, instrumentation);
@@ -550,10 +572,12 @@ export function FrontendApp({ initialStackUrl, forceGcxInstall, initialAppName }
             setFrontendFile(
               installError
                 ? `${result.componentFile}, wired into ${result.layoutFile} (package install failed: ${installError})`
-                : `${result.componentFile}, wired into ${result.layoutFile}`
+                : `${result.componentFile}, wired into ${result.layoutFile}`,
             );
           } else if (result.componentFile) {
-            setFrontendError(`created ${result.componentFile}, but couldn't wire it into the layout automatically — add <FrontendObservability /> yourself`);
+            setFrontendError(
+              `created ${result.componentFile}, but couldn't wire it into the layout automatically — add <FrontendObservability /> yourself`,
+            );
           } else {
             setFrontendError(result.detail ?? "the agent couldn't complete the Next.js instrumentation");
           }
@@ -593,7 +617,7 @@ export function FrontendApp({ initialStackUrl, forceGcxInstall, initialAppName }
       }
     }
 
-    run();
+    void run();
     return () => {
       cancelled = true;
     };
@@ -641,11 +665,7 @@ export function FrontendApp({ initialStackUrl, forceGcxInstall, initialAppName }
               </Text>
             );
           } else {
-            row = (
-              <Text color={muted}>
-                {" "}· {STEP_LABELS[step]}
-              </Text>
-            );
+            row = <Text color={muted}> · {STEP_LABELS[step]}</Text>;
           }
 
           return (
@@ -657,7 +677,11 @@ export function FrontendApp({ initialStackUrl, forceGcxInstall, initialAppName }
               {/* Standalone line, separate from the config summary below —
                   shown as soon as the app is resolved (picked or created),
                   stays up through the rest of this step and beyond. */}
-              {step === "pick-app" && appName && !frontendSkippedRef.current && <Text color={muted}>{"     "}app: {appName}</Text>}
+              {step === "pick-app" && appName && !frontendSkippedRef.current && (
+                <Text color={muted}>
+                  {"     "}app: {appName}
+                </Text>
+              )}
               {/* Live, not just on completion — grows one line at a time
                   as each question gets answered (sampling decided, then
                   replay, then masking), same idea as "instrument"'s live
@@ -668,22 +692,36 @@ export function FrontendApp({ initialStackUrl, forceGcxInstall, initialAppName }
                 !frontendSkippedRef.current &&
                 (pickAppSubPhase === "replay-confirm" || pickAppSubPhase === "masking-picker") && (
                   <>
-                    <Text color={muted}>{"     "}sampling: {Math.round(samplingRate * 100)}%</Text>
+                    <Text color={muted}>
+                      {"     "}sampling: {Math.round(samplingRate * 100)}%
+                    </Text>
                     {pickAppSubPhase === "masking-picker" && <Text color={muted}>{"     "}replay: enabled</Text>}
                   </>
                 )}
               {step === "pick-app" && completed.has(step) && !frontendSkippedRef.current && (
                 <>
-                  <Text color={muted}>{"     "}sampling: {Math.round(samplingRate * 100)}%</Text>
-                  <Text color={muted}>{"     "}replay: {sessionReplayEnabled ? "enabled" : "disabled"}</Text>
-                  {sessionReplayEnabled && <Text color={muted}>{"     "}replay_masking: {replayMasking}</Text>}
+                  <Text color={muted}>
+                    {"     "}sampling: {Math.round(samplingRate * 100)}%
+                  </Text>
+                  <Text color={muted}>
+                    {"     "}replay: {sessionReplayEnabled ? "enabled" : "disabled"}
+                  </Text>
+                  {sessionReplayEnabled && (
+                    <Text color={muted}>
+                      {"     "}replay_masking: {replayMasking}
+                    </Text>
+                  )}
                 </>
               )}
               {step === "instrument" && completed.has(step) && frontendFile && (
-                <Text color={muted}>{"     "}Instrumented {frontendFile}</Text>
+                <Text color={muted}>
+                  {"     "}Instrumented {frontendFile}
+                </Text>
               )}
               {step === "instrument" && completed.has(step) && frontendError && (
-                <Text color={muted}>{"     "}Skipped Frontend Observability setup ({frontendError})</Text>
+                <Text color={muted}>
+                  {"     "}Skipped Frontend Observability setup ({frontendError})
+                </Text>
               )}
             </Box>
           );
@@ -737,7 +775,10 @@ export function FrontendApp({ initialStackUrl, forceGcxInstall, initialAppName }
     if (pickAppSubPhase === "create-app-confirm")
       return (
         <Box flexDirection="column">
-          <Text>No existing app found. Create one? This'll open your browser. Come back here with its collector URL once it's created.</Text>
+          <Text>
+            No existing app found. Create one? This'll open your browser. Come back here with its collector URL once
+            it's created.
+          </Text>
           <EnterHint suffix="or n to skip" />
         </Box>
       );
@@ -807,7 +848,11 @@ export function FrontendApp({ initialStackUrl, forceGcxInstall, initialAppName }
         <Box flexDirection="column">
           <Box>
             <Text>Session sampling rate (%): </Text>
-            <TextInput value={samplingInput} onChange={setSamplingInput} onSubmit={(v) => samplingResolver.current?.(parseSamplingRateInput(v))} />
+            <TextInput
+              value={samplingInput}
+              onChange={setSamplingInput}
+              onSubmit={(v) => samplingResolver.current?.(parseSamplingRateInput(v))}
+            />
           </Box>
           <EnterHint />
         </Box>
@@ -819,9 +864,7 @@ export function FrontendApp({ initialStackUrl, forceGcxInstall, initialAppName }
     return (
       <Box flexDirection="column" paddingLeft={1}>
         <Header stackUrl={initialStackUrl} />
-        <Text>
-          Let's set up Frontend Observability for this project.
-        </Text>
+        <Text>Let's set up Frontend Observability for this project.</Text>
         <EnterHint />
       </Box>
     );
@@ -833,14 +876,18 @@ export function FrontendApp({ initialStackUrl, forceGcxInstall, initialAppName }
         <Header stackUrl={initialStackUrl} />
         {StepsList()}
         <Box marginTop={1} flexDirection="column">
-          <Text bold>{frontendFile ? "Cool, we're done!" : frontendError ? "Setup incomplete." : "Nothing to do."}</Text>
+          <Text bold>
+            {frontendFile ? "Cool, we're done!" : frontendError ? "Setup incomplete." : "Nothing to do."}
+          </Text>
           {frontendFile && appUrl && (
             <Text color={muted}>
               Once changes are live, data will show up here: <Text color={url}>{appUrl}</Text>
             </Text>
           )}
           {frontendFile && sessionReplayEnabled && (
-            <Text color={muted}>Session Replay is beta and needs to be separately enabled on this stack, or it'll record nothing.</Text>
+            <Text color={muted}>
+              Session Replay is beta and needs to be separately enabled on this stack, or it'll record nothing.
+            </Text>
           )}
         </Box>
       </Box>
@@ -883,7 +930,11 @@ export function FrontendApp({ initialStackUrl, forceGcxInstall, initialAppName }
   );
 }
 
-export async function runFrontendUI(initialStackUrl: string, forceGcxInstall: boolean, initialAppName?: string): Promise<void> {
+export async function runFrontendUI(
+  initialStackUrl: string,
+  forceGcxInstall: boolean,
+  initialAppName?: string,
+): Promise<void> {
   await requireInteractiveTerminal("frontend", initialStackUrl);
   // exitOnCtrlC disabled — see the matching comment in SetupApp.tsx's
   // runSetupUI: Ink's own default Ctrl+C handling otherwise wins the race
@@ -891,7 +942,7 @@ export async function runFrontendUI(initialStackUrl: string, forceGcxInstall: bo
   // our "Cancelled." message ever prints.
   const app = render(
     <FrontendApp initialStackUrl={initialStackUrl} forceGcxInstall={forceGcxInstall} initialAppName={initialAppName} />,
-    { exitOnCtrlC: false }
+    { exitOnCtrlC: false },
   );
   await app.waitUntilExit();
 }

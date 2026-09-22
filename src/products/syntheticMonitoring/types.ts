@@ -149,12 +149,11 @@ const settingsShape = {
 
 const settingsKeys = Object.keys(settingsShape) as (keyof typeof settingsShape)[];
 
-export const settingsSchema = z.object(settingsShape).refine(
-  (s) => settingsKeys.filter((k) => s[k] !== undefined).length === 1,
-  {
+export const settingsSchema = z
+  .object(settingsShape)
+  .refine((s) => settingsKeys.filter((k) => s[k] !== undefined).length === 1, {
     message: `Exactly one check type must be specified in settings (${settingsKeys.join(", ")})`,
-  }
-);
+  });
 
 export const checkDefinitionSchema = z.object({
   target: z.string(),

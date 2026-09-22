@@ -26,7 +26,9 @@ function basicInitSnippet(instrumentation: FaroInstrumentation): string {
   return [
     "import { getWebInstrumentations, initializeFaro } from '@grafana/faro-react';",
     "import { TracingInstrumentation } from '@grafana/faro-web-tracing';",
-    ...(instrumentation.sessionReplay ? ["import { ReplayInstrumentation } from '@grafana/faro-instrumentation-replay';"] : []),
+    ...(instrumentation.sessionReplay
+      ? ["import { ReplayInstrumentation } from '@grafana/faro-instrumentation-replay';"]
+      : []),
     "",
     "initializeFaro({",
     `  url: '${instrumentation.collectorUrl}',`,
@@ -42,7 +44,10 @@ function basicInitSnippet(instrumentation: FaroInstrumentation): string {
     "    // Tracing package to get end-to-end visibility for HTTP requests.",
     "    new TracingInstrumentation(),",
     ...(instrumentation.sessionReplay
-      ? ["    // Beta: requires Session Replay enabled on this stack, or it's a no-op.", ...replayInstrumentationLines(instrumentation.replayMasking, "    ")]
+      ? [
+          "    // Beta: requires Session Replay enabled on this stack, or it's a no-op.",
+          ...replayInstrumentationLines(instrumentation.replayMasking, "    "),
+        ]
       : []),
     "  ],",
     "});",
@@ -53,7 +58,8 @@ function basicInitSnippet(instrumentation: FaroInstrumentation): string {
 // Same first-line-to-closing-`});` anchor as instrument.ts's
 // FARO_WEB_SDK_BLOCK — see that constant's comment for why it's safe
 // against the snippet's own nested closes.
-const FARO_REACT_BLOCK = /import \{ getWebInstrumentations, initializeFaro \} from '@grafana\/faro-react';[\s\S]*?\n\}\);\n/;
+const FARO_REACT_BLOCK =
+  /import \{ getWebInstrumentations, initializeFaro \} from '@grafana\/faro-react';[\s\S]*?\n\}\);\n/;
 
 // Same re-syncing prepend as instrument.ts's insertFaroSnippet — a later
 // run with different answers replaces the previously-inserted block
@@ -139,7 +145,12 @@ export interface ReactInstrumentResult {
 // whole project. Validated the same way as every other agent-written
 // file in this tool — syntax and shrinkage checked, rolled back to the
 // pre-task snapshot if either fires. Never throws.
-export async function instrumentReact(cwd: string, stackUrl: string, entryFile: string, instrumentation: FaroInstrumentation): Promise<ReactInstrumentResult> {
+export async function instrumentReact(
+  cwd: string,
+  stackUrl: string,
+  entryFile: string,
+  instrumentation: FaroInstrumentation,
+): Promise<ReactInstrumentResult> {
   insertBasicInit(cwd, entryFile, instrumentation);
 
   const routerRel = findDataRouterFile(cwd);
@@ -182,7 +193,11 @@ export async function instrumentReact(cwd: string, stackUrl: string, entryFile: 
   }
   if (changedThisRun && (hasSyntaxErrors(content) || looksTruncated(before, content))) {
     writeFileSync(routerFull, before, "utf8");
-    return { entryFile, detail: "the agent's router-wrapping edit didn't look right and was rolled back", complete: false };
+    return {
+      entryFile,
+      detail: "the agent's router-wrapping edit didn't look right and was rolled back",
+      complete: false,
+    };
   }
 
   return { entryFile, routerFile: routerRel, complete: true };

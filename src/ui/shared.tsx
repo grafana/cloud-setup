@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import React, { useEffect, useRef } from "react";
+import { useEffect, useRef } from "react";
 import { Box, Text, useApp, useInput } from "ink";
 import Spinner from "ink-spinner";
 import { detectFramework } from "../framework.js";
@@ -58,7 +58,7 @@ function readPackageVersion(): string {
 export const PACKAGE_VERSION = readPackageVersion();
 
 export function checkNodeVersion(): void {
-  const [major, minor] = process.versions.node.split(".").map(Number);
+  const [major = 0, minor = 0] = process.versions.node.split(".").map(Number);
   if (major < MIN_NODE_MAJOR || (major === MIN_NODE_MAJOR && minor < MIN_NODE_MINOR)) {
     throw new Error(`Node ${MIN_NODE_MAJOR}.${MIN_NODE_MINOR}+ is required (found ${process.versions.node}).`);
   }
@@ -90,7 +90,10 @@ export async function requireInteractiveTerminal(command: Command, stackUrl: str
 // already rendered by the failing screen itself, so it isn't repeated
 // here. Undefined is a clean, silent exit (the "done" screen already
 // showed its own success message).
-export function useHardExit(command: Command, stackUrl: string): (errorOrMessage?: Error | string, setupOutcome?: Outcome) => void {
+export function useHardExit(
+  command: Command,
+  stackUrl: string,
+): (errorOrMessage?: Error | string, setupOutcome?: Outcome) => void {
   const { exit } = useApp();
   const startedAt = useRef(Date.now());
   const exiting = useRef(false);
@@ -109,14 +112,14 @@ export function useHardExit(command: Command, stackUrl: string): (errorOrMessage
     exit(error);
     if (typeof errorOrMessage === "string") console.log(errorOrMessage);
 
-    const outcome: Outcome = error ? "error" : errorOrMessage !== undefined ? "canceled" : setupOutcome ?? "ok";
+    const outcome: Outcome = error ? "error" : errorOrMessage !== undefined ? "canceled" : (setupOutcome ?? "ok");
     recordRun(command, stackUrl, outcome, Date.now() - startedAt.current);
 
     // setImmediate, not a same-tick process.exit() — Ink's own unmount
     // cleanup and the console.log above both write to the terminal, and
     // need a turn of the event loop to actually flush before the process
     // dies, or they can get silently dropped.
-    waitForTelemetry().finally(() => {
+    void waitForTelemetry().finally(() => {
       setImmediate(() => process.exit(error ? 1 : 0));
     });
   }
@@ -193,7 +196,11 @@ export interface FakeProgress {
 // always finishes before that target — finish() is the deliberate "speed
 // up" for when it does, sprinting the number up to 100 instead of letting
 // it jump there.
-export function startFakeProgress(onProgress: (percent: number) => void, isCancelled: () => boolean, targetMs: number): FakeProgress {
+export function startFakeProgress(
+  onProgress: (percent: number) => void,
+  isCancelled: () => boolean,
+  targetMs: number,
+): FakeProgress {
   const startedAt = Date.now();
   // Time spent paused doesn't count toward elapsed — otherwise resuming
   // after, say, a slow answer to a confirm question would jump the number
