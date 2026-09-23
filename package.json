@@ -45,7 +45,7 @@
     "ink-spinner": "^5.0.0",
     "ink-text-input": "^6.0.0",
     "react": "^19.3.0",
-    "typescript": "^5.7.2",
+    "typescript": "^7.0.0",
     "zod": "^4.0.0"
   },
   "devDependencies": {
