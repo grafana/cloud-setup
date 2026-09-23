@@ -1,0 +1,33 @@
+name: Lint PR title
+
+# Squash merging is how changes land here, and the repo is configured to use the
+# PR title as the commit subject (squash_merge_commit_title: PR_TITLE) with an
+# empty body. So the PR title *is* the commit message release-please will read,
+# and this is the only place it can be checked before it becomes history.
+#
+# `edited` matters: a title fixed after the first run has to re-trigger, or the
+# check stays red on a title that is now fine.
+on:
+  pull_request:
+    types:
+      - opened
+      - edited
+      - reopened
+      - synchronize
+
+permissions:
+  contents: read
+
+jobs:
+  lint-pr-title:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      # No config-path, so the action uses its own bundled commitlint config.
+      # That keeps this repo on the org-wide convention instead of a private
+      # copy that silently drifts. The accepted types are listed in
+      # CONTRIBUTING.md.
+      - name: Lint PR title
+        uses: grafana/shared-workflows/actions/lint-pr-title@70c40e5b6522c854a55334124545261cae3d4c73 # lint-pr-title/v1.2.4

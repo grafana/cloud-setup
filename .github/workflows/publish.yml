@@ -1,9 +1,23 @@
 name: Publish to npm
 
 on:
+  # The manual path: publishing a GitHub Release by hand.
   release:
     types:
       - published
+  # The automated path. release.yml dispatches this after release-please
+  # creates a release, because a release created with GITHUB_TOKEN does not
+  # fire `release: published`. Publishing lives here rather than in release.yml
+  # so npm trusted publishing keeps matching this filename.
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to publish, e.g. v0.2.0"
+        type: string
+        required: true
+
+permissions:
+  contents: read
 
 jobs:
   publish:
@@ -15,10 +29,17 @@ jobs:
     permissions:
       contents: read
       id-token: write
+    env:
+      # github.event.inputs is safe to reference under either trigger; it is
+      # simply empty for `release: published`.
+      RELEASE_TAG: ${{ github.event.inputs.tag || github.event.release.tag_name }}
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
+          # Explicit, so both triggers publish exactly the tagged tree rather
+          # than whatever the event's default ref happens to be.
+          ref: ${{ env.RELEASE_TAG }}
           persist-credentials: false
 
       - name: Setup Node.js
@@ -39,8 +60,6 @@ jobs:
         run: npm install -g npm@^11.5.1
 
       - name: Validate version matches release tag
-        env:
-          RELEASE_TAG: ${{ github.event.release.tag_name }}
         run: |
           EXPECTED_VERSION="${RELEASE_TAG#v}"
           PACKAGE_VERSION=$(node -p "require('./package.json').version")
@@ -53,10 +72,42 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Build
-        run: npm run build
+      # Belt and braces: `npm publish` runs prepublishOnly, which runs the same
+      # checks, but running them as their own step means a failure is reported
+      # here rather than buried in npm's output.
+      - name: Verify
+        run: npm run check
+
+      # Packs and runs the real artifact, which is the only way to catch a
+      # missing shebang, a broken `bin` path, or an import that resolves
+      # locally but is not in `dependencies`. `npm pack` runs prepack, so the
+      # tarball is built from a cleaned dist.
+      - name: Verify the packaged artifact
+        run: ./scripts/verify-package.sh
 
       # No NPM_TOKEN: npm detects it's running in GitHub Actions and
       # authenticates via OIDC trusted publishing instead.
       - name: Publish
         run: npm publish
+
+      # Skipped until the SLACK_RELEASE_CHANNEL_ID repository variable is set,
+      # so a release never fails for want of a notification.
+      - name: Notify Slack
+        if: vars.SLACK_RELEASE_CHANNEL_ID != ''
+        uses: grafana/shared-workflows/actions/send-slack-message@551bc8d50017d3e95d5da3f8a4826e733a208dc0 # send-slack-message/v3.0.2
+        with:
+          method: chat.postMessage
+          payload: |
+            {
+              "channel": "${{ vars.SLACK_RELEASE_CHANNEL_ID }}",
+              "text": "Published @grafana/cloud-setup ${{ env.RELEASE_TAG }} to npm",
+              "blocks": [
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": "*<https://www.npmjs.com/package/@grafana/cloud-setup|@grafana/cloud-setup>* `${{ env.RELEASE_TAG }}` published to npm\n<${{ github.server_url }}/${{ github.repository }}/releases/tag/${{ env.RELEASE_TAG }}|Release notes> · <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|Workflow run>"
+                  }
+                }
+              ]
+            }

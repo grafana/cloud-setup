@@ -18,7 +18,7 @@
     "dist"
   ],
   "scripts": {
-    "build": "tsc -p tsconfig.build.json",
+    "build": "npm run clean && tsc -p tsconfig.build.json",
     "typecheck": "tsc -p tsconfig.json",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
@@ -26,7 +26,11 @@
     "format:check": "prettier --check .",
     "test": "npm run build && node --experimental-test-module-mocks --test tests/*.test.mjs",
     "check": "npm run typecheck && npm run lint && npm run format:check && npm test",
-    "prepare": "husky || true"
+    "prepare": "husky || true",
+    "clean": "rm -rf dist",
+    "prepack": "npm run build",
+    "prepublishOnly": "npm run check",
+    "verify:package": "./scripts/verify-package.sh"
   },
   "lint-staged": {
     "*.{ts,tsx}": [
