@@ -203,6 +203,46 @@ test("step properties travel alongside the envelope but cannot shadow it", async
   sent.forEach((s) => s.settle({ ok: true }));
 });
 
+test("the alerting step reports its two halves separately", async (t) => {
+  const sent = captureSends(t);
+  const api = await telemetry();
+  // The step can alert the checks without configuring an email
+  // destination, so one status can't stand in for both outcomes. Easy for
+  // a refactor to collapse the last two back into a plain "ok".
+  api.recordStep("synthetics", stack, "alerting", {
+    status: "ok",
+    alerting_outcome: "configured",
+    alert_presets: 2,
+    checks_alerted: 4,
+    contact_point: "created",
+    notification_route: "created",
+  });
+  api.recordStep("synthetics", stack, "alerting", {
+    status: "declined",
+    alerting_outcome: "rules_only",
+    checks_alerted: 4,
+  });
+  api.recordStep("synthetics", stack, "alerting", { status: "ok", alerting_outcome: "unavailable", checks_alerted: 4 });
+
+  assert.equal(sent[0].payload.alerting_outcome, "configured");
+  assert.equal(sent[0].payload.contact_point, "created");
+  assert.equal(sent[0].payload.notification_route, "created");
+  assert.equal(sent[0].payload.alert_presets, 2);
+  assert.equal(sent[0].payload.checks_alerted, 4);
+
+  assert.equal(sent[1].payload.alerting_outcome, "rules_only");
+  assert.equal(sent[1].payload.status, "declined");
+  // Out of reach is distinct from the user declining.
+  assert.equal(sent[2].payload.alerting_outcome, "unavailable");
+
+  for (const s of sent) {
+    const serialized = JSON.stringify(s.payload);
+    assert.ok(!serialized.includes("@"), "an alerting event must never carry an email address");
+  }
+
+  sent.forEach((s) => s.settle({ ok: true }));
+});
+
 test("shutdown waits for older deliveries even when the newest finishes first", async (t) => {
   const sent = captureSends(t);
   const api = await telemetry();
