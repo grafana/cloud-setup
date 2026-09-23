@@ -7,8 +7,8 @@ on:
       - main
 
 jobs:
-  # Separate from `test` so a formatting nit and a broken wizard are not the
-  # same red X, and so all three checks report even when the first one fails.
+  # Separate from `test` so a formatting violation and a functional failure are
+  # reported distinctly, and so all three checks run even when the first fails.
   checks:
     runs-on: ubuntu-latest
     permissions:

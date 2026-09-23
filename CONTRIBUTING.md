@@ -2,119 +2,80 @@
 
 ```sh
 npm install             # also installs the pre-commit hook, via `prepare`
-npm run build           # clean, then tsc: src -> dist
-npm run typecheck       # tsc, no output written
-npm run lint            # eslint (type-aware, so it needs no build first)
-npm run lint:fix        # eslint --fix
-npm run format          # prettier --write
-npm test                # builds, then runs tests/*.test.mjs
 npm run check           # typecheck + lint + format:check + test, same as CI
 npm run verify:package  # pack, install the tarball, run the installed binary
+npm run build           # clean, then tsc: src -> dist
+npm run lint:fix        # eslint --fix
+npm run format          # prettier --write
 ```
 
-`npm run check` is the correctness gate. If it passes locally, CI should agree. `npm run verify:package` is the packaging gate, and it is the only thing that exercises what a user actually installs.
+`npm run check` is the correctness gate; `npm run verify:package` is the packaging gate, and the only thing that exercises what a user installs.
 
-A `pre-commit` hook runs lint-staged (`eslint --fix`, then `prettier --write`, on staged files) followed by a whole-project typecheck. The typecheck is whole-project on purpose: a type error usually surfaces in a file the commit does not touch. It takes well under a second, so it stays in the hook rather than waiting for CI. `npm install` installs it through the `prepare` script, so a fresh clone gets it without a separate step.
+A `pre-commit` hook runs lint-staged on staged files, then a whole-project typecheck. Whole-project because a type error usually surfaces in a file the commit does not touch, and it takes under a second.
 
 ## Commit messages
 
-Changes land by squash merge, and the repo is configured to use the PR title as the commit subject with an empty body. So **the PR title is the commit message**, and it has to follow [Conventional Commits](https://www.conventionalcommits.org/). CI enforces it with `grafana/shared-workflows/actions/lint-pr-title`, using that action's bundled commitlint config rather than a local copy, so this repo stays on the org-wide convention.
+Changes land by squash merge, and the repo uses the PR title as the commit subject with an empty body. **The PR title is the commit message**, so it is the PR title that must follow [Conventional Commits](https://www.conventionalcommits.org/). CI enforces this with `grafana/shared-workflows/actions/lint-pr-title`.
 
 ```
 feat: add a --dry-run flag
 fix(synthetics): stop defaulting the check timeout to 3s
-docs: explain the two tsconfigs
 chore(deps): bump zod to v4
 ```
 
-Accepted types: `build`, `chore`, `ci`, `docs`, `feat`, `fix`, `perf`, `refactor`, `revert`, `style`, `test`.
+Types: `build`, `chore`, `ci`, `docs`, `feat`, `fix`, `perf`, `refactor`, `revert`, `style`, `test`. Subjects are lower case with no trailing full stop.
 
-Two rules catch people out:
+The type sets the version bump, so it is not cosmetic: `fix` bumps the patch, `feat` the minor, and `feat!` (or a `BREAKING CHANGE:` footer) also the minor while the package is pre-1.0. `chore`, `ci`, `style`, `test` and `build` are hidden from the changelog.
 
-- **The subject must be lower case.** `feat: Add a flag` fails — the config rejects sentence-case, start-case, PascalCase and UPPER-CASE subjects. Nearly every PR title in this repo's history predates the check and would fail it.
-- **No trailing full stop.**
-
-Commits on your own branch are not linted, because squash merging throws them away. Only the PR title matters.
-
-Type choice decides the version, so it is not cosmetic: `fix` bumps the patch, `feat` bumps the minor, and `feat!` (or a `BREAKING CHANGE:` footer) bumps the minor while the package is pre-1.0. `chore`, `ci`, `style`, `test` and `build` are hidden from the changelog.
+Commits on a branch are not linted, since squash merging discards them.
 
 ## Releases
 
-Releases are automated with [release-please](https://github.com/googleapis/release-please), which is also what `grafana/shared-workflows` uses.
+release-please generates releases from those subjects.
 
-1. Merging to `main` runs `release.yml`, which opens or updates a **release PR** that bumps the version and writes `CHANGELOG.md` from the commit subjects since the last release.
-2. Merging that release PR tags the commit and creates a GitHub Release.
+1. Merging to `main` opens or updates a **release PR** that bumps the version and writes `CHANGELOG.md`.
+2. Merging the release PR tags the commit and creates a GitHub Release.
 3. `release.yml` then dispatches `publish.yml`, which publishes to npm.
 
-Step 3 is a `workflow_dispatch` rather than the `release: published` event because **a release created with `GITHUB_TOKEN` does not fire that event** — GitHub suppresses it so automation cannot trigger itself recursively. `workflow_dispatch` and `repository_dispatch` are the two documented exceptions.
+The release PR is a queue: it keeps recalculating as commits land, so merge it when there is something worth shipping.
 
-The publish deliberately stays in `publish.yml` instead of moving into `release.yml`. npm trusted publishing matches on the workflow _filename_, and for a reusable workflow it matches the **calling** workflow, so a `workflow_call` would need the trusted publisher on npmjs.com reconfigured and would break the manual path. A dispatch keeps `publish.yml` as the top-level workflow, so the existing npm config holds.
+release-please owns the version in `package.json`, `CHANGELOG.md` and `.release-please-manifest.json`. Do not hand-edit them. To force a version, put `Release-As: 1.2.3` in a commit body.
 
-`bump-minor-pre-major: true` is set in `release-please-config.json` for a reason. By default a breaking change takes a `0.x` package straight to `1.0.0`; from release-please's own source:
+`publish.yml` can also be run by hand, which is the fallback if the automated path breaks: publish a GitHub Release, or dispatch the workflow with a tag.
 
-```js
-if (breaking > 0) {
-  if (version.isPreMajor && this.bumpMinorPreMajor) return new MinorVersionUpdate();
-  else return new MajorVersionUpdate(); // ← the default
-}
-```
+Two settings look arbitrary and are not:
 
-While this is a development preview, `0.1.1` plus a `feat!` should become `0.2.0`, not `1.0.0`.
+- **Step 3 is a `workflow_dispatch`, not the `release: published` event.** A release created with `GITHUB_TOKEN` does not fire that event, because GitHub suppresses it to prevent recursive runs. `workflow_dispatch` is one of two documented exceptions. The publish stays in `publish.yml` rather than becoming a reusable workflow because npm trusted publishing matches on workflow filename, and for a reusable workflow it matches the calling workflow.
+- **`bump-minor-pre-major: true`.** Without it, the first breaking change takes a `0.x` package straight to `1.0.0`.
 
-release-please owns the version in `package.json`, `CHANGELOG.md` and `.release-please-manifest.json`. Do not hand-edit any of them. To force a specific version, put `Release-As: 1.2.3` in a commit body.
+## Packaging
 
-`publish.yml` can still be run by hand — publish a GitHub Release, or dispatch it with a tag — which is the fallback if the automated path breaks.
+`npm run check` only imports `dist` in place, so it cannot see a packaging mistake. `npm run verify:package` packs the tarball, asserts the `bin` exists and starts with a shebang, installs it into a throwaway project, and runs the installed binary. That covers the failures which install cleanly and break on first run: a missing shebang, a wrong `bin` path, a file excluded by `files`, or an import that resolves in the repo but is absent from `dependencies`. CI runs it on the pinned Node and on the `engines.node` floor.
 
-## Not shipping broken code
-
-`npm run check` gates correctness, but it only ever imports from `dist` in place. It cannot see a packaging mistake. `npm run verify:package` covers that gap: it packs the tarball, asserts the `bin` is present and starts with a shebang, installs the tarball into a throwaway project, and runs the installed binary.
-
-That catches the failures that install cleanly and only break when a user runs the CLI: a missing shebang, a wrong `bin` path, a file `files` excludes, or an import that resolves inside the repo but is absent from `dependencies`. CI runs it on both the pinned Node and the `engines.node` floor.
-
-Three package scripts keep the artifact honest:
-
-- `clean` (`rm -rf dist`) runs before every build. `tsc` never deletes anything, so without it a renamed or deleted source leaves its old `.js` in `dist` and `npm pack` ships it. This was real: the tarball once contained `checkAlerts.js` and `notifications.js` from a branch that was never merged.
-- `prepack` rebuilds, so `npm pack` and `npm publish` always package a freshly compiled tree rather than whatever happened to be on disk.
-- `prepublishOnly` runs `npm run check`, so a publish from a laptop is gated the same way CI is.
-
-The `rm -rf` is not portable to Windows `cmd`. Neither is the existing `npm test`, which relies on the shell expanding `tests/*.test.mjs`, so this adds no new constraint.
+Three scripts keep the artifact honest. `clean` runs before every build, because `tsc` never deletes and a renamed source otherwise leaves its old output in `dist` for `npm pack` to ship. `prepack` rebuilds, so pack and publish always package a fresh tree. `prepublishOnly` runs `npm run check`, so a publish from a laptop is gated like CI.
 
 ## Node versions
 
-Two different numbers, each written down exactly once.
+Two numbers, each written down once.
 
-`.nvmrc` pins the **toolchain**: the exact Node contributors and CI use, currently the latest LTS. `actions/setup-node` reads it through `node-version-file` in both workflows, so no workflow spells out a version. Renovate's `nvm` manager keeps it current.
+`.nvmrc` pins the **toolchain**: the exact Node contributors and CI use, currently the latest LTS. Both workflows read it through `node-version-file`. Renovate keeps it current.
 
-`engines.node` states the **floor the published CLI promises its users**, currently `>=22.6.0`. It is deliberately wider than `.nvmrc`; narrowing it to the pinned LTS would lock out users on 22 for no reason. Three things read it: npm warns on install, the `oldest-supported-node` CI job installs exactly that version, and `checkNodeVersion()` in `src/ui/shared.tsx` parses it out of the manifest at runtime.
+`engines.node` is the **floor the published CLI promises users**, currently `>=22.6.0`, deliberately wider than `.nvmrc`. Three things read it: npm on install, the `oldest-supported-node` CI job, and `checkNodeVersion()` in `src/ui/shared.tsx`, which parses it out of the manifest at runtime.
 
-`oldest-supported-node` runs the built CLI rather than `npm test`, and that is not laziness. The suite's `mock.module()` mis-resolves a bare specifier inside Ink on 22.6.0 (`Cannot find module .../ink/build/@alcalzone/ansi-tokenize`), fixed in a later 22.x. The wizard itself runs fine there, verified directly, so the floor is honest even though the suite cannot run on it. If you want the suite green on the floor too, raising `engines.node` is the wrong fix: the product works, the harness is what needs the newer Node.
+That job runs the built CLI instead of `npm test` for a specific reason: the suite's `mock.module()` mis-resolves a bare specifier inside Ink on 22.6.0 (`Cannot find module .../ink/build/@alcalzone/ansi-tokenize`), fixed in a later 22.x. The wizard itself runs there, verified directly, so the floor is accurate even though the suite cannot run on it. Raising `engines.node` would be the wrong fix.
 
-## TypeScript configuration
+## TypeScript
 
-There are two tsconfigs.
+`tsconfig.json` covers `src`, the tests and `eslint.config.js`, and emits nothing. Every file in the repo belongs to it, so an editor never falls back to an inferred project — that fallback has no `@types/node`, which makes `console` and `process` appear undefined while `npm run typecheck` stays clean. `tsconfig.build.json` extends it, narrows to `src` and does the emit.
 
-`tsconfig.json` is the wide one: `src`, the tests and `eslint.config.js`, emitting nothing. Every file in the repo belongs to it, so an editor never falls back to an inferred project. That fallback has no `@types/node`, which is what makes `console`, `process` and `setTimeout` look undefined in an editor while `npm run typecheck` stays clean.
+`target` and `lib` are `ES2024`, decided by `engines.node` rather than the newest spec. Every ES2024 addition works on 22.6.0. `ESNext` would not: `Promise.try`, `RegExp.escape`, `Float16Array` and `Error.isError` are all absent there, so it would let the compiler approve calls that crash on the oldest supported Node.
 
-`tsconfig.build.json` extends it, narrows to `src` and does the emit. `npm run build` uses it, so `dist` mirrors `src` exactly.
-
-`target` and `lib` are `ES2024`, and the number that decides them is `engines.node`, not the newest spec or the pinned LTS. Every ES2024 addition works on 22.6.0, checked feature by feature including the RegExp `v` flag. `ESNext` would not be safe: `Promise.try`, `RegExp.escape`, `Float16Array` and `Error.isError` are all absent on 22.6.0, so it would let the compiler bless calls that crash for a user on the oldest Node the package supports. (TypeScript 5.9 has no `ES2025`; `ES2024` is the highest real value, then `ESNext`.)
-
-Three more options worth knowing about:
-
-- `types: ["node", "react"]` is explicit rather than letting TypeScript pull in whatever happens to sit under `node_modules/@types`. A transitive `@types` package can otherwise leak globals in and change what compiles.
-- `allowJs` with `checkJs` off puts the tests in the project so Node's globals resolve there. `checkJs` stays off because the tests import the built output from `dist`, and turning it on would typecheck emitted files, which checks nothing useful.
-- `verbatimModuleSyntax` and `isolatedModules` matter because emit is per-file. Without them an import that only carries types can erase to nothing and leave an unresolvable import in `dist`.
-
-`exactOptionalPropertyTypes` is deliberately off: it produces 85 errors, almost all React prop plumbing, and is not worth the churn.
+Also deliberate: `types: ["node", "react"]` is explicit so a transitive `@types` package cannot leak globals in; `allowJs` with `checkJs` off puts the tests in the project without typechecking the `dist` files they import; `verbatimModuleSyntax` and `isolatedModules` stop a type-only import erasing to an unresolvable import in `dist`. `exactOptionalPropertyTypes` is off, since it produces 85 errors, almost all React prop plumbing.
 
 ## Formatting and linting
 
-Prettier runs at `printWidth: 120`, the width the code was already written to, and `proseWrap: preserve` so markdown prose is never hard-wrapped.
+Prettier runs at `printWidth: 120`, the width the code was already written to, with `proseWrap: preserve` so markdown prose is never hard-wrapped.
 
-ESLint is a flat config using `typescript-eslint`'s type-aware rules, so it needs no build first. Four `react-hooks` rules are off (`purity`, `refs`, `static-components`, `set-state-in-effect`). They encode React Compiler's requirements, which this Ink app does not run, and satisfying them means restructuring `SetupApp.tsx` and `FrontendApp.tsx` — nested render functions, refs read during render, `Date.now()` in a `useRef` initializer. Worth doing as its own change. `rules-of-hooks` and `exhaustive-deps` are on. `no-useless-assignment` is off because it flags initializers that exist so a value can outlive the `try` block computing it.
+ESLint uses `typescript-eslint`'s type-aware rules, so it needs no build first. Four `react-hooks` rules are off (`purity`, `refs`, `static-components`, `set-state-in-effect`): they encode React Compiler's requirements, which this Ink app does not run, and satisfying them means restructuring `SetupApp.tsx` and `FrontendApp.tsx`. `rules-of-hooks` and `exhaustive-deps` stay on. `no-useless-assignment` is off because it flags initializers that exist so a value can outlive the `try` block computing it.
 
-`@typescript-eslint/no-floating-promises` is on, which is what makes the "never `await` telemetry" rule in AGENTS.md enforceable: a deliberate fire-and-forget call has to say so with `void`.
-
-## CI
-
-Three jobs. `checks` runs typecheck, lint and format check on the pinned Node. `test` runs the suite on the pinned Node. `oldest-supported-node` builds and starts the CLI on the `engines.node` floor. `checks` keeps its steps separate with `if: ${{ !cancelled() }}` so all three report rather than stopping at the first failure.
+`@typescript-eslint/no-floating-promises` is on, which makes the "never `await` telemetry" rule in AGENTS.md enforceable: a deliberate fire-and-forget call must say so with `void`.

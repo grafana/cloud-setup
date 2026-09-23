@@ -72,9 +72,9 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      # Belt and braces: `npm publish` runs prepublishOnly, which runs the same
-      # checks, but running them as their own step means a failure is reported
-      # here rather than buried in npm's output.
+      # Redundant with prepublishOnly, which `npm publish` runs anyway, but as
+      # its own step a failure is reported here rather than buried in npm's
+      # output.
       - name: Verify
         run: npm run check
 

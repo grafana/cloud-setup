@@ -44,8 +44,8 @@ export default tseslint.config(
       // Compiler's requirements. This is an Ink app that does not run the
       // compiler, and satisfying them means restructuring SetupApp.tsx and
       // FrontendApp.tsx (nested render functions, refs read during render,
-      // Date.now() in a useRef initializer). Worth revisiting as its own
-      // change; not something to hold linting hostage to.
+      // Date.now() in a useRef initializer). That refactor belongs in its own
+      // change rather than blocking linting from being enabled at all.
       "react-hooks/purity": "off",
       "react-hooks/refs": "off",
       "react-hooks/static-components": "off",
