@@ -37,36 +37,11 @@ interface Route {
   [key: string]: unknown;
 }
 
-export interface PlaceholderDefault {
-  uid: string;
-  name: string;
-  addresses: string;
-}
-
 export interface AlertingInspection {
   // Already on SM_CONTACT_POINT_NAME, so a re-run confirms rather than
   // retypes.
   existingAddresses?: string;
-  // Set only while the stack default still holds a placeholder.
-  placeholderDefault?: PlaceholderDefault;
   userEmail?: string;
-}
-
-// Keys on the angle brackets, not the domain, which varies by what Cloud
-// provisioned (<example@mail.com> on a real stack, <example@example.com>
-// in the API reference). Brackets are never what someone types into the
-// contact point form, and a false positive here means offering to
-// overwrite a real address.
-//
-// Splits on Grafana's three separators rather than reusing parseAddresses,
-// which also splits on spaces: that reads what a user typed, this reads
-// what Grafana stored, where a space is part of one malformed address.
-export function isPlaceholderAddresses(addresses: string): boolean {
-  const parts = addresses
-    .split(/[,;\n]/)
-    .map((s) => s.trim())
-    .filter(Boolean);
-  return parts.length > 0 && parts.every((p) => /^<.+>$/.test(p));
 }
 
 export function joinAddresses(addresses: string[]): string {
@@ -92,7 +67,7 @@ function smRoute(): Route {
     object_matchers: [["namespace", "=", SM_NAMESPACE_LABEL]],
     group_by: SM_ROUTE_GROUP_BY,
     // Stops here rather than also reaching the root receiver, which on a
-    // fresh stack is the placeholder address.
+    // fresh stack is an undeliverable placeholder address.
     continue: false,
   };
 }
@@ -160,28 +135,12 @@ export class AlertingClient {
     }
   }
 
-  // One round of reads for the whole step, so the prefill and the
-  // placeholder question don't each re-fetch the same endpoints.
+  // Read up front so the email prompt can be prefilled, and so a failure
+  // here rules out the whole notification half before anything is written.
   async inspect(): Promise<AlertingInspection> {
-    const [contactPoints, tree, userEmail] = await Promise.all([
-      this.listContactPoints(),
-      this.getPolicyTree(),
-      this.currentUserEmail(),
-    ]);
-
+    const [contactPoints, userEmail] = await Promise.all([this.listContactPoints(), this.currentUserEmail()]);
     const own = contactPoints.find((cp) => cp.name === SM_CONTACT_POINT_NAME);
-    const rootReceiver = tree.receiver;
-    const rootContactPoint = contactPoints.find((cp) => cp.name === rootReceiver && cp.type === "email");
-    const rootAddresses = rootContactPoint?.settings?.addresses?.trim();
-
-    return {
-      existingAddresses: own?.settings?.addresses?.trim() || undefined,
-      placeholderDefault:
-        rootContactPoint?.uid && rootAddresses && isPlaceholderAddresses(rootAddresses)
-          ? { uid: rootContactPoint.uid, name: rootContactPoint.name, addresses: rootAddresses }
-          : undefined,
-      userEmail,
-    };
+    return { existingAddresses: own?.settings?.addresses?.trim() || undefined, userEmail };
   }
 
   async ensureContactPoint(addresses: string): Promise<"created" | "updated" | "unchanged"> {
@@ -219,17 +178,6 @@ export class AlertingClient {
     // included, passes straight back through.
     await this.request("PUT", `${PROVISIONING_BASE}/policies`, { ...tree, routes: [...routes, smRoute()] });
     return "created";
-  }
-
-  // The one write here that changes where non-Synthetic-Monitoring alerts
-  // go, so callers must confirm before calling it.
-  async repairDefault(placeholder: PlaceholderDefault, addresses: string): Promise<void> {
-    const existing = (await this.listContactPoints()).find((cp) => cp.uid === placeholder.uid);
-    if (!existing) throw new Error(`Contact point "${placeholder.name}" no longer exists`);
-    await this.request("PUT", `${PROVISIONING_BASE}/contact-points/${placeholder.uid}`, {
-      ...existing,
-      settings: { ...existing.settings, addresses },
-    });
   }
 }
 

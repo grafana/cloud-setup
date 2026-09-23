@@ -3,7 +3,7 @@ import { test } from "node:test";
 
 const { alertsForCheck, alertsSummary, periodFor, presetsFor } =
   await import("../dist/products/syntheticMonitoring/checkAlerts.js");
-const { isEmailish, isPlaceholderAddresses, joinAddresses, parseAddresses } =
+const { isEmailish, joinAddresses, parseAddresses } =
   await import("../dist/products/syntheticMonitoring/notifications.js");
 
 const MINUTE = 60 * 1000;
@@ -110,25 +110,6 @@ test("the confirm sentence names only what the pass will actually get", () => {
   );
   assert.equal(alertsSummary(presetsFor([BROWSER, SSL])), "a check starts failing");
   assert.equal(alertsSummary([]), "");
-});
-
-test("a placeholder address is recognised by its brackets, not its domain", () => {
-  // The domain varies by what Cloud provisioned, so matching on it would
-  // miss one of these.
-  assert.ok(isPlaceholderAddresses("<example@mail.com>"));
-  assert.ok(isPlaceholderAddresses("<example@example.com>"));
-  assert.ok(isPlaceholderAddresses(" <example@mail.com> "));
-  assert.ok(isPlaceholderAddresses("<a@b.com>;<c@d.com>"));
-});
-
-test("a real address is never treated as a placeholder", () => {
-  // A false positive means offering to overwrite a real address.
-  assert.equal(isPlaceholderAddresses("oncall@corp.com"), false);
-  assert.equal(isPlaceholderAddresses("alerts@example.com"), false);
-  assert.equal(isPlaceholderAddresses("alerts@example-corp.com"), false);
-  assert.equal(isPlaceholderAddresses(""), false);
-  // One real address among placeholders means the field is in use.
-  assert.equal(isPlaceholderAddresses("<example@mail.com>;real@corp.com"), false);
 });
 
 test("addresses round-trip through the separator Grafana splits on", () => {

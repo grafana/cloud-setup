@@ -232,13 +232,11 @@ type CreateSubPhase =
 
 // The sub-phases split along the step's two halves. "applying" configures
 // the checks' own alerts over the SM API and works on either transport.
-// "inspecting"/"email-input"/"default-confirm" configure where those
-// alerts go, need the OAuth session, and are skipped without one.
-// "default-confirm" appears only when the stack's default contact point
-// still holds a placeholder.
-type AlertingSubPhase = "confirm" | "inspecting" | "email-input" | "default-confirm" | "applying";
+// "inspecting" and "email-input" configure where those alerts go, need the
+// OAuth session, and are skipped without one.
+type AlertingSubPhase = "confirm" | "inspecting" | "email-input" | "applying";
 
-const ALERTING_WAITING_SUBPHASES: AlertingSubPhase[] = ["confirm", "email-input", "default-confirm"];
+const ALERTING_WAITING_SUBPHASES: AlertingSubPhase[] = ["confirm", "email-input"];
 
 // Kept so a later discovery pass applies the same alerts without asking
 // again. `addresses` is undefined when no email destination was set.
@@ -321,7 +319,6 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
   const [alertingSubPhase, setAlertingSubPhase] = useState<AlertingSubPhase>("confirm");
   const [emailInput, setEmailInput] = useState("");
   const [emailError, setEmailError] = useState<string>();
-  const [placeholderAddresses, setPlaceholderAddresses] = useState<string>();
   // Muted lines under the "Set up alerting" row. A list because the step's
   // two halves report separately.
   const [alertingDetail, setAlertingDetail] = useState<string[]>([]);
@@ -367,7 +364,6 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
   const alertingChoice = useRef<AlertingChoice | undefined>(undefined);
   const alertingConfirmResolver = useRef<((proceed: boolean) => void) | undefined>(undefined);
   const emailResolver = useRef<((raw: string) => void) | undefined>(undefined);
-  const defaultConfirmResolver = useRef<((repair: boolean) => void) | undefined>(undefined);
 
   const isWaiting =
     (currentStep === "gcx" && gcx.isWaiting) ||
@@ -526,20 +522,13 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
     { isActive: currentStep === "analyze" && analyzeSubPhase === "browser-confirm" },
   );
 
-  // The alerting step's two y/n prompts, both defaulting to yes on Enter.
+  // The alerting step's confirm, defaulting to yes on Enter.
   useInput(
     (input, key) => {
       if (key.return || input.toLowerCase() === "y") alertingConfirmResolver.current?.(true);
       else if (input.toLowerCase() === "n") alertingConfirmResolver.current?.(false);
     },
     { isActive: currentStep === "alerting" && alertingSubPhase === "confirm" },
-  );
-  useInput(
-    (input, key) => {
-      if (key.return || input.toLowerCase() === "y") defaultConfirmResolver.current?.(true);
-      else if (input.toLowerCase() === "n") defaultConfirmResolver.current?.(false);
-    },
-    { isActive: currentStep === "alerting" && alertingSubPhase === "default-confirm" },
   );
 
   // Drives whichever step is current. Re-runs whenever currentStep changes —
@@ -1098,16 +1087,6 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
         if (cancelled) return;
       }
 
-      let repairPlaceholder = false;
-      if (addresses && inspection?.placeholderDefault) {
-        setPlaceholderAddresses(inspection.placeholderDefault.addresses);
-        setAlertingSubPhase("default-confirm");
-        repairPlaceholder = await new Promise<boolean>((resolve) => {
-          defaultConfirmResolver.current = resolve;
-        });
-        if (cancelled) return;
-      }
-
       setAlertingSubPhase("applying");
       alertingChoice.current = { presets, addresses };
       const [result] = await Promise.all([applyCheckAlerts(targets, presets), sleep(MIN_SPINNER_MS)]);
@@ -1124,7 +1103,6 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
 
       let contactPoint: StepProperties["contact_point"];
       let notificationRoute: StepProperties["notification_route"];
-      let defaultContactPoint: StepProperties["default_contact_point"];
       let notificationsFailed = false;
 
       if (client && addresses) {
@@ -1139,29 +1117,6 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
           detail.push(
             `Couldn't configure email (${err instanceof Error ? err.message : String(err)}) — add a contact point at ${initialStackUrl.replace(/\/$/, "")}/alerting/notifications`,
           );
-        }
-
-        // Separate try: repairing the stack default failing shouldn't
-        // cast doubt on the contact point and route that already landed.
-        if (!notificationsFailed && inspection?.placeholderDefault) {
-          if (!repairPlaceholder) {
-            defaultContactPoint = "declined";
-          } else {
-            try {
-              await client.repairDefault(inspection.placeholderDefault, addresses);
-              if (cancelled) return;
-              defaultContactPoint = "repaired";
-              detail.push(`Replaced the placeholder address on ${inspection.placeholderDefault.name}.`);
-            } catch (err) {
-              // Not "declined": the user said yes and the write failed.
-              defaultContactPoint = "failed";
-              detail.push(
-                `Couldn't update ${inspection.placeholderDefault.name} (${err instanceof Error ? err.message : String(err)}).`,
-              );
-            }
-          }
-        } else if (!notificationsFailed) {
-          defaultContactPoint = "not_placeholder";
         }
       } else {
         // No session, or a blank email prompt. Neither is a failure: the
@@ -1181,7 +1136,6 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
         checks_alerted: result.alerted,
         contact_point: contactPoint,
         notification_route: notificationRoute,
-        default_contact_point: defaultContactPoint,
       });
     }
 
@@ -1564,17 +1518,6 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
             <Text>Email: </Text>
             <TextInput value={emailInput} onChange={setEmailInput} onSubmit={(v) => emailResolver.current?.(v)} />
           </Box>
-        </Box>
-      );
-    if (alertingSubPhase === "default-confirm")
-      return (
-        <Box flexDirection="column">
-          <Text>
-            This stack's default contact point is still set to <Text color={muted}>{placeholderAddresses}</Text>, so
-            alerts outside Synthetic Monitoring reach nobody.
-          </Text>
-          <Text>Point it at the same address too?</Text>
-          <EnterHint suffix="or n to leave it alone" />
         </Box>
       );
     return null;

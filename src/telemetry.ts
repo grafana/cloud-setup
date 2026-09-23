@@ -172,9 +172,6 @@ export interface StepProperties {
   checks_alerted?: number;
   contact_point?: "created" | "updated" | "unchanged";
   notification_route?: "created" | "unchanged";
-  // "not_placeholder" is a stack that already had a real default address,
-  // and "failed" is the user agreeing and the write not landing.
-  default_contact_point?: "repaired" | "declined" | "not_placeholder" | "failed";
 
   // frontend: pick-app
   app_resolution?: "named" | "auto_single" | "picker" | "created" | "manual";

@@ -216,7 +216,6 @@ test("the alerting step reports its two halves separately", async (t) => {
     checks_alerted: 4,
     contact_point: "created",
     notification_route: "created",
-    default_contact_point: "repaired",
   });
   api.recordStep("synthetics", stack, "alerting", {
     status: "declined",
@@ -228,7 +227,6 @@ test("the alerting step reports its two halves separately", async (t) => {
   assert.equal(sent[0].payload.alerting_outcome, "configured");
   assert.equal(sent[0].payload.contact_point, "created");
   assert.equal(sent[0].payload.notification_route, "created");
-  assert.equal(sent[0].payload.default_contact_point, "repaired");
   assert.equal(sent[0].payload.alert_presets, 2);
   assert.equal(sent[0].payload.checks_alerted, 4);
 
