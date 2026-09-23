@@ -12,7 +12,9 @@ export interface CheckboxItem {
 interface Props {
   items: CheckboxItem[];
   initialSelected: Set<string>;
-  accentColor: string;
+  // Undefined under NO_COLOR, where the focused row is marked by the
+  // '› ' prefix and bold instead.
+  accentColor: string | undefined;
   onSubmit: (selectedKeys: string[]) => void;
   onSelectionChange?: (selectedKeys: string[]) => void;
 }

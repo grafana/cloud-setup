@@ -32,12 +32,12 @@ import {
   bad,
   EnterHint,
   Header,
+  Link,
   MIN_SPINNER_MS,
   muted,
   ok,
   requireInteractiveTerminal,
   startFakeProgress,
-  url,
   useHardExit,
   Working,
 } from "./shared.js";
@@ -87,7 +87,7 @@ type ItemStatus = "pending" | "running" | "created" | "updated" | "skipped" | "f
 
 function ItemIcon({ status }: { status: ItemStatus }) {
   if (status === "created" || status === "updated") return <Text color={ok}>✓</Text>;
-  if (status === "failed") return <Text color={bad}>✖</Text>;
+  if (status === "failed") return <Text color={bad}>✗</Text>;
   if (status === "skipped") return <Text color={muted}>=</Text>;
   if (status === "running")
     return (
@@ -237,8 +237,8 @@ type AlertingSubPhase = "confirm" | "inspecting" | "email-input" | "applying";
 
 const ALERTING_WAITING_SUBPHASES: AlertingSubPhase[] = ["confirm", "email-input"];
 
-// A trailing URL is its own field rather than part of `text`, so it can be
-// rendered in the same colour as every other link in the wizard.
+// A trailing URL is its own field rather than part of `text`, so Link can
+// render it like every other link in the wizard.
 interface AlertingDetail {
   text: string;
   href?: string;
@@ -1282,7 +1282,12 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
                     <Text key={`alerting-detail-${i}`} color={muted}>
                       {"     "}
                       {line.text}
-                      {line.href ? <Text color={url}> {line.href}</Text> : null}
+                      {line.href ? (
+                        <>
+                          {" "}
+                          <Link>{line.href}</Link>
+                        </>
+                      ) : null}
                     </Text>
                   ))}
                 </Box>
@@ -1362,7 +1367,7 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
       return (
         <Box flexDirection="column">
           <Text>
-            Open a real browser to look for additional synthetic checks on <Text color={url}>{initialTargetUrl}</Text>?
+            Open a real browser to look for additional synthetic checks on <Link>{initialTargetUrl}</Link>?
           </Text>
           <EnterHint suffix="or n to skip" />
         </Box>
@@ -1408,8 +1413,7 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
       <Box flexDirection="column">
         <Text>{checksCreatedLine()}</Text>
         <Text color={muted}>
-          View checks:{" "}
-          <Text color={url}>{initialStackUrl.replace(/\/$/, "")}/a/grafana-synthetic-monitoring-app/checks</Text>
+          View checks: <Link>{initialStackUrl.replace(/\/$/, "")}/a/grafana-synthetic-monitoring-app/checks</Link>
         </Text>
       </Box>
     );
@@ -1431,7 +1435,7 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
           <Text bold>Next actions</Text>
           <SelectMenu
             items={availableNextStepOptions(nextStepsLog)}
-            accentColor={accent ?? "white"}
+            accentColor={accent}
             onSelect={handleNextStepChoice}
           />
         </Box>
@@ -1473,7 +1477,7 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
             meta: `(${formatFrequency(c.frequencyMs)})`,
           }))}
           initialSelected={new Set(selectedKeys)}
-          accentColor={accent ?? "white"}
+          accentColor={accent}
           onSubmit={(keys) => selectResolver.current?.(keys)}
           onSelectionChange={setSelectedKeys}
         />
@@ -1558,7 +1562,7 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
     if (createSubPhase === "base-url-input")
       return (
         <Box flexDirection="column">
-          {connectError && <Text color={bad}>{connectError}</Text>}
+          {connectError && <Text color={bad}>✗ {connectError}</Text>}
           <Box>
             <Text>Synthetic Monitoring API URL: </Text>
             <TextInput
@@ -1573,11 +1577,11 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
     if (createSubPhase === "token-input")
       return (
         <Box flexDirection="column">
-          {tokenError && <Text color={bad}>{tokenError}</Text>}
+          {tokenError && <Text color={bad}>✗ {tokenError}</Text>}
           <Text>Last thing, we promise. Enter your Grafana Cloud access token</Text>
           {tokenPageUrl && (
             <Text color={muted}>
-              Generate one here: <Text color={url}>{tokenPageUrl}</Text>
+              Generate one here: <Link>{tokenPageUrl}</Link>
             </Text>
           )}
           <Box>
@@ -1600,7 +1604,7 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
       <Box flexDirection="column" paddingLeft={1}>
         <Header stackUrl={initialStackUrl} />
         <Text>
-          Let's set up synthetic checks for <Text color={url}>{initialTargetUrl}</Text>
+          Let's set up synthetic checks for <Link>{initialTargetUrl}</Link>
         </Text>
         <EnterHint />
       </Box>

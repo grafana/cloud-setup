@@ -26,12 +26,12 @@ import {
   bad,
   EnterHint,
   Header,
+  Link,
   MIN_SPINNER_MS,
   muted,
   ok,
   requireInteractiveTerminal,
   startFakeProgress,
-  url,
   useHardExit,
 } from "./shared.js";
 import { recordStep, type Outcome, type StepProperties, type StepStatus } from "../telemetry.js";
@@ -800,7 +800,7 @@ export function FrontendApp({ initialStackUrl, forceGcxInstall, initialAppName }
         <Box flexDirection="column">
           <Text>Enable Session Replay? Records user sessions; consent may be required.</Text>
           <Text color={muted}>
-            Privacy details: <Text color={url}>{SESSION_REPLAY_DATA_PRIVACY_URL}</Text>
+            Privacy details: <Link>{SESSION_REPLAY_DATA_PRIVACY_URL}</Link>
           </Text>
           <Text color={muted}>
             press{" "}
@@ -881,7 +881,7 @@ export function FrontendApp({ initialStackUrl, forceGcxInstall, initialAppName }
           </Text>
           {frontendFile && appUrl && (
             <Text color={muted}>
-              Once changes are live, data will show up here: <Text color={url}>{appUrl}</Text>
+              Once changes are live, data will show up here: <Link>{appUrl}</Link>
             </Text>
           )}
           {frontendFile && sessionReplayEnabled && (

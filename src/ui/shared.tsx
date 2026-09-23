@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, type ReactNode } from "react";
 import { Box, Text, useApp, useInput } from "ink";
 import Spinner from "ink-spinner";
 import { detectFramework } from "../framework.js";
@@ -16,14 +16,20 @@ export const NO_COLOR = Boolean(process.env.NO_COLOR);
 export const accent = NO_COLOR ? undefined : "#FFA500";
 export const ok = NO_COLOR ? undefined : "green";
 export const bad = NO_COLOR ? undefined : "red";
-// A URL the user might actually open — same color everywhere one shows
-// up (target URL, "view checks", "generate a token", app dashboard),
-// rather than relying on bold or <angle brackets> to make it stand out.
+// A URL the user might actually open — same treatment everywhere one shows
+// up (target URL, "view checks", "generate a token", app dashboard). Use
+// Link rather than this token directly.
 export const url = NO_COLOR ? undefined : "blue";
 // A plain ANSI "gray" (bright-black, code 90) reads as near-invisible on a
 // dark/charcoal terminal background — verified live. This hex sits at a
-// medium gray instead, legible as "secondary" text on both dark and light
-// backgrounds without competing with the default foreground.
+// medium gray instead.
+//
+// Tuned against dark backgrounds only: it clears WCAG AA there (5.0:1 on
+// Dracula up to 7.4:1 on black) but not on light ones (2.9:1 on white,
+// 2.0:1 on Novel). Being an absolute value rather than an ANSI index, it
+// cannot adapt. A single gray that clears AA on both extremes exists
+// (#757575) but leaves every background merely adequate, so the trade is
+// unresolved rather than overlooked.
 export const muted = NO_COLOR ? undefined : "#999999";
 export const ANIMATE = Boolean(process.stdout.isTTY) && !NO_COLOR;
 
@@ -177,6 +183,19 @@ export function EnterHint({ suffix }: { suffix?: string } = {}) {
         ⏎ enter
       </Text>{" "}
       to continue{suffix ? `, ${suffix}` : ""}
+    </Text>
+  );
+}
+
+// Underlined as well as colored, because color alone cannot carry this.
+// ANSI blue is whatever the theme says it is, and on the common dark
+// palettes it lands between 1.6:1 and 3.4:1 against their own backgrounds.
+// Underline also survives NO_COLOR, where a URL would otherwise be
+// indistinguishable from the prose around it.
+export function Link({ children }: { children: ReactNode }) {
+  return (
+    <Text color={url} underline>
+      {children}
     </Text>
   );
 }

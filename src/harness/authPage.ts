@@ -3,7 +3,7 @@
 // so it should look like one rather than like a marketing landing page.
 function terminalPage(status: string, statusOk: boolean, message: string): string {
   const statusColor = statusOk ? "#3fb950" : "#f85149";
-  const statusIcon = statusOk ? "✓" : "✖";
+  const statusIcon = statusOk ? "✓" : "✗";
   return [
     "<!DOCTYPE html>",
     '<html lang="en"><head><meta charset="utf-8">',

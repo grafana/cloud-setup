@@ -9,7 +9,8 @@ export interface SelectMenuItem {
 
 interface Props {
   items: SelectMenuItem[];
-  accentColor: string;
+  // Undefined under NO_COLOR; bold still marks the focused row.
+  accentColor: string | undefined;
   onSelect: (key: string) => void;
 }
 

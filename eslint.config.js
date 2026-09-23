@@ -39,6 +39,28 @@ export default tseslint.config(
     },
   },
 
+  // Color has to come from the tokens in ui/shared.tsx. A literal at a call
+  // site is an absolute value that ignores the user's terminal theme, which
+  // is how `accent ?? "white"` came to paint the focused row white under
+  // NO_COLOR. shared.tsx owns the tokens; authPage.ts is a real web page
+  // with its own background, so absolute values are correct there; and
+  // cliStyle.ts writes one raw ANSI escape by hand.
+  {
+    files: ["src/**/*.ts", "src/**/*.tsx"],
+    ignores: ["src/ui/shared.tsx", "src/harness/authPage.ts", "src/cliStyle.ts"],
+    rules: {
+      "no-restricted-syntax": [
+        "error",
+        {
+          selector:
+            "Literal[value=/^(#[0-9A-Fa-f]{3,8}|white|black|red|green|blue|yellow|cyan|magenta|gray|grey|blackBright)$/]",
+          message:
+            "Import a color token from ui/shared.tsx instead of naming a color here — a literal ignores the terminal theme.",
+        },
+      ],
+    },
+  },
+
   {
     files: ["tests/**/*.mjs"],
     extends: [js.configs.recommended],
