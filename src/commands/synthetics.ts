@@ -48,7 +48,7 @@ export const syntheticsCommand: Command = {
   usageLine: USAGE_LINE,
   shortUsageLine: SHORT_USAGE_LINE,
   example: EXAMPLE,
-  summary: "Set up Synthetic Monitoring checks and alerts",
+  summary: "Set up Synthetic Monitoring checks",
   flags: [
     { flag: "--url <url>", description: "Target URL to check (required)" },
     { flag: "--stack <url>", description: "Grafana Cloud stack URL, e.g. https://my-team.grafana.net (required)" },
