@@ -8,12 +8,21 @@ npm run build   # tsc, src -> dist
 npm test        # builds, then runs tests/*.test.mjs
 ```
 
-CONTRIBUTING.md covers the toolchain: the two tsconfigs, the Node version split, the ESLint rule exclusions and why each is set the way it is. Read it before changing a config file. The traps worth knowing up front:
+**Commit subjects must be Conventional Commits.** Changes land by squash merge and the PR title becomes the commit subject, so the PR title is what has to conform: `feat: Add a thing`, not `Add a thing`. Start the subject with a capital, since release-please copies it straight into the changelog — preferred, though not enforced. Releases are generated from these subjects, so a wrong type means a wrong version. CI checks the format against `commitlint.config.js`.
+
+CONTRIBUTING.md covers the toolchain: the two tsconfigs, the Node version split, the ESLint rule exclusions, the release flow, and why each is set the way it is. Read it before changing a config file. The traps worth knowing up front:
 
 - **The supported Node floor lives in `engines.node`, once.** `checkNodeVersion()` in `src/ui/shared.tsx` parses it out of the manifest and CI installs exactly that version. Do not add a hardcoded minimum next to the gate.
 - **`lib` tracks `engines.node`, not the newest spec.** Raising it past what the floor's Node provides lets the compiler bless calls that crash for real users.
 - **Four `react-hooks` rules are off on purpose** (`purity`, `refs`, `static-components`, `set-state-in-effect`). They target React Compiler, which this app does not run. Turning them back on means restructuring `SetupApp.tsx` and `FrontendApp.tsx`, so it is its own change, not a cleanup.
 - **`npm test` cannot run on the `engines.node` floor**, for a `mock.module()` bug in that Node rather than anything wrong with the wizard. Raising `engines.node` is not the fix.
+- **Never hand-edit the version in package.json, CHANGELOG.md or `.release-please-manifest.json`.** release-please owns all three. To force a version, put `Release-As: x.y.z` in a commit body.
+
+## Opening a PR or an issue
+
+`gh pr create` does not read `.github/PULL_REQUEST_TEMPLATE.md`, so pass it explicitly (`--body-file .github/PULL_REQUEST_TEMPLATE.md`, then fill it in) or write a body with the same two headings. It is short on purpose: what changed and why, how a reviewer checks it, and whether `npm run check` passed.
+
+Issues go through the forms in `.github/ISSUE_TEMPLATE` — blank issues are disabled. For a bug, the two things worth collecting before filing are the terminal output including the version line and, if the failing step talks to the Assistant, the file `--debug` writes.
 
 ## Telemetry
 

@@ -1,0 +1,32 @@
+name: Lint PR title
+
+on:
+  pull_request:
+    types:
+      - opened
+      # Without `edited`, a corrected title never re-runs.
+      - edited
+      - reopened
+      - synchronize
+
+permissions:
+  contents: read
+
+jobs:
+  lint-pr-title:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      # Needed only so commitlint.config.js is on disk; the action brings its
+      # own commitlint, so there is nothing to install.
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Lint PR title
+        uses: grafana/shared-workflows/actions/lint-pr-title@70c40e5b6522c854a55334124545261cae3d4c73 # lint-pr-title/v1.2.4
+        with:
+          config-path: "${{ github.workspace }}/commitlint.config.js"

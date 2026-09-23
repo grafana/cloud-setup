@@ -1,0 +1,21 @@
+name: 💡 Idea
+description: A new capability, or an improvement to an existing step
+title: "💡 "
+type: Enhancement
+body:
+  - type: markdown
+    attributes:
+      value: |
+        No need to write a spec. What you want and why is enough to start the conversation.
+
+  - type: textarea
+    id: idea
+    attributes:
+      label: Your idea
+      description: What should the wizard do, and what problem does that solve for you? If it changes an existing step, say what happens today.
+      placeholder: |
+        After the frontend command finishes, I still have to open the stack by hand to see whether
+        data is arriving. It would help if the last step waited for the first Faro payload and
+        confirmed it, the way the synthetics command confirms the first check run.
+    validations:
+      required: true

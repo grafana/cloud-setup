@@ -4,43 +4,51 @@ on:
   release:
     types:
       - published
+  # Do not convert this into a reusable workflow: npm trusted publishing
+  # matches on workflow filename, and for workflow_call it matches the caller.
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to publish, e.g. v0.2.0"
+        type: string
+        required: true
+
+permissions:
+  contents: read
 
 jobs:
   publish:
     runs-on: ubuntu-latest
-    # Must match the name of the GitHub Actions Environment configured in
-    # repo settings (restricted to protected branches/tags) and referenced
-    # in the package's Trusted Publishing config on npmjs.com.
+    # Must match the Environment in repo settings and the Trusted Publishing
+    # config on npmjs.com.
     environment: npm-publish
     permissions:
       contents: read
       id-token: write
+    env:
+      RELEASE_TAG: ${{ github.event.inputs.tag || github.event.release.tag_name }}
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
+          ref: ${{ env.RELEASE_TAG }}
           persist-credentials: false
 
       - name: Setup Node.js
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
-          # Pinned in .nvmrc, the single source of truth for the toolchain.
           node-version-file: .nvmrc
           registry-url: "https://registry.npmjs.org"
           scope: "@grafana"
-          # This is a publishing workflow; disable caching so a cache entry
-          # poisoned from a less-trusted context can't influence what gets
-          # published (zizmor cache-poisoning).
+          # Disabled: a poisoned cache entry must not reach a publish
+          # (zizmor cache-poisoning).
           package-manager-cache: false
 
-      # Trusted (OIDC) publishing requires npm >= 11.5.1; pin it explicitly
-      # rather than relying on whatever npm ships bundled with Node.
+      # Trusted (OIDC) publishing requires npm >= 11.5.1.
       - name: Update npm
         run: npm install -g npm@^11.5.1
 
       - name: Validate version matches release tag
-        env:
-          RELEASE_TAG: ${{ github.event.release.tag_name }}
         run: |
           EXPECTED_VERSION="${RELEASE_TAG#v}"
           PACKAGE_VERSION=$(node -p "require('./package.json').version")
@@ -53,10 +61,32 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Build
-        run: npm run build
+      - name: Verify
+        run: npm run check
 
-      # No NPM_TOKEN: npm detects it's running in GitHub Actions and
-      # authenticates via OIDC trusted publishing instead.
+      - name: Verify the packaged artifact
+        run: ./scripts/verify-package.sh
+
+      # No NPM_TOKEN: authenticates via OIDC trusted publishing.
       - name: Publish
         run: npm publish
+
+      - name: Notify Slack
+        if: vars.SLACK_RELEASE_CHANNEL_ID != ''
+        uses: grafana/shared-workflows/actions/send-slack-message@551bc8d50017d3e95d5da3f8a4826e733a208dc0 # send-slack-message/v3.0.2
+        with:
+          method: chat.postMessage
+          payload: |
+            {
+              "channel": "${{ vars.SLACK_RELEASE_CHANNEL_ID }}",
+              "text": "Published @grafana/cloud-setup ${{ env.RELEASE_TAG }} to npm",
+              "blocks": [
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": "*<https://www.npmjs.com/package/@grafana/cloud-setup|@grafana/cloud-setup>* `${{ env.RELEASE_TAG }}` published to npm\n<${{ github.server_url }}/${{ github.repository }}/releases/tag/${{ env.RELEASE_TAG }}|Release notes> · <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|Workflow run>"
+                  }
+                }
+              ]
+            }
