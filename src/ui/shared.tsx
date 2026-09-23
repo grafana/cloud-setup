@@ -61,16 +61,8 @@ const PACKAGE_JSON = readPackageJson();
 
 export const PACKAGE_VERSION = PACKAGE_JSON.version ?? "0.0.0";
 
-// engines.node in package.json is the only place the supported floor is
-// written down — npm checks it, CI reads it for the test matrix, and the gate
-// below enforces it at runtime. It is a range like ">=22.6.0", so take the
-// version out of it.
-//
-// A manifest that cannot be read leaves the floor at 0.0, which waves every
-// version through rather than guessing a number that could drift from the real
-// one. That is the same graceful degradation PACKAGE_VERSION already does, and
-// it only loses a friendly error message: an unsupported Node still fails, just
-// later and less clearly.
+// engines.node is a range like ">=22.6.0". An unreadable manifest yields 0.0,
+// which lets every version through rather than guessing a floor.
 function parseNodeFloor(range: string | undefined): { major: number; minor: number } {
   const match = /(\d+)\.(\d+)/.exec(range ?? "");
   if (!match) return { major: 0, minor: 0 };

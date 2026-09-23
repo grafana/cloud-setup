@@ -7,8 +7,6 @@ on:
       - main
 
 jobs:
-  # Separate from `test` so a formatting violation and a functional failure are
-  # reported distinctly, and so all three checks run even when the first fails.
   checks:
     runs-on: ubuntu-latest
     permissions:
@@ -59,16 +57,11 @@ jobs:
       - name: Test
         run: npm test
 
-      # Catches what the suite cannot: a missing shebang, a wrong `bin` path, a
-      # file `files` excludes, or an import that resolves in the repo but is not
-      # in `dependencies`. All of those install cleanly and fail on first run.
       - name: Verify the packaged artifact
         run: npm run verify:package
 
-  # engines.node is a promise to users, so something has to check it is still
-  # true. It runs the built CLI rather than `npm test`: the suite's
-  # mock.module() needs a newer node:test than the floor ships, but the wizard
-  # itself works there, and the wizard is what users get.
+  # Runs the CLI, not `npm test`: the suite's mock.module() cannot run on the
+  # floor. See CONTRIBUTING.md.
   oldest-supported-node:
     runs-on: ubuntu-latest
     permissions:
@@ -91,14 +84,10 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      # Packs and runs the real artifact on the floor, so this covers both "the
-      # package is well-formed" and "the whole import graph, Ink included, still
-      # loads on the oldest Node we promise".
       - name: Verify the packaged artifact
         run: npm run verify:package
 
-      # checkNodeVersion() derives its minimum from engines.node, so this fails
-      # if the two ever disagree.
+      # Fails if checkNodeVersion() and engines.node ever disagree.
       - name: The version gate accepts this version
         run: |
           npm run build

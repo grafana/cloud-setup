@@ -1,19 +1,12 @@
 #!/usr/bin/env sh
-# Packs the package the way `npm publish` would, installs the tarball into a
-# throwaway project, and runs the installed binary.
-#
-# Nothing else checks this. The test suite imports from dist directly, so it
-# cannot see a missing shebang, a wrong `bin` path, a file that `files` excludes,
-# or an import that resolves inside the repo but is missing from `dependencies` —
-# each of which installs fine and fails the moment a user runs the CLI.
+# Packs the package as `npm publish` would, installs the tarball into a
+# throwaway project, and runs the installed binary. See CONTRIBUTING.md.
 set -eu
 
 WORKDIR="$(mktemp -d)"
 # shellcheck disable=SC2064 # WORKDIR is fixed here, so expand it now.
 trap "rm -rf '$WORKDIR'" EXIT
 
-# prepack rebuilds from a cleaned dist, so the tarball cannot carry a stale
-# output whose source no longer exists.
 TARBALL_NAME="$(npm pack --pack-destination "$WORKDIR" --silent | tail -1)"
 if [ -z "$TARBALL_NAME" ] || [ ! -f "$WORKDIR/$TARBALL_NAME" ]; then
   echo "Error: npm pack produced no tarball." >&2
@@ -28,7 +21,7 @@ if ! tar tzf "$TARBALL" | grep -qx "package/$BIN_PATH"; then
   exit 1
 fi
 
-# A bin without a shebang is installed as a symlink that the shell cannot run.
+# Installed as a symlink, so the shell needs the shebang to run it.
 if [ "$(tar xzfO "$TARBALL" "package/$BIN_PATH" | head -c 2)" != "#!" ]; then
   echo "Error: bin '$BIN_PATH' has no shebang." >&2
   exit 1

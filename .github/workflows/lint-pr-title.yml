@@ -1,13 +1,10 @@
 name: Lint PR title
 
-# Squash merging is how changes land here, and the repo is configured to use the
-# PR title as the commit subject (squash_merge_commit_title: PR_TITLE) with an
-# empty body. So the PR title *is* the commit message release-please will read,
-# and this is the only place it can be checked before it becomes history.
 on:
   pull_request:
     types:
       - opened
+      # Without `edited`, a corrected title never re-runs.
       - edited
       - reopened
       - synchronize
@@ -22,9 +19,8 @@ jobs:
       contents: read
       pull-requests: read
     steps:
-      # Checkout only, so commitlint.config.js is on disk for config-path. No
-      # Node setup and no install: the action carries its own commitlint and
-      # @commitlint/config-conventional, which is what the config `extends`.
+      # Needed only so commitlint.config.js is on disk; the action brings its
+      # own commitlint, so there is nothing to install.
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:

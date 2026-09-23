@@ -1,14 +1,11 @@
 name: Publish to npm
 
 on:
-  # The manual path: publishing a GitHub Release by hand.
   release:
     types:
       - published
-  # The automated path. release.yml dispatches this after release-please
-  # creates a release, because a release created with GITHUB_TOKEN does not
-  # fire `release: published`. Publishing lives here rather than in release.yml
-  # so npm trusted publishing keeps matching this filename.
+  # Do not convert this into a reusable workflow: npm trusted publishing
+  # matches on workflow filename, and for workflow_call it matches the caller.
   workflow_dispatch:
     inputs:
       tag:
@@ -22,40 +19,32 @@ permissions:
 jobs:
   publish:
     runs-on: ubuntu-latest
-    # Must match the name of the GitHub Actions Environment configured in
-    # repo settings (restricted to protected branches/tags) and referenced
-    # in the package's Trusted Publishing config on npmjs.com.
+    # Must match the Environment in repo settings and the Trusted Publishing
+    # config on npmjs.com.
     environment: npm-publish
     permissions:
       contents: read
       id-token: write
     env:
-      # github.event.inputs is safe to reference under either trigger; it is
-      # simply empty for `release: published`.
       RELEASE_TAG: ${{ github.event.inputs.tag || github.event.release.tag_name }}
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
-          # Explicit, so both triggers publish exactly the tagged tree rather
-          # than whatever the event's default ref happens to be.
           ref: ${{ env.RELEASE_TAG }}
           persist-credentials: false
 
       - name: Setup Node.js
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
-          # Pinned in .nvmrc, the single source of truth for the toolchain.
           node-version-file: .nvmrc
           registry-url: "https://registry.npmjs.org"
           scope: "@grafana"
-          # This is a publishing workflow; disable caching so a cache entry
-          # poisoned from a less-trusted context can't influence what gets
-          # published (zizmor cache-poisoning).
+          # Disabled: a poisoned cache entry must not reach a publish
+          # (zizmor cache-poisoning).
           package-manager-cache: false
 
-      # Trusted (OIDC) publishing requires npm >= 11.5.1; pin it explicitly
-      # rather than relying on whatever npm ships bundled with Node.
+      # Trusted (OIDC) publishing requires npm >= 11.5.1.
       - name: Update npm
         run: npm install -g npm@^11.5.1
 
@@ -72,26 +61,16 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      # Redundant with prepublishOnly, which `npm publish` runs anyway, but as
-      # its own step a failure is reported here rather than buried in npm's
-      # output.
       - name: Verify
         run: npm run check
 
-      # Packs and runs the real artifact, which is the only way to catch a
-      # missing shebang, a broken `bin` path, or an import that resolves
-      # locally but is not in `dependencies`. `npm pack` runs prepack, so the
-      # tarball is built from a cleaned dist.
       - name: Verify the packaged artifact
         run: ./scripts/verify-package.sh
 
-      # No NPM_TOKEN: npm detects it's running in GitHub Actions and
-      # authenticates via OIDC trusted publishing instead.
+      # No NPM_TOKEN: authenticates via OIDC trusted publishing.
       - name: Publish
         run: npm publish
 
-      # Skipped until the SLACK_RELEASE_CHANNEL_ID repository variable is set,
-      # so a release never fails for want of a notification.
       - name: Notify Slack
         if: vars.SLACK_RELEASE_CHANNEL_ID != ''
         uses: grafana/shared-workflows/actions/send-slack-message@551bc8d50017d3e95d5da3f8a4826e733a208dc0 # send-slack-message/v3.0.2

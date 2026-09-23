@@ -23,16 +23,8 @@ jobs:
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
 
-      # A GitHub Release created with GITHUB_TOKEN does not fire
-      # `release: published` — GitHub suppresses those events so automation
-      # cannot trigger itself recursively. workflow_dispatch is one of the two
-      # documented exceptions, so this is how the publish actually starts.
-      #
-      # The publish stays in publish.yml rather than moving in here on purpose:
-      # npm trusted publishing matches on the workflow *filename*, and for a
-      # reusable workflow it matches the calling workflow, which would mean
-      # reconfiguring the trusted publisher on npmjs.com. A dispatch keeps
-      # publish.yml as the top-level workflow, so the existing config holds.
+      # A dispatch, not the `release: published` event: a release created with
+      # GITHUB_TOKEN does not fire that event. See CONTRIBUTING.md.
       - name: Dispatch the publish workflow
         if: steps.release.outputs.release_created == 'true'
         env:
