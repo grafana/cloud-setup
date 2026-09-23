@@ -10,10 +10,13 @@ const MINUTE = 60 * 1000;
 
 // What discover.ts actually generates. Not one of these runs fast enough
 // for the SM app's own "5m" form default to be a legal period.
-const UPTIME = { frequencyMs: 10 * MINUTE, settings: { http: { method: "GET" } } };
-const BROWSER = { frequencyMs: 20 * MINUTE, settings: { browser: { script: "" } } };
-const SSL = { frequencyMs: 60 * MINUTE, settings: { browser: { script: "" } } };
-const AI_ENDPOINT = { frequencyMs: 30 * MINUTE, settings: { http: { method: "GET" } } };
+const HTTPS = "https://example.com";
+const UPTIME = { target: HTTPS, frequencyMs: 10 * MINUTE, settings: { http: { method: "GET" } } };
+const BROWSER = { target: HTTPS, frequencyMs: 20 * MINUTE, settings: { browser: { script: "" } } };
+const SSL = { target: HTTPS, frequencyMs: 60 * MINUTE, settings: { browser: { script: "" } } };
+const AI_ENDPOINT = { target: `${HTTPS}/api/profile`, frequencyMs: 30 * MINUTE, settings: { http: { method: "GET" } } };
+// Same check type as UPTIME, but a target with no certificate to watch.
+const UPTIME_PLAIN = { target: "http://example.com", frequencyMs: 10 * MINUTE, settings: { http: { method: "GET" } } };
 
 test("the derived period is never shorter than the check frequency", () => {
   // The constraint that makes a hard-coded period impossible.
@@ -70,6 +73,29 @@ test("certificate expiry is dropped for a browser check and kept for an http one
   assert.equal(alert.threshold, 30);
   // Certificate expiry's only rule-catalogue key is the empty period.
   assert.equal(alert.period, "");
+});
+
+test("certificate expiry is dropped for a plain-http target", () => {
+  // The alert queries probe_ssl_earliest_cert_expiry, which the agent only
+  // emits when the probe negotiates TLS. On an http:// target the rule
+  // would be created and then sit on NoData forever, so it's dropped here
+  // rather than shipped as a rule that can never fire. The check type is
+  // identical to UPTIME's, so only the scheme can be doing this.
+  assert.deepEqual(alertsForCheck(UPTIME_PLAIN, ["TLSTargetCertificateCloseToExpiring"]), []);
+  assert.equal(alertsForCheck(UPTIME, ["TLSTargetCertificateCloseToExpiring"]).length, 1);
+
+  // Probe failures are unaffected: those work on any target.
+  assert.equal(alertsForCheck(UPTIME_PLAIN, ["ProbeFailedExecutionsTooHigh"]).length, 1);
+});
+
+test("a plain-http pass is not offered, or told about, a certificate alert", () => {
+  // presetsFor drives the confirm question, so this is also what stops the
+  // copy promising certificate monitoring for a target with no certificate.
+  assert.deepEqual(
+    presetsFor([UPTIME_PLAIN, BROWSER]).map((p) => p.name),
+    ["ProbeFailedExecutionsTooHigh"],
+  );
+  assert.equal(alertsSummary(presetsFor([UPTIME_PLAIN, BROWSER])), "check failures");
 });
 
 test("an unpicked preset is never sent", () => {

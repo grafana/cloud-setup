@@ -4,6 +4,7 @@ import type { CheckSettings } from "./types.js";
 // import CheckAlert from here without pulling in the discovery chain.
 // Candidate satisfies it as-is.
 export interface AlertTarget {
+  target: string;
   frequencyMs: number;
   settings: CheckSettings;
 }
@@ -62,6 +63,9 @@ export interface AlertPreset {
   // Sending an alert for a type the API doesn't accept it on fails the
   // whole check, so this gates which presets a pass gets.
   checkTypes: CheckType[];
+  // Whether the alert is meaningless unless the target serves TLS — see
+  // presentsCertificate.
+  requiresCertificate: boolean;
 }
 
 // Thresholds match the SM app's own form defaults
@@ -76,6 +80,7 @@ export const ALERT_PRESETS: AlertPreset[] = [
     threshold: 1,
     usesPeriod: true,
     checkTypes: ["http", "dns", "ping", "tcp", "traceroute", "grpc", "scripted", "browser", "multihttp"],
+    requiresCertificate: false,
   },
   {
     name: "TLSTargetCertificateCloseToExpiring",
@@ -87,6 +92,7 @@ export const ALERT_PRESETS: AlertPreset[] = [
     // warnDays: 30, so an expiring cert fails the check and probe failures
     // fire at the same threshold.
     checkTypes: ["http", "tcp"],
+    requiresCertificate: true,
   },
 ];
 
@@ -96,9 +102,19 @@ function checkTypeOf(target: AlertTarget): CheckType | undefined {
   return (Object.keys(target.settings) as CheckType[]).find((k) => target.settings[k] !== undefined);
 }
 
+// probe_ssl_earliest_cert_expiry is only emitted when the probe actually
+// negotiates TLS, so a certificate alert on a plain-http target yields a
+// rule that sits on NoData forever rather than one that fires. The SM API
+// takes it regardless — its validator only looks at the check type — so
+// this is ours to catch.
+function presentsCertificate(check: AlertTarget): boolean {
+  return /^https:\/\//i.test(check.target);
+}
+
 function appliesTo(preset: AlertPreset, target: AlertTarget): boolean {
   const type = checkTypeOf(target);
   if (!type || !preset.checkTypes.includes(type)) return false;
+  if (preset.requiresCertificate && !presentsCertificate(target)) return false;
   return !preset.usesPeriod || periodFor(target.frequencyMs) !== undefined;
 }
 
