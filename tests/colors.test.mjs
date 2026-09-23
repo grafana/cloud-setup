@@ -5,16 +5,16 @@ import { test } from "node:test";
 // module instance. The query string defeats the ESM cache, the same way
 // tests/telemetry.test.mjs does it.
 let sequence = 0;
-async function loadTokens(noColor) {
+async function loadTheme(noColor) {
   if (noColor === undefined) delete process.env.NO_COLOR;
   else process.env.NO_COLOR = noColor;
   // Nothing here should reach the network or the state directory, and this
   // makes sure of it.
   process.env.CLOUD_SETUP_TELEMETRY = "disabled";
-  return import(`../dist/ui/shared.js?colors=${sequence++}`);
+  return import(`../dist/theme.js?colors=${sequence++}`);
 }
 
-const TOKENS = ["accent", "ok", "bad", "url", "muted"];
+const TOKENS = ["ACCENT", "OK", "BAD", "URL", "MUTED"];
 
 // WCAG 2.1 relative luminance and contrast ratio.
 function luminance(hex) {
@@ -32,9 +32,9 @@ test("NO_COLOR clears every color token", async () => {
   // Not cosmetic: a token that stays set is a value Ink will emit, and the
   // one that did — `accent ?? "white"` at the picker call sites — painted
   // the focused row white, which on a light terminal is invisible.
-  const tokens = await loadTokens("1");
+  const { COLORS } = await loadTheme("1");
   for (const name of TOKENS) {
-    assert.equal(tokens[name], undefined, `${name} must be undefined under NO_COLOR`);
+    assert.equal(COLORS[name], undefined, `${name} must be undefined under NO_COLOR`);
   }
 });
 
@@ -42,17 +42,17 @@ test("any non-empty NO_COLOR value opts out, per the spec", async () => {
   // no-color.org: "when present and not an empty string, regardless of its
   // value". So NO_COLOR=0 disables color rather than enabling it.
   for (const value of ["1", "0", "false", "anything"]) {
-    const tokens = await loadTokens(value);
-    assert.equal(tokens.muted, undefined, `NO_COLOR=${value} must opt out`);
+    const { COLORS } = await loadTheme(value);
+    assert.equal(COLORS.MUTED, undefined, `NO_COLOR=${value} must opt out`);
   }
-  const empty = await loadTokens("");
-  assert.notEqual(empty.muted, undefined, "an empty NO_COLOR is not an opt-out");
+  const { COLORS: empty } = await loadTheme("");
+  assert.notEqual(empty.MUTED, undefined, "an empty NO_COLOR is not an opt-out");
 });
 
 test("every token has a value when color is on", async () => {
-  const tokens = await loadTokens(undefined);
+  const { COLORS } = await loadTheme(undefined);
   for (const name of TOKENS) {
-    assert.notEqual(tokens[name], undefined, `${name} must have a value`);
+    assert.notEqual(COLORS[name], undefined, `${name} must have a value`);
   }
 });
 
@@ -81,19 +81,19 @@ const FLOORS = {
   // The only token that carries content by itself — detail lines, hints,
   // picker descriptions — so it needs a light floor that keeps it readable.
   // #999999 sits at 2.04:1 on the worst light background here.
-  muted: { dark: 4.5, light: 2.0 },
+  MUTED: { dark: 4.5, light: 2.0 },
   // Every accent site pairs it with bold, a glyph (● › ⏎) or a spinner, so
   // poor contrast costs legibility and never information. Its light floor
   // is therefore set only to catch the catastrophe: white-on-white is
   // 1.0:1. Note the headroom is 0.02 — lightening accent at all will trip
   // this, which is the point.
-  accent: { dark: 4.5, light: 1.4 },
+  ACCENT: { dark: 4.5, light: 1.4 },
 };
 
 test("the absolute color tokens hold their contrast floors", async () => {
-  const tokens = await loadTokens(undefined);
+  const { COLORS } = await loadTheme(undefined);
   for (const [name, floors] of Object.entries(FLOORS)) {
-    const value = tokens[name];
+    const value = COLORS[name];
     assert.match(value, /^#[0-9A-Fa-f]{6}$/, `${name} should be a hex value`);
     for (const [label, background] of Object.entries(DARK_BACKGROUNDS)) {
       const r = contrast(value, background);
@@ -110,12 +110,12 @@ test("no token can become invisible against any supported background", async () 
   // The blunt guard, and the reason this file exists: `accent ?? "white"`
   // used to paint the picker's focused row white under NO_COLOR, which on a
   // light terminal is text you cannot see. Nothing may sit near 1:1.
-  const tokens = await loadTokens(undefined);
+  const { COLORS } = await loadTheme(undefined);
   const backgrounds = { ...DARK_BACKGROUNDS, ...LIGHT_BACKGROUNDS };
-  for (const name of ["accent", "muted"]) {
+  for (const name of ["ACCENT", "MUTED"]) {
     for (const [label, background] of Object.entries(backgrounds)) {
-      const r = contrast(tokens[name], background);
-      assert.ok(r >= 1.4, `${name} (${tokens[name]}) is ${r.toFixed(2)}:1 on ${label} — effectively invisible`);
+      const r = contrast(COLORS[name], background);
+      assert.ok(r >= 1.4, `${name} (${COLORS[name]}) is ${r.toFixed(2)}:1 on ${label} — effectively invisible`);
     }
   }
 });
@@ -125,4 +125,24 @@ test("the contrast helper agrees with known WCAG values", async () => {
   assert.equal(contrast("#FFFFFF", "#000000").toFixed(0), "21");
   assert.equal(contrast("#777777", "#FFFFFF").toFixed(2), "4.48");
   assert.equal(contrast("#000000", "#000000").toFixed(0), "1");
+});
+
+test("no two icon names share a glyph", async () => {
+  // Two names for one symbol is how a vocabulary stops being one: it lets a
+  // caller pick ICONS.FAIL in one place and something equal-but-different in
+  // another, which is the drift this object exists to stop.
+  const { ICONS } = await loadTheme(undefined);
+  const values = Object.values(ICONS);
+  assert.equal(new Set(values).size, values.length, `duplicate glyph in ICONS: ${values.join(" ")}`);
+});
+
+test("the status pair is weight-matched", async () => {
+  // U+2713/U+2717 are the light Dingbats pair. Mixing in a heavy form
+  // (U+2714 or U+2716) reads as a different state rather than the same one,
+  // which is exactly what the tree used to do.
+  const { ICONS } = await loadTheme(undefined);
+  assert.equal(ICONS.OK, "\u2713");
+  assert.equal(ICONS.FAIL, "\u2717");
+  assert.ok(!Object.values(ICONS).includes("\u2714"), "heavy check mark must stay unused");
+  assert.ok(!Object.values(ICONS).includes("\u2716"), "heavy cross must stay unused");
 });

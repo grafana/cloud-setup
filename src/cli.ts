@@ -3,6 +3,7 @@ import { COMMANDS } from "./commands/index.js";
 import { printCommandHelp } from "./commands/shared.js";
 import { bad, titleLine } from "./cliStyle.js";
 import { SmApiError } from "./products/syntheticMonitoring/api.js";
+import { ICONS } from "./theme.js";
 
 function printGlobalHelp(): void {
   const nameWidth = Math.max(...COMMANDS.map((c) => c.name.length));
@@ -27,7 +28,7 @@ function printUnknownCommand(name: string): void {
     [
       titleLine(),
       "",
-      bad(`✗ Unknown command: ${name}`),
+      bad(`${ICONS.FAIL} Unknown command: ${name}`),
       "",
       "Run npx @grafana/cloud-setup --help to see available commands.",
     ].join("\n"),

@@ -1,6 +1,7 @@
 import { existsSync, statSync } from "node:fs";
 import path from "node:path";
 import { bad, titleLine } from "../cliStyle.js";
+import { ICONS } from "../theme.js";
 
 export interface CommandFlag {
   flag: string;
@@ -26,7 +27,7 @@ export function printCliError(command: Command, message: string): never {
     [
       titleLine(),
       "",
-      bad(`✗ ${message}`),
+      bad(`${ICONS.FAIL} ${message}`),
       "",
       "USAGE",
       `  ${command.shortUsageLine}`,

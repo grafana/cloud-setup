@@ -3,7 +3,8 @@ import { useRef, useState } from "react";
 import { Box, Text, useInput } from "ink";
 import { ensureAssistantAuth } from "../../harness/index.js";
 import { setStackIdentity } from "../../telemetry.js";
-import { EnterHint, MIN_SPINNER_MS, muted } from "../shared.js";
+import { EnterHint, MIN_SPINNER_MS } from "../shared.js";
+import { COLORS } from "../../theme.js";
 
 export type AuthSubPhase = "browser-confirm" | "authenticating";
 export const AUTH_WAITING_SUBPHASES: AuthSubPhase[] = ["browser-confirm"];
@@ -84,7 +85,9 @@ export function useAuthStep(confirmText: string, isActive: boolean): AuthStep {
         <EnterHint suffix="or n to skip" />
       </Box>
     ) : subPhase === "authenticating" ? (
-      <Text color={muted}>Waiting for sign-in in the browser — press n or Esc to cancel and continue without it.</Text>
+      <Text color={COLORS.MUTED}>
+        Waiting for sign-in in the browser — press n or Esc to cancel and continue without it.
+      </Text>
     ) : null;
 
   return { subPhase, error, isWaiting: AUTH_WAITING_SUBPHASES.includes(subPhase), body, run };

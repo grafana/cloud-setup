@@ -6,32 +6,12 @@ import { useEffect, useRef, type ReactNode } from "react";
 import { Box, Text, useApp, useInput } from "ink";
 import Spinner from "ink-spinner";
 import { detectFramework } from "../framework.js";
+import { ANIMATE, COLORS, ICONS } from "../theme.js";
 import { recordRun, waitForTelemetry, type Command, type Outcome } from "../telemetry.js";
 
 // Every automatic spinner/loading-bar phase stays visible at least this
 // long, even when the real work behind it finishes faster.
 export const MIN_SPINNER_MS = 3000;
-
-export const NO_COLOR = Boolean(process.env.NO_COLOR);
-export const accent = NO_COLOR ? undefined : "#FFA500";
-export const ok = NO_COLOR ? undefined : "green";
-export const bad = NO_COLOR ? undefined : "red";
-// A URL the user might actually open — same treatment everywhere one shows
-// up (target URL, "view checks", "generate a token", app dashboard). Use
-// Link rather than this token directly.
-export const url = NO_COLOR ? undefined : "blue";
-// A plain ANSI "gray" (bright-black, code 90) reads as near-invisible on a
-// dark/charcoal terminal background — verified live. This hex sits at a
-// medium gray instead.
-//
-// Tuned against dark backgrounds only: it clears WCAG AA there (5.0:1 on
-// Dracula up to 7.4:1 on black) but not on light ones (2.9:1 on white,
-// 2.0:1 on Novel). Being an absolute value rather than an ANSI index, it
-// cannot adapt. A single gray that clears AA on both extremes exists
-// (#757575) but leaves every background merely adequate, so the trade is
-// unresolved rather than overlooked.
-export const muted = NO_COLOR ? undefined : "#999999";
-export const ANIMATE = Boolean(process.stdout.isTTY) && !NO_COLOR;
 
 function formatFolder(cwd: string): string {
   const home = os.homedir();
@@ -171,16 +151,16 @@ export function useHardExit(
   return hardExit;
 }
 
-// The one "press ⏎ enter to continue" phrasing, shared by the intro
+// The one "press enter to continue" phrasing, shared by the intro
 // screens, every y/n confirm (with the "or n to skip" suffix), and the
 // select step's footer — spelling out the actual key rather than a bare
 // "(Y/n)" reads more like an instruction than a notation to decode.
 export function EnterHint({ suffix }: { suffix?: string } = {}) {
   return (
-    <Text color={muted}>
+    <Text color={COLORS.MUTED}>
       press{" "}
-      <Text color={accent} bold>
-        ⏎ enter
+      <Text color={COLORS.ACCENT} bold>
+        {ICONS.ENTER} enter
       </Text>{" "}
       to continue{suffix ? `, ${suffix}` : ""}
     </Text>
@@ -194,7 +174,7 @@ export function EnterHint({ suffix }: { suffix?: string } = {}) {
 // indistinguishable from the prose around it.
 export function Link({ children }: { children: ReactNode }) {
   return (
-    <Text color={url} underline>
+    <Text color={COLORS.URL} underline>
       {children}
     </Text>
   );
@@ -204,7 +184,7 @@ export function Working({ label }: { label: string }) {
   return (
     <Text>
       {ANIMATE ? (
-        <Text color={accent}>
+        <Text color={COLORS.ACCENT}>
           <Spinner type="dots" />
         </Text>
       ) : (
@@ -301,7 +281,7 @@ export function startFakeProgress(
 function Field({ label, value }: { label: string; value: string }) {
   return (
     <Text>
-      <Text color={muted}>{label.padEnd(14)}</Text>
+      <Text color={COLORS.MUTED}>{label.padEnd(14)}</Text>
       {value}
     </Text>
   );
@@ -311,8 +291,8 @@ export function Header({ stackUrl }: { stackUrl: string }) {
   return (
     <Box flexDirection="column" marginBottom={1}>
       <Text>
-        <Text>🦕 @grafana/cloud-setup</Text>
-        <Text color={muted}> {PACKAGE_VERSION}</Text>
+        <Text>{ICONS.BRAND} @grafana/cloud-setup</Text>
+        <Text color={COLORS.MUTED}> {PACKAGE_VERSION}</Text>
       </Text>
       <Box marginTop={1} flexDirection="column">
         <Field label="Folder" value={formatFolder(process.cwd())} />

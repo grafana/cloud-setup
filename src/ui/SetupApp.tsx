@@ -2,6 +2,7 @@ import path from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { useEffect, useRef, useState } from "react";
 import { Box, render, Text, useInput } from "ink";
+import { COLORS, ICONS } from "../theme.js";
 import Spinner from "ink-spinner";
 import TextInput from "ink-text-input";
 import { SmApiError, SmClient, type Probe } from "../products/syntheticMonitoring/api.js";
@@ -28,14 +29,10 @@ import { writeTerraformExport } from "../products/syntheticMonitoring/terraform.
 import { CheckboxList } from "./CheckboxList.js";
 import { SelectMenu, type SelectMenuItem } from "./SelectMenu.js";
 import {
-  accent,
-  bad,
   EnterHint,
   Header,
   Link,
   MIN_SPINNER_MS,
-  muted,
-  ok,
   requireInteractiveTerminal,
   startFakeProgress,
   useHardExit,
@@ -86,16 +83,16 @@ function formatFrequency(ms: number): string {
 type ItemStatus = "pending" | "running" | "created" | "updated" | "skipped" | "failed";
 
 function ItemIcon({ status }: { status: ItemStatus }) {
-  if (status === "created" || status === "updated") return <Text color={ok}>✓</Text>;
-  if (status === "failed") return <Text color={bad}>✗</Text>;
-  if (status === "skipped") return <Text color={muted}>=</Text>;
+  if (status === "created" || status === "updated") return <Text color={COLORS.OK}>{ICONS.OK}</Text>;
+  if (status === "failed") return <Text color={COLORS.BAD}>{ICONS.FAIL}</Text>;
+  if (status === "skipped") return <Text color={COLORS.MUTED}>=</Text>;
   if (status === "running")
     return (
-      <Text color={accent}>
+      <Text color={COLORS.ACCENT}>
         <Spinner type="dots" />
       </Text>
     );
-  return <Text color={muted}>○</Text>;
+  return <Text color={COLORS.MUTED}>{ICONS.PENDING}</Text>;
 }
 
 interface CreationItem {
@@ -1229,9 +1226,9 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
   // waiting on input; that's where the moving per-check spinner lives now.
   function liveIcon() {
     return isWaiting || (currentStep === "create" && createSubPhase === "creating") ? (
-      <Text color={accent}>●</Text>
+      <Text color={COLORS.ACCENT}>{ICONS.WAITING}</Text>
     ) : (
-      <Text color={accent}>
+      <Text color={COLORS.ACCENT}>
         <Spinner type="dots" />
       </Text>
     );
@@ -1252,7 +1249,7 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
             row = (
               <Text>
                 {" "}
-                <Text color={ok}>✓</Text> {STEP_LABELS[step]}
+                <Text color={COLORS.OK}>{ICONS.OK}</Text> {STEP_LABELS[step]}
               </Text>
             );
           } else if (step === currentStep) {
@@ -1263,7 +1260,7 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
               </Text>
             );
           } else {
-            row = <Text color={muted}> · {STEP_LABELS[step]}</Text>;
+            row = <Text color={COLORS.MUTED}> · {STEP_LABELS[step]}</Text>;
           }
 
           // The checks themselves live nested under their own step, rather
@@ -1279,7 +1276,7 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
               {step === "alerting" && alertingDetail.length > 0 && (
                 <Box flexDirection="column">
                   {alertingDetail.map((line, i) => (
-                    <Text key={`alerting-detail-${i}`} color={muted}>
+                    <Text key={`alerting-detail-${i}`} color={COLORS.MUTED}>
                       {"     "}
                       {line.text}
                       {line.href ? (
@@ -1293,7 +1290,7 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
                 </Box>
               )}
               {step === "auth" && completed.has(step) && auth.error && (
-                <Text color={muted}>
+                <Text color={COLORS.MUTED}>
                   {"     "}Skipping AI-powered suggestions — you'll be asked for a Synthetic Monitoring access token
                   later ({auth.error})
                 </Text>
@@ -1305,10 +1302,10 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
           <Box key={`next-steps-log-${i}`} flexDirection="column">
             <Text>
               {" "}
-              <Text color={ok}>✓</Text> {entry.label}
+              <Text color={COLORS.OK}>{ICONS.OK}</Text> {entry.label}
             </Text>
             {entry.detail && (
-              <Text color={muted}>
+              <Text color={COLORS.MUTED}>
                 {"     "}
                 {entry.detail}
               </Text>
@@ -1322,7 +1319,7 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
               {" "}
               {liveIcon()} <Text bold>{nextStepOptionLabel(analyzeMode)}</Text>
               {currentStep === "analyze" && (analyzeSubPhase === "analyzing" || analyzeSubPhase === "discovering") && (
-                <Text color={muted}> — {analyzeProgress}%</Text>
+                <Text color={COLORS.MUTED}> — {analyzeProgress}%</Text>
               )}
             </Text>
             {items.length > 0 && <Box flexDirection="column">{ItemsList(items)}</Box>}
@@ -1346,12 +1343,12 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
     // hint lines) for what's all just keybind info.
     return (
       <Box marginTop={1}>
-        <Text color={muted}>
+        <Text color={COLORS.MUTED}>
           press{" "}
-          <Text color={accent} bold>
-            ⏎ enter
+          <Text color={COLORS.ACCENT} bold>
+            {ICONS.ENTER} enter
           </Text>{" "}
-          to continue · space toggle · ↑↓ move
+          to continue · space toggle · {ICONS.ARROWS} move
         </Text>
       </Box>
     );
@@ -1412,7 +1409,7 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
     return (
       <Box flexDirection="column">
         <Text>{checksCreatedLine()}</Text>
-        <Text color={muted}>
+        <Text color={COLORS.MUTED}>
           View checks: <Link>{initialStackUrl.replace(/\/$/, "")}/a/grafana-synthetic-monitoring-app/checks</Link>
         </Text>
       </Box>
@@ -1430,22 +1427,22 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
     return (
       <Box flexDirection="column">
         <ChecksSummary />
-        {nextStepsNotice && <Text color={muted}>{nextStepsNotice}</Text>}
+        {nextStepsNotice && <Text color={COLORS.MUTED}>{nextStepsNotice}</Text>}
         <Box marginTop={1} flexDirection="column">
           <Text bold>Next actions</Text>
           <SelectMenu
             items={availableNextStepOptions(nextStepsLog)}
-            accentColor={accent}
+            accentColor={COLORS.ACCENT}
             onSelect={handleNextStepChoice}
           />
         </Box>
         <Box marginTop={1}>
-          <Text color={muted}>
+          <Text color={COLORS.MUTED}>
             press{" "}
-            <Text color={accent} bold>
-              ⏎ enter
+            <Text color={COLORS.ACCENT} bold>
+              {ICONS.ENTER} enter
             </Text>{" "}
-            to trigger an action · ↑↓ move · q to finish
+            to trigger an action · {ICONS.ARROWS} move · q to finish
           </Text>
         </Box>
       </Box>
@@ -1477,7 +1474,7 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
             meta: `(${formatFrequency(c.frequencyMs)})`,
           }))}
           initialSelected={new Set(selectedKeys)}
-          accentColor={accent}
+          accentColor={COLORS.ACCENT}
           onSubmit={(keys) => selectResolver.current?.(keys)}
           onSelectionChange={setSelectedKeys}
         />
@@ -1503,8 +1500,8 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
         <Text key={it.candidate.key}>
           {"     "}
           <ItemIcon status={it.status} /> {it.candidate.title}
-          {loadZones && <Text color={muted}> — {loadZones}</Text>}
-          {it.detail ? <Text color={muted}> · {it.detail}</Text> : null}
+          {loadZones && <Text color={COLORS.MUTED}> — {loadZones}</Text>}
+          {it.detail ? <Text color={COLORS.MUTED}> · {it.detail}</Text> : null}
         </Text>
       );
     });
@@ -1534,7 +1531,7 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
     if (alertingSubPhase === "email-input")
       return (
         <Box flexDirection="column">
-          {emailError && <Text color={bad}>{emailError}</Text>}
+          {emailError && <Text color={COLORS.BAD}>{emailError}</Text>}
           <Text>Where should these alerts go? Separate several addresses with a comma</Text>
           {/* One contact point serves every Synthetic Monitoring alert on
               the stack (the route matches on the namespace label, not on
@@ -1542,7 +1539,7 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
               run redirects those checks too. Only shown when there's
               something already there to redirect. */}
           {reusingAddresses && (
-            <Text color={muted}>Changing this also moves alerts from every check on this stack.</Text>
+            <Text color={COLORS.MUTED}>Changing this also moves alerts from every check on this stack.</Text>
           )}
           <Box>
             <Text>Email: </Text>
@@ -1562,7 +1559,11 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
     if (createSubPhase === "base-url-input")
       return (
         <Box flexDirection="column">
-          {connectError && <Text color={bad}>✗ {connectError}</Text>}
+          {connectError && (
+            <Text color={COLORS.BAD}>
+              {ICONS.FAIL} {connectError}
+            </Text>
+          )}
           <Box>
             <Text>Synthetic Monitoring API URL: </Text>
             <TextInput
@@ -1577,10 +1578,14 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
     if (createSubPhase === "token-input")
       return (
         <Box flexDirection="column">
-          {tokenError && <Text color={bad}>✗ {tokenError}</Text>}
+          {tokenError && (
+            <Text color={COLORS.BAD}>
+              {ICONS.FAIL} {tokenError}
+            </Text>
+          )}
           <Text>Last thing, we promise. Enter your Grafana Cloud access token</Text>
           {tokenPageUrl && (
-            <Text color={muted}>
+            <Text color={COLORS.MUTED}>
               Generate one here: <Link>{tokenPageUrl}</Link>
             </Text>
           )}
@@ -1647,7 +1652,7 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
         flexDirection="column"
       >
         {failureSummary ? (
-          <Text color={bad} bold>
+          <Text color={COLORS.BAD} bold>
             Setup incomplete. {failureSummary}
           </Text>
         ) : (
@@ -1664,7 +1669,7 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
       {!failureSummary && Footer()}
       {failureSummary && (
         <Box marginTop={1}>
-          <Text color={muted}>Resolve the issue, then run `npx @grafana/cloud-setup` again.</Text>
+          <Text color={COLORS.MUTED}>Resolve the issue, then run `npx @grafana/cloud-setup` again.</Text>
         </Box>
       )}
     </Box>
