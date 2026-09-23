@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Box, Text, useInput } from "ink";
-import { muted } from "./shared.js";
+import { COLORS, ICONS } from "../theme.js";
 
 export interface CheckboxItem {
   key: string;
@@ -12,7 +12,9 @@ export interface CheckboxItem {
 interface Props {
   items: CheckboxItem[];
   initialSelected: Set<string>;
-  accentColor: string;
+  // Undefined under NO_COLOR, where the focused row is marked by the
+  // cursor prefix and bold instead.
+  accentColor: string | undefined;
   onSubmit: (selectedKeys: string[]) => void;
   onSelectionChange?: (selectedKeys: string[]) => void;
 }
@@ -22,7 +24,7 @@ interface Props {
 // descriptions are capped at a short length (see MAX_AI_DESCRIPTION_LENGTH
 // in discover.ts); when nothing bounded that length, one long outlier
 // dragged every row's interval far to the right along with it.
-const PREFIX_WIDTH = 2; // "› " or "  "
+const PREFIX_WIDTH = 2; // the cursor prefix, or two spaces
 const CHECKBOX_WIDTH = 4; // "[x] " or "[ ] "
 const COLUMN_GUTTER = 2;
 
@@ -65,10 +67,10 @@ export function CheckboxList({ items, initialSelected, accentColor, onSubmit, on
           <Box key={item.key} flexDirection="row">
             <Box width={labelColWidth} flexShrink={0}>
               <Text color={focused ? accentColor : undefined} bold={focused}>
-                {focused ? "› " : "  "}[{selected.has(item.key) ? "x" : " "}] {item.label}
+                {focused ? `${ICONS.CURSOR} ` : "  "}[{selected.has(item.key) ? "x" : " "}] {item.label}
               </Text>
             </Box>
-            <Text color={muted}>
+            <Text color={COLORS.MUTED}>
               {" ".repeat(COLUMN_GUTTER)}
               {hasMeta ? item.description.padEnd(descWidth) : item.description}
               {item.meta ? ` ${item.meta}` : ""}

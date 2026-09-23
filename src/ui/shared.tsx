@@ -2,30 +2,16 @@ import { readFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, type ReactNode } from "react";
 import { Box, Text, useApp, useInput } from "ink";
 import Spinner from "ink-spinner";
 import { detectFramework } from "../framework.js";
+import { ANIMATE, COLORS, ICONS } from "../theme.js";
 import { recordRun, waitForTelemetry, type Command, type Outcome } from "../telemetry.js";
 
 // Every automatic spinner/loading-bar phase stays visible at least this
 // long, even when the real work behind it finishes faster.
 export const MIN_SPINNER_MS = 3000;
-
-export const NO_COLOR = Boolean(process.env.NO_COLOR);
-export const accent = NO_COLOR ? undefined : "#FFA500";
-export const ok = NO_COLOR ? undefined : "green";
-export const bad = NO_COLOR ? undefined : "red";
-// A URL the user might actually open — same color everywhere one shows
-// up (target URL, "view checks", "generate a token", app dashboard),
-// rather than relying on bold or <angle brackets> to make it stand out.
-export const url = NO_COLOR ? undefined : "blue";
-// A plain ANSI "gray" (bright-black, code 90) reads as near-invisible on a
-// dark/charcoal terminal background — verified live. This hex sits at a
-// medium gray instead, legible as "secondary" text on both dark and light
-// backgrounds without competing with the default foreground.
-export const muted = NO_COLOR ? undefined : "#999999";
-export const ANIMATE = Boolean(process.stdout.isTTY) && !NO_COLOR;
 
 function formatFolder(cwd: string): string {
   const home = os.homedir();
@@ -165,18 +151,31 @@ export function useHardExit(
   return hardExit;
 }
 
-// The one "press ⏎ enter to continue" phrasing, shared by the intro
+// The one "press enter to continue" phrasing, shared by the intro
 // screens, every y/n confirm (with the "or n to skip" suffix), and the
 // select step's footer — spelling out the actual key rather than a bare
 // "(Y/n)" reads more like an instruction than a notation to decode.
 export function EnterHint({ suffix }: { suffix?: string } = {}) {
   return (
-    <Text color={muted}>
+    <Text color={COLORS.MUTED}>
       press{" "}
-      <Text color={accent} bold>
-        ⏎ enter
+      <Text color={COLORS.ACCENT} bold>
+        {ICONS.ENTER} enter
       </Text>{" "}
       to continue{suffix ? `, ${suffix}` : ""}
+    </Text>
+  );
+}
+
+// Underlined as well as colored, because color alone cannot carry this.
+// ANSI blue is whatever the theme says it is, and on the common dark
+// palettes it lands between 1.6:1 and 3.4:1 against their own backgrounds.
+// Underline also survives NO_COLOR, where a URL would otherwise be
+// indistinguishable from the prose around it.
+export function Link({ children }: { children: ReactNode }) {
+  return (
+    <Text color={COLORS.URL} underline>
+      {children}
     </Text>
   );
 }
@@ -185,7 +184,7 @@ export function Working({ label }: { label: string }) {
   return (
     <Text>
       {ANIMATE ? (
-        <Text color={accent}>
+        <Text color={COLORS.ACCENT}>
           <Spinner type="dots" />
         </Text>
       ) : (
@@ -282,7 +281,7 @@ export function startFakeProgress(
 function Field({ label, value }: { label: string; value: string }) {
   return (
     <Text>
-      <Text color={muted}>{label.padEnd(14)}</Text>
+      <Text color={COLORS.MUTED}>{label.padEnd(14)}</Text>
       {value}
     </Text>
   );
@@ -292,8 +291,8 @@ export function Header({ stackUrl }: { stackUrl: string }) {
   return (
     <Box flexDirection="column" marginBottom={1}>
       <Text>
-        <Text>🦕 @grafana/cloud-setup</Text>
-        <Text color={muted}> {PACKAGE_VERSION}</Text>
+        <Text>{ICONS.BRAND} @grafana/cloud-setup</Text>
+        <Text color={COLORS.MUTED}> {PACKAGE_VERSION}</Text>
       </Text>
       <Box marginTop={1} flexDirection="column">
         <Field label="Folder" value={formatFolder(process.cwd())} />

@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Box, Text, useInput } from "ink";
-import { muted } from "./shared.js";
+import { COLORS, ICONS } from "../theme.js";
 
 export interface SelectMenuItem {
   key: string;
@@ -9,7 +9,8 @@ export interface SelectMenuItem {
 
 interface Props {
   items: SelectMenuItem[];
-  accentColor: string;
+  // Undefined under NO_COLOR; bold still marks the focused row.
+  accentColor: string | undefined;
   onSelect: (key: string) => void;
 }
 
@@ -33,8 +34,8 @@ export function SelectMenu({ items, accentColor, onSelect }: Props) {
       {items.map((item, i) => {
         const focused = i === cursor;
         return (
-          <Text key={item.key} color={focused ? accentColor : muted} bold={focused}>
-            {focused ? "› " : "  "}
+          <Text key={item.key} color={focused ? accentColor : COLORS.MUTED} bold={focused}>
+            {focused ? `${ICONS.CURSOR} ` : "  "}
             {item.label}
           </Text>
         );

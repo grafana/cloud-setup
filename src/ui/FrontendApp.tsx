@@ -3,6 +3,7 @@ import { setTimeout as sleep } from "node:timers/promises";
 import { debugLog } from "../debug.js";
 import { useEffect, useRef, useState } from "react";
 import { Box, render, Text, useInput } from "ink";
+import { COLORS, ICONS } from "../theme.js";
 import Spinner from "ink-spinner";
 import TextInput from "ink-text-input";
 import { tryFaroClient, type FaroApp } from "../products/frontendO11y/faroAuth.js";
@@ -22,16 +23,12 @@ import type { FaroInstrumentation, FrontendTarget, ReplayMasking } from "../prod
 import { instrumentNextjs } from "../products/frontendO11y/nextjs.js";
 import { instrumentReact } from "../products/frontendO11y/react.js";
 import {
-  accent,
-  bad,
   EnterHint,
   Header,
+  Link,
   MIN_SPINNER_MS,
-  muted,
-  ok,
   requireInteractiveTerminal,
   startFakeProgress,
-  url,
   useHardExit,
 } from "./shared.js";
 import { recordStep, type Outcome, type StepProperties, type StepStatus } from "../telemetry.js";
@@ -645,15 +642,15 @@ export function FrontendApp({ initialStackUrl, forceGcxInstall, initialAppName }
             row = (
               <Text>
                 {" "}
-                <Text color={ok}>✓</Text> {STEP_LABELS[step]}
-                {suffix && <Text color={muted}> — {suffix}</Text>}
+                <Text color={COLORS.OK}>{ICONS.OK}</Text> {STEP_LABELS[step]}
+                {suffix && <Text color={COLORS.MUTED}> — {suffix}</Text>}
               </Text>
             );
           } else if (step === currentStep) {
             const icon = isWaiting ? (
-              <Text color={accent}>●</Text>
+              <Text color={COLORS.ACCENT}>{ICONS.WAITING}</Text>
             ) : (
-              <Text color={accent}>
+              <Text color={COLORS.ACCENT}>
                 <Spinner type="dots" />
               </Text>
             );
@@ -661,24 +658,24 @@ export function FrontendApp({ initialStackUrl, forceGcxInstall, initialAppName }
               <Text>
                 {" "}
                 {icon} <Text bold>{STEP_LABELS[step]}</Text>
-                {suffix && <Text color={muted}> — {suffix}</Text>}
+                {suffix && <Text color={COLORS.MUTED}> — {suffix}</Text>}
               </Text>
             );
           } else {
-            row = <Text color={muted}> · {STEP_LABELS[step]}</Text>;
+            row = <Text color={COLORS.MUTED}> · {STEP_LABELS[step]}</Text>;
           }
 
           return (
             <Box key={step} flexDirection="column">
               {row}
               {step === "auth" && completed.has(step) && auth.error && (
-                <Text color={muted}> Skipping auto-lookup ({auth.error})</Text>
+                <Text color={COLORS.MUTED}> Skipping auto-lookup ({auth.error})</Text>
               )}
               {/* Standalone line, separate from the config summary below —
                   shown as soon as the app is resolved (picked or created),
                   stays up through the rest of this step and beyond. */}
               {step === "pick-app" && appName && !frontendSkippedRef.current && (
-                <Text color={muted}>
+                <Text color={COLORS.MUTED}>
                   {"     "}app: {appName}
                 </Text>
               )}
@@ -692,34 +689,34 @@ export function FrontendApp({ initialStackUrl, forceGcxInstall, initialAppName }
                 !frontendSkippedRef.current &&
                 (pickAppSubPhase === "replay-confirm" || pickAppSubPhase === "masking-picker") && (
                   <>
-                    <Text color={muted}>
+                    <Text color={COLORS.MUTED}>
                       {"     "}sampling: {Math.round(samplingRate * 100)}%
                     </Text>
-                    {pickAppSubPhase === "masking-picker" && <Text color={muted}>{"     "}replay: enabled</Text>}
+                    {pickAppSubPhase === "masking-picker" && <Text color={COLORS.MUTED}>{"     "}replay: enabled</Text>}
                   </>
                 )}
               {step === "pick-app" && completed.has(step) && !frontendSkippedRef.current && (
                 <>
-                  <Text color={muted}>
+                  <Text color={COLORS.MUTED}>
                     {"     "}sampling: {Math.round(samplingRate * 100)}%
                   </Text>
-                  <Text color={muted}>
+                  <Text color={COLORS.MUTED}>
                     {"     "}replay: {sessionReplayEnabled ? "enabled" : "disabled"}
                   </Text>
                   {sessionReplayEnabled && (
-                    <Text color={muted}>
+                    <Text color={COLORS.MUTED}>
                       {"     "}replay_masking: {replayMasking}
                     </Text>
                   )}
                 </>
               )}
               {step === "instrument" && completed.has(step) && frontendFile && (
-                <Text color={muted}>
+                <Text color={COLORS.MUTED}>
                   {"     "}Instrumented {frontendFile}
                 </Text>
               )}
               {step === "instrument" && completed.has(step) && frontendError && (
-                <Text color={muted}>
+                <Text color={COLORS.MUTED}>
                   {"     "}Skipped Frontend Observability setup ({frontendError})
                 </Text>
               )}
@@ -742,32 +739,32 @@ export function FrontendApp({ initialStackUrl, forceGcxInstall, initialAppName }
           {faroApps.map((app, i) => (
             <Text key={app.id || app.name}>
               {i === appPickerCursor ? (
-                <Text color={accent} bold>
-                  {"› "}
+                <Text color={COLORS.ACCENT} bold>
+                  {`${ICONS.CURSOR} `}
                   {app.name}
                 </Text>
               ) : (
                 <Text>{`  ${app.name}`}</Text>
               )}
-              {app.collectEndpointURL && <Text color={muted}> — {faroAppHost(app.collectEndpointURL)}</Text>}
+              {app.collectEndpointURL && <Text color={COLORS.MUTED}> — {faroAppHost(app.collectEndpointURL)}</Text>}
             </Text>
           ))}
           <Text>
             {appPickerCursor === faroApps.length ? (
-              <Text color={accent} bold>
-                › Create a new app
+              <Text color={COLORS.ACCENT} bold>
+                {ICONS.CURSOR} Create a new app
               </Text>
             ) : (
-              <Text color={muted}>{"  Create a new app"}</Text>
+              <Text color={COLORS.MUTED}>{"  Create a new app"}</Text>
             )}
           </Text>
           <Box marginTop={1}>
-            <Text color={muted}>
+            <Text color={COLORS.MUTED}>
               press{" "}
-              <Text color={accent} bold>
-                ⏎ enter
+              <Text color={COLORS.ACCENT} bold>
+                {ICONS.ENTER} enter
               </Text>{" "}
-              to choose · ↑↓ move
+              to choose · {ICONS.ARROWS} move
             </Text>
           </Box>
         </Box>
@@ -799,16 +796,16 @@ export function FrontendApp({ initialStackUrl, forceGcxInstall, initialAppName }
       return (
         <Box flexDirection="column">
           <Text>Enable Session Replay? Records user sessions; consent may be required.</Text>
-          <Text color={muted}>
-            Privacy details: <Text color={url}>{SESSION_REPLAY_DATA_PRIVACY_URL}</Text>
+          <Text color={COLORS.MUTED}>
+            Privacy details: <Link>{SESSION_REPLAY_DATA_PRIVACY_URL}</Link>
           </Text>
-          <Text color={muted}>
+          <Text color={COLORS.MUTED}>
             press{" "}
-            <Text color={accent} bold>
-              ⏎ enter
+            <Text color={COLORS.ACCENT} bold>
+              {ICONS.ENTER} enter
             </Text>{" "}
             to enable, or{" "}
-            <Text color={accent} bold>
+            <Text color={COLORS.ACCENT} bold>
               n
             </Text>{" "}
             to skip
@@ -822,23 +819,23 @@ export function FrontendApp({ initialStackUrl, forceGcxInstall, initialAppName }
           {MASKING_OPTIONS.map((option, i) => (
             <Text key={option.key}>
               {i === maskingCursor ? (
-                <Text color={accent} bold>
-                  {"› "}
+                <Text color={COLORS.ACCENT} bold>
+                  {`${ICONS.CURSOR} `}
                   {option.label}
                 </Text>
               ) : (
                 <Text>{`  ${option.label}`}</Text>
               )}
-              <Text color={muted}> — {option.description}</Text>
+              <Text color={COLORS.MUTED}> — {option.description}</Text>
             </Text>
           ))}
           <Box marginTop={1}>
-            <Text color={muted}>
+            <Text color={COLORS.MUTED}>
               press{" "}
-              <Text color={accent} bold>
-                ⏎ enter
+              <Text color={COLORS.ACCENT} bold>
+                {ICONS.ENTER} enter
               </Text>{" "}
-              to choose · ↑↓ move
+              to choose · {ICONS.ARROWS} move
             </Text>
           </Box>
         </Box>
@@ -880,12 +877,12 @@ export function FrontendApp({ initialStackUrl, forceGcxInstall, initialAppName }
             {frontendFile ? "Cool, we're done!" : frontendError ? "Setup incomplete." : "Nothing to do."}
           </Text>
           {frontendFile && appUrl && (
-            <Text color={muted}>
-              Once changes are live, data will show up here: <Text color={url}>{appUrl}</Text>
+            <Text color={COLORS.MUTED}>
+              Once changes are live, data will show up here: <Link>{appUrl}</Link>
             </Text>
           )}
           {frontendFile && sessionReplayEnabled && (
-            <Text color={muted}>
+            <Text color={COLORS.MUTED}>
               Session Replay is beta and needs to be separately enabled on this stack, or it'll record nothing.
             </Text>
           )}
@@ -910,7 +907,7 @@ export function FrontendApp({ initialStackUrl, forceGcxInstall, initialAppName }
         flexDirection="column"
       >
         {failureSummary ? (
-          <Text color={bad} bold>
+          <Text color={COLORS.BAD} bold>
             Setup incomplete. {failureSummary}
           </Text>
         ) : (
@@ -923,7 +920,7 @@ export function FrontendApp({ initialStackUrl, forceGcxInstall, initialAppName }
       </Box>
       {failureSummary && (
         <Box marginTop={1}>
-          <Text color={muted}>Resolve the issue, then run `npx @grafana/cloud-setup frontend` again.</Text>
+          <Text color={COLORS.MUTED}>Resolve the issue, then run `npx @grafana/cloud-setup frontend` again.</Text>
         </Box>
       )}
     </Box>

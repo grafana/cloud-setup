@@ -39,6 +39,46 @@ export default tseslint.config(
     },
   },
 
+  // Color and icons come from src/theme.ts. A literal at a call site is a
+  // value that ignores the terminal theme, which is how `accent ?? "white"`
+  // came to paint the focused row white under NO_COLOR; a stray glyph is how
+  // the tree ended up using both U+2716 and U+2717 for one failure state.
+  // authPage.ts is a real web page with its own background, so absolute
+  // colors are correct there.
+  {
+    files: ["src/**/*.ts", "src/**/*.tsx"],
+    ignores: ["src/theme.ts"],
+    rules: {
+      "no-restricted-syntax": [
+        "error",
+        {
+          selector:
+            "Literal[value=/^(#[0-9A-Fa-f]{3,8}|white|black|red|green|blue|yellow|cyan|magenta|gray|grey|blackBright)$/]",
+          message: "Import a color from theme.ts instead of naming one here — a literal ignores the terminal theme.",
+        },
+        {
+          selector: "Literal[value=/[\\u2713\\u2714\\u2716\\u2717\\u25CB\\u25CF\\u203A\\u23CE\\u2191\\u2193]/]",
+          message: "Use an ICONS entry from theme.ts instead of writing the glyph, so the set stays consistent.",
+        },
+        {
+          selector: "JSXText[value=/[\\u2713\\u2714\\u2716\\u2717\\u25CB\\u25CF\\u203A\\u23CE\\u2191\\u2193]/]",
+          message: "Use an ICONS entry from theme.ts instead of writing the glyph, so the set stays consistent.",
+        },
+        {
+          selector:
+            "TemplateElement[value.raw=/[\\u2713\\u2714\\u2716\\u2717\\u25CB\\u25CF\\u203A\\u23CE\\u2191\\u2193]/]",
+          message: "Use an ICONS entry from theme.ts instead of writing the glyph, so the set stays consistent.",
+        },
+      ],
+    },
+  },
+
+  // authPage.ts builds an HTML document, where absolute colors are correct.
+  {
+    files: ["src/harness/authPage.ts"],
+    rules: { "no-restricted-syntax": "off" },
+  },
+
   {
     files: ["tests/**/*.mjs"],
     extends: [js.configs.recommended],

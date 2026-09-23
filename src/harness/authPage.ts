@@ -1,9 +1,11 @@
+import { ICONS } from "../theme.js";
+
 // Styled as a fake terminal window rather than a generic web page — the
 // point of this tab is just to hand control back to the real terminal,
 // so it should look like one rather than like a marketing landing page.
 function terminalPage(status: string, statusOk: boolean, message: string): string {
   const statusColor = statusOk ? "#3fb950" : "#f85149";
-  const statusIcon = statusOk ? "✓" : "✖";
+  const statusIcon = statusOk ? ICONS.OK : ICONS.FAIL;
   return [
     "<!DOCTYPE html>",
     '<html lang="en"><head><meta charset="utf-8">',
