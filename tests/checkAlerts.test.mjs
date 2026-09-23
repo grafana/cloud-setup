@@ -99,16 +99,14 @@ test("a preset counts for the pass if any one check qualifies", () => {
   assert.deepEqual(alertsForCheck(SSL, ["TLSTargetCertificateCloseToExpiring"]), []);
 });
 
-test("the confirm sentence names only what the pass will actually get", () => {
-  // Reads as "... so you're notified when <this>." — a fragment, and one
-  // that must not promise a certificate alert an all-browser pass can't
-  // have. Thresholds are interpolated, so they can't drift from what's
-  // sent.
+test("the confirm question names only what the pass will actually get", () => {
+  // Reads as "Alert on <this>?" — a noun phrase, and one that must not
+  // promise a certificate alert an all-browser pass can't have.
   assert.equal(
     alertsSummary(presetsFor([UPTIME, BROWSER, SSL, AI_ENDPOINT])),
-    "a check starts failing or a certificate is within 30 days of expiring",
+    "check failures and expiring certificates",
   );
-  assert.equal(alertsSummary(presetsFor([BROWSER, SSL])), "a check starts failing");
+  assert.equal(alertsSummary(presetsFor([BROWSER, SSL])), "check failures");
   assert.equal(alertsSummary([]), "");
 });
 

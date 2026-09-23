@@ -127,29 +127,25 @@ export function alertsForCheck(target: AlertTarget, selected: Iterable<AlertPres
   return alerts;
 }
 
-// One clause per preset for the confirm screen, with the threshold
-// interpolated rather than restated so it can't drift from the value being
-// sent. Says nothing about the period: it differs per check inside one
-// pass, so any single number would be wrong for some of them.
-function presetClause(preset: AlertPreset): string {
+// Deliberately says nothing about thresholds or periods. The period
+// differs per check inside one pass, so any single number would be wrong
+// for some of them, and the confirm screen reads better as a short
+// question than as a spec.
+function presetNoun(preset: AlertPreset): string {
   switch (preset.name) {
     case "ProbeFailedExecutionsTooHigh":
-      // At a threshold of 1 the literal "fails 1 time" is clumsy, and "starts
-      // failing" says the same thing. Still branches on the threshold rather
-      // than hard-coding either phrasing, so raising it can't leave the
-      // sentence claiming something narrower than what's sent.
-      return preset.threshold === 1 ? "a check starts failing" : `a check fails ${preset.threshold} times`;
+      return "check failures";
     case "TLSTargetCertificateCloseToExpiring":
-      return `a certificate is within ${preset.threshold} days of expiring`;
+      return "expiring certificates";
   }
 }
 
-// Reads into the confirm screen's sentence, so it stays a fragment:
-// "... so you're notified when <this>." Built from what the pass actually
-// qualifies for, since an all-browser pass gets no certificate alert and
-// naming one there would be a lie.
+// Reads into the confirm screen's question, so it stays a noun phrase:
+// "Alert on <this>?". Built from what the pass actually qualifies for,
+// since an all-browser pass gets no certificate alert and naming one there
+// would be a lie.
 export function alertsSummary(presets: AlertPreset[]): string {
-  const clauses = presets.map(presetClause);
-  if (clauses.length <= 1) return clauses.join("");
-  return `${clauses.slice(0, -1).join(", ")} or ${clauses[clauses.length - 1]}`;
+  const nouns = presets.map(presetNoun);
+  if (nouns.length <= 1) return nouns.join("");
+  return `${nouns.slice(0, -1).join(", ")} and ${nouns[nouns.length - 1]}`;
 }

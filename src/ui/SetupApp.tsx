@@ -318,6 +318,10 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
   // alerting step
   const [alertingSubPhase, setAlertingSubPhase] = useState<AlertingSubPhase>("confirm");
   const [emailInput, setEmailInput] = useState("");
+  // Whether the prefilled addresses came off a contact point that already
+  // existed, which is the only case where editing them moves alerts that
+  // are already live — see the disclaimer in AlertingBody.
+  const [reusingAddresses, setReusingAddresses] = useState(false);
   const [emailError, setEmailError] = useState<string>();
   // Muted lines under the "Set up alerting" row. A list because the step's
   // two halves report separately.
@@ -1067,6 +1071,7 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
         // A previous run's addresses first, so a re-run confirms rather
         // than retypes.
         setEmailInput(inspection.existingAddresses ?? inspection.userEmail ?? "");
+        setReusingAddresses(inspection.existingAddresses !== undefined);
         setEmailError(undefined);
         for (;;) {
           setAlertingSubPhase("email-input");
@@ -1493,15 +1498,12 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
       // what the pass qualifies for, so an all-browser pass isn't told
       // about a certificate alert it can't have (see alertsSummary).
       //
-      // No check count here on purpose: "on this check ... when a check
-      // starts failing" reads badly, and the result line under the step row
-      // reports the count anyway.
+      // Phrased as a short question to match every other confirm in the
+      // wizard. The step row above already reads "Set up alerting", so this
+      // doesn't restate it, and the result line reports the check count.
       return (
         <Box flexDirection="column">
-          <Text>
-            Now let's set up alerting, so you're notified when{" "}
-            {alertsSummary(presetsFor(targets.map((it) => it.candidate)))}.
-          </Text>
+          <Text>Alert on {alertsSummary(presetsFor(targets.map((it) => it.candidate)))}?</Text>
           <EnterHint suffix="or n to skip" />
         </Box>
       );
@@ -1514,6 +1516,14 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
         <Box flexDirection="column">
           {emailError && <Text color={bad}>{emailError}</Text>}
           <Text>Where should these alerts go? Separate several addresses with a comma</Text>
+          {/* One contact point serves every Synthetic Monitoring alert on
+              the stack (the route matches on the namespace label, not on
+              these checks), so editing a prefill that came from an earlier
+              run redirects those checks too. Only shown when there's
+              something already there to redirect. */}
+          {reusingAddresses && (
+            <Text color={muted}>Changing this also moves alerts from every check on this stack.</Text>
+          )}
           <Box>
             <Text>Email: </Text>
             <TextInput value={emailInput} onChange={setEmailInput} onSubmit={(v) => emailResolver.current?.(v)} />
