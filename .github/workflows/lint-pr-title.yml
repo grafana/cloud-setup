@@ -22,20 +22,13 @@ jobs:
       contents: read
       pull-requests: read
     steps:
-      # commitlint.config.js has to be on disk for config-path to resolve, and
-      # its `extends` resolves from this repo's node_modules.
+      # Checkout only, so commitlint.config.js is on disk for config-path. No
+      # Node setup and no install: the action carries its own commitlint and
+      # @commitlint/config-conventional, which is what the config `extends`.
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
-
-      - name: Setup Node.js
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
-        with:
-          node-version-file: .nvmrc
-
-      - name: Install dependencies
-        run: npm ci
 
       - name: Lint PR title
         uses: grafana/shared-workflows/actions/lint-pr-title@70c40e5b6522c854a55334124545261cae3d4c73 # lint-pr-title/v1.2.4

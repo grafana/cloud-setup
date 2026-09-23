@@ -23,11 +23,13 @@ fix(synthetics): Stop defaulting the check timeout to 3s
 chore(deps): Bump zod to v4
 ```
 
-Types: `build`, `chore`, `ci`, `docs`, `feat`, `fix`, `perf`, `refactor`, `revert`, `style`, `test`. Subjects start with a capital and take no trailing full stop.
+Types: `build`, `chore`, `ci`, `docs`, `feat`, `fix`, `perf`, `refactor`, `revert`, `style`, `test`. Subjects take no trailing full stop, and `feat!` or a `BREAKING CHANGE:` footer marks a breaking change.
 
-`commitlint.config.js` mirrors the config bundled in the shared action, with `subject-case` inverted. release-please copies the subject verbatim into `CHANGELOG.md`, so the case chosen here is the case the changelog reads in. The rule is written as `never` against the other cases rather than `always sentence-case`, because commitlint's sentence-case check only inspects the first character and would also accept `ADD A FLAG`.
+**Please start the subject with a capital**, as the examples above do. release-please copies the subject verbatim into `CHANGELOG.md`, so this is the case the changelog reads in. It is a preference rather than a gate: `commitlint.config.js` disables `subject-case`, so a lower-case subject passes CI too. Rejecting a PR title over its first letter would cost more than the inconsistency is worth.
 
-The type sets the version bump, so it is not cosmetic: `fix` bumps the patch, `feat` the minor, and `feat!` (or a `BREAKING CHANGE:` footer) also the minor while the package is pre-1.0. `chore`, `ci`, `style`, `test` and `build` are hidden from the changelog.
+That config exists only to relax two rules from the one bundled in the shared action — the case rule above, and `header-max-length`, kept at the org's 128. Everything else, including the parser that understands `!`, comes from `@commitlint/config-conventional` through `extends`, which the action supplies. Nothing needs installing to run the check.
+
+The type sets the version bump, so it is not cosmetic: `fix` bumps the patch, `feat` the minor, and `feat!` also the minor while the package is pre-1.0. Only `feat`, `fix`, `perf`, `revert` and `docs` appear in the changelog; `refactor`, `build`, `ci`, `chore`, `style` and `test` are hidden, since they describe work on the repo rather than anything a user of the CLI sees.
 
 Commits on a branch are not linted, since squash merging discards them.
 

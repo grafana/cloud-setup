@@ -1,29 +1,19 @@
-// Mirrors the config bundled in grafana/shared-workflows/actions/lint-pr-title,
-// with one deliberate difference: subject-case is inverted so subjects start
-// with a capital. release-please copies the commit subject verbatim into
-// CHANGELOG.md, and this repo prefers "* Add a --dry-run flag" over
-// "* add a --dry-run flag".
-//
-// Stated as `never` against the other cases rather than `always sentence-case`,
-// because commitlint's sentence-case check only looks at the first character
-// and so would also accept "ADD A FLAG" and "Add A Flag".
+// Exists only to relax two rules from the config bundled in
+// grafana/shared-workflows/actions/lint-pr-title. Everything else, including
+// the parser that understands the `!` breaking-change marker, comes from
+// @commitlint/config-conventional via `extends`.
 export default {
   extends: ["@commitlint/config-conventional"],
   rules: {
-    "body-leading-blank": [1, "always"],
-    "body-max-line-length": [2, "always", 100],
-    "footer-leading-blank": [1, "always"],
-    "footer-max-line-length": [2, "always", 100],
+    // Match the org's limit rather than config-conventional's 100.
     "header-max-length": [2, "always", 128],
-    "subject-case": [2, "never", ["lower-case", "start-case", "pascal-case", "upper-case"]],
-    "subject-empty": [2, "never"],
-    "subject-full-stop": [2, "never", "."],
-    "type-case": [2, "always", "lower-case"],
-    "type-empty": [2, "never"],
-    "type-enum": [
-      2,
-      "always",
-      ["build", "chore", "ci", "docs", "feat", "fix", "perf", "refactor", "revert", "style", "test"],
-    ],
+
+    // Deliberately unenforced. The bundled config requires a lower-case
+    // subject, and release-please copies the subject verbatim into
+    // CHANGELOG.md, so that rule decides how the changelog reads. Sentence
+    // case is preferred here and used in every example in CONTRIBUTING.md, but
+    // it is a preference, not a gate: rejecting a PR title over its first
+    // letter costs more than the inconsistency is worth.
+    "subject-case": [0],
   },
 };
