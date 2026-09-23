@@ -24,10 +24,8 @@ function resolveSafe(cwd: string, relPath: string): string {
   return resolved;
 }
 
-// Tool arguments come from the model, so a field can be any JSON shape. A bare
-// String() would turn an object into "[object Object]" and hand that to
-// resolveSafe or writeFileSync as if it were a real path; throwing instead
-// surfaces the mistake to the agent, which can retry with a correct argument.
+// Arguments are model-supplied, so a field can be any JSON shape: String({})
+// would yield "[object Object]" and reach resolveSafe as if it were a path.
 function stringArg(input: Record<string, unknown>, key: string, fallback?: string): string {
   const value = input[key];
   if (typeof value === "string") return value;

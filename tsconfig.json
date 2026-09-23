@@ -24,6 +24,6 @@
     "verbatimModuleSyntax": true,
     "isolatedModules": true
   },
-  "include": ["src/**/*.ts", "src/**/*.tsx", "tests/**/*.mjs", "eslint.config.js"],
+  "include": ["src/**/*.ts", "src/**/*.tsx", "tests/**/*.mjs", "eslint.config.js", "commitlint.config.js"],
   "exclude": ["node_modules", "dist"]
 }

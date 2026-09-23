@@ -121,8 +121,7 @@ export async function runAgent(
     throw new Error(`A2A request failed (${res.status}): ${await res.text().catch(() => "unknown error")}`);
   }
 
-  // Annotated because @types/node types a chunk as `any` without the DOM lib,
-  // which would silently un-type decode() and everything downstream of it.
+  // Annotated: without the DOM lib, @types/node types the chunk as `any`.
   const reader: ReadableStreamDefaultReader<Uint8Array> = res.body.getReader();
   const decoder = new TextDecoder();
   const buffer = { text: "" };
