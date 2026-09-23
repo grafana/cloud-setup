@@ -15,15 +15,17 @@ A `pre-commit` hook runs lint-staged on staged files, then a whole-project typec
 
 ## Commit messages
 
-Changes land by squash merge, and the repo uses the PR title as the commit subject with an empty body. **The PR title is the commit message**, so it is the PR title that must follow [Conventional Commits](https://www.conventionalcommits.org/). CI enforces this with `grafana/shared-workflows/actions/lint-pr-title`.
+Changes land by squash merge, and the repo uses the PR title as the commit subject with an empty body. **The PR title is the commit message**, so it is the PR title that must follow [Conventional Commits](https://www.conventionalcommits.org/). CI enforces this with `grafana/shared-workflows/actions/lint-pr-title`, pointed at this repo's `commitlint.config.js`.
 
 ```
-feat: add a --dry-run flag
-fix(synthetics): stop defaulting the check timeout to 3s
-chore(deps): bump zod to v4
+feat: Add a --dry-run flag
+fix(synthetics): Stop defaulting the check timeout to 3s
+chore(deps): Bump zod to v4
 ```
 
-Types: `build`, `chore`, `ci`, `docs`, `feat`, `fix`, `perf`, `refactor`, `revert`, `style`, `test`. Subjects are lower case with no trailing full stop.
+Types: `build`, `chore`, `ci`, `docs`, `feat`, `fix`, `perf`, `refactor`, `revert`, `style`, `test`. Subjects start with a capital and take no trailing full stop.
+
+`commitlint.config.js` mirrors the config bundled in the shared action, with `subject-case` inverted. release-please copies the subject verbatim into `CHANGELOG.md`, so the case chosen here is the case the changelog reads in. The rule is written as `never` against the other cases rather than `always sentence-case`, because commitlint's sentence-case check only inspects the first character and would also accept `ADD A FLAG`.
 
 The type sets the version bump, so it is not cosmetic: `fix` bumps the patch, `feat` the minor, and `feat!` (or a `BREAKING CHANGE:` footer) also the minor while the package is pre-1.0. `chore`, `ci`, `style`, `test` and `build` are hidden from the changelog.
 

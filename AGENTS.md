@@ -8,7 +8,7 @@ npm run build   # tsc, src -> dist
 npm test        # builds, then runs tests/*.test.mjs
 ```
 
-**Commit subjects must be Conventional Commits, in lower case.** Changes land by squash merge and the PR title becomes the commit subject, so the PR title is what has to conform: `feat: add a thing`, not `Add a thing` and not `feat: Add a thing`. Releases are generated from these subjects, so a wrong type means a wrong version. CI checks it.
+**Commit subjects must be Conventional Commits, starting with a capital.** Changes land by squash merge and the PR title becomes the commit subject, so the PR title is what has to conform: `feat: Add a thing`, not `Add a thing` and not `feat: add a thing`. Releases are generated from these subjects, so a wrong type means a wrong version. CI checks it against `commitlint.config.js`.
 
 CONTRIBUTING.md covers the toolchain: the two tsconfigs, the Node version split, the ESLint rule exclusions, the release flow, and why each is set the way it is. Read it before changing a config file. The traps worth knowing up front:
 
