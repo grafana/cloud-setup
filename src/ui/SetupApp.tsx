@@ -18,7 +18,6 @@ import {
   isEmailish,
   joinAddresses,
   parseAddresses,
-  SM_CONTACT_POINT_NAME,
   tryAlertingClient,
   type AlertingClient,
   type AlertingInspection,
@@ -159,7 +158,7 @@ const STEP_LABELS: Record<StepId, string> = {
   skills: "Configure skills",
   analyze: "Analyze target",
   create: "Create synthetic checks",
-  alerting: "Set up alerting",
+  alerting: "Configure alerting",
   "next-steps": "Next steps",
 };
 
@@ -237,6 +236,18 @@ type CreateSubPhase =
 type AlertingSubPhase = "confirm" | "inspecting" | "email-input" | "applying";
 
 const ALERTING_WAITING_SUBPHASES: AlertingSubPhase[] = ["confirm", "email-input"];
+
+// A trailing URL is its own field rather than part of `text`, so it can be
+// rendered in the same colour as every other link in the wizard.
+interface AlertingDetail {
+  text: string;
+  href?: string;
+}
+
+// Reached by declining the step and by submitting an empty address, which
+// land in the same place: the alerts exist, nothing routes them anywhere
+// new. Says so in one line rather than reporting the alerts separately.
+const NO_EMAIL_DETAIL: AlertingDetail = { text: "No email set — alerts go to the stack's default contact point." };
 
 // Kept so a later discovery pass applies the same alerts without asking
 // again. `addresses` is undefined when no email destination was set.
@@ -323,9 +334,9 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
   // are already live — see the disclaimer in AlertingBody.
   const [reusingAddresses, setReusingAddresses] = useState(false);
   const [emailError, setEmailError] = useState<string>();
-  // Muted lines under the "Set up alerting" row. A list because the step's
+  // Muted lines under the "Configure alerting" row. A list because the step's
   // two halves report separately.
-  const [alertingDetail, setAlertingDetail] = useState<string[]>([]);
+  const [alertingDetail, setAlertingDetail] = useState<AlertingDetail[]>([]);
 
   // next-steps menu
   const [nextStepsSubPhase, setNextStepsSubPhase] = useState<NextStepsSubPhase>("menu");
@@ -1032,10 +1043,7 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
         setAlertingSubPhase("applying");
         const result = await applyCheckAlerts(targets, presets);
         if (cancelled) return;
-        setAlertingDetail([
-          `Alerts enabled on ${result.alerted} check${result.alerted === 1 ? "" : "s"}.`,
-          "No email configured — notifications use the stack's default contact point.",
-        ]);
+        setAlertingDetail([NO_EMAIL_DETAIL]);
         advance({
           status: "declined",
           alerting_outcome: "rules_only",
@@ -1097,14 +1105,21 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
       const [result] = await Promise.all([applyCheckAlerts(targets, presets), sleep(MIN_SPINNER_MS)]);
       if (cancelled) return;
 
-      const detail: string[] = [];
-      const checkLine = [
-        `Alerts enabled on ${result.alerted} check${result.alerted === 1 ? "" : "s"}`,
-        result.preserved > 0 ? `${result.preserved} left as configured` : "",
-        result.failed > 0 ? `${result.failed} failed` : "",
-      ].filter(Boolean);
-      detail.push(`${checkLine.join(" · ")}.`);
-      if (result.firstError) detail.push(result.firstError);
+      // The step row's own checkmark already says the alerts went on, so a
+      // clean pass reports nothing about them. These two are the cases it
+      // can't convey, and the row still shows a checkmark for both.
+      const detail: AlertingDetail[] = [];
+      if (result.preserved > 0) {
+        detail.push({
+          text: `${result.preserved} check${result.preserved === 1 ? "" : "s"} already had alerts, left as they were.`,
+        });
+      }
+      if (result.failed > 0) {
+        detail.push({ text: `Couldn't enable alerts on ${result.failed} check${result.failed === 1 ? "" : "s"}.` });
+        if (result.firstError) detail.push({ text: result.firstError });
+      }
+
+      const alertingPageUrl = `${initialStackUrl.replace(/\/$/, "")}/alerting/notifications`;
 
       let contactPoint: StepProperties["contact_point"];
       let notificationRoute: StepProperties["notification_route"];
@@ -1115,21 +1130,21 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
           contactPoint = await client.ensureContactPoint(addresses);
           notificationRoute = await client.ensureRoute();
           if (cancelled) return;
-          // Re-split because the wire format joins on ";".
-          detail.push(`Email to ${parseAddresses(addresses).join(", ")} via ${SM_CONTACT_POINT_NAME}.`);
+          // Re-split because the wire format joins on ";". No trailing
+          // period, so it can't be misread as part of the address.
+          detail.push({ text: `Alerts go to ${parseAddresses(addresses).join(", ")}` });
         } catch (err) {
           notificationsFailed = true;
-          detail.push(
-            `Couldn't configure email (${err instanceof Error ? err.message : String(err)}) — add a contact point at ${initialStackUrl.replace(/\/$/, "")}/alerting/notifications`,
-          );
+          detail.push({
+            text: `Couldn't set an email (${err instanceof Error ? err.message : String(err)}) — add a contact point at`,
+            href: alertingPageUrl,
+          });
         }
       } else {
         // No session, or a blank email prompt. Neither is a failure: the
         // checks alert, they just route to the stack default.
         detail.push(
-          client
-            ? "No email configured — notifications use the stack's default contact point."
-            : `Couldn't reach Grafana Alerting — add a contact point at ${initialStackUrl.replace(/\/$/, "")}/alerting/notifications`,
+          client ? NO_EMAIL_DETAIL : { text: "Couldn't set an email — add a contact point at", href: alertingPageUrl },
         );
       }
 
@@ -1266,7 +1281,8 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
                   {alertingDetail.map((line, i) => (
                     <Text key={`alerting-detail-${i}`} color={muted}>
                       {"     "}
-                      {line}
+                      {line.text}
+                      {line.href ? <Text color={url}> {line.href}</Text> : null}
                     </Text>
                   ))}
                 </Box>
@@ -1499,7 +1515,7 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
       // about a certificate alert it can't have (see alertsSummary).
       //
       // Phrased as a short question to match every other confirm in the
-      // wizard. The step row above already reads "Set up alerting", so this
+      // wizard. The step row above already reads "Configure alerting", so this
       // doesn't restate it, and the result line reports the check count.
       return (
         <Box flexDirection="column">
