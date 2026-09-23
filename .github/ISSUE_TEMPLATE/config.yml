@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 📖 Usage and flags
+    url: https://github.com/grafana/cloud-setup#readme
+    about: The README documents every command and flag
+  - name: 🔒 Security issue
+    url: https://github.com/grafana/cloud-setup/security/policy
+    about: Report a vulnerability privately, not as an issue

@@ -1,0 +1,52 @@
+name: 🐛 Bug Report
+description: The wizard did something it shouldn't have
+title: "🐛 "
+type: Bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **Title tip:** describe the symptom, e.g. "Sign-in step hangs after the browser redirect"
+
+        Two things make a wizard bug much easier to fix:
+
+        - Re-run with `--debug`, which logs the raw Assistant tool calls and responses to a temp file, and attach that file if the problem is in a step that talks to the Assistant.
+        - Paste the terminal output, including the `🦕 @grafana/cloud-setup <version>` line.
+
+  - type: textarea
+    id: what_happened
+    attributes:
+      label: What happened?
+      description: The command you ran and what you saw. Screenshots or a terminal recording are welcome for anything visual.
+      placeholder: |
+        npx @grafana/cloud-setup synthetics --url https://example.com --stack https://my-team.grafana.net
+
+        The check creation step showed "Creating check..." and never finished.
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect instead?
+      placeholder: The check gets created and the wizard moves on to the review step.
+
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: "First line of any `npx @grafana/cloud-setup --help` output"
+      placeholder: "0.1.1"
+
+  - type: input
+    id: environment
+    attributes:
+      label: Environment
+      description: "OS, Node version (`node --version`), and terminal"
+      placeholder: "macOS 15.2, Node 22.14.0, iTerm2"
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Anything else we should know?
+      description: When it started, whether it reproduces every time, workarounds you found, unusual project layout.
