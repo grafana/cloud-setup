@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-const { alertsForCheck, periodFor, presetDescription, presetMeta, presetsFor } =
+const { alertsForCheck, alertsSummary, periodFor, presetsFor } =
   await import("../dist/products/syntheticMonitoring/checkAlerts.js");
 const { isEmailish, isPlaceholderAddresses, joinAddresses, parseAddresses } =
   await import("../dist/products/syntheticMonitoring/notifications.js");
@@ -72,73 +72,44 @@ test("certificate expiry is dropped for a browser check and kept for an http one
   assert.equal(alert.period, "");
 });
 
-test("http latency is dropped for a browser check", () => {
-  assert.deepEqual(alertsForCheck(BROWSER, ["HTTPRequestDurationTooHighAvg"]), []);
-  assert.equal(alertsForCheck(UPTIME, ["HTTPRequestDurationTooHighAvg"])[0].threshold, 300);
-});
-
 test("an unpicked preset is never sent", () => {
   assert.deepEqual(alertsForCheck(UPTIME, []), []);
   const names = alertsForCheck(UPTIME, ["ProbeFailedExecutionsTooHigh"]).map((a) => a.name);
   assert.deepEqual(names, ["ProbeFailedExecutionsTooHigh"]);
 });
 
-test("the picker only offers presets that apply to something in the pass", () => {
-  // Showing one would mean ticking a box that silently does nothing.
-  const browserOnly = presetsFor([BROWSER, SSL]).map((e) => e.preset.name);
+test("a pass only gets the presets its check types qualify for", () => {
+  // There's no picker, so this set is what gets turned on. Naming an alert
+  // the pass can't have would also make the confirm screen lie.
+  const browserOnly = presetsFor([BROWSER, SSL]).map((p) => p.name);
   assert.deepEqual(browserOnly, ["ProbeFailedExecutionsTooHigh"]);
 
-  const mixed = presetsFor([UPTIME, BROWSER, SSL, AI_ENDPOINT]).map((e) => e.preset.name);
-  assert.deepEqual(mixed, [
-    "ProbeFailedExecutionsTooHigh",
-    "TLSTargetCertificateCloseToExpiring",
-    "HTTPRequestDurationTooHighAvg",
-  ]);
+  const mixed = presetsFor([UPTIME, BROWSER, SSL, AI_ENDPOINT]).map((p) => p.name);
+  assert.deepEqual(mixed, ["ProbeFailedExecutionsTooHigh", "TLSTargetCertificateCloseToExpiring"]);
 });
 
-test("the picker reports how many checks each preset covers", () => {
-  const entries = presetsFor([UPTIME, BROWSER, SSL, AI_ENDPOINT]);
-  const byName = Object.fromEntries(entries.map((e) => [e.preset.name, e.targets.length]));
-  assert.equal(byName.ProbeFailedExecutionsTooHigh, 4);
-  // http only, so Uptime and the AI endpoint.
-  assert.equal(byName.TLSTargetCertificateCloseToExpiring, 2);
-  assert.equal(byName.HTTPRequestDurationTooHighAvg, 2);
+test("a preset counts for the pass if any one check qualifies", () => {
+  // Per pass, not per check: certificate expiry survives a mixed pass on
+  // the strength of its http checks, and alertsForCheck drops it again for
+  // the browser ones.
+  assert.deepEqual(
+    presetsFor([SSL, UPTIME]).map((p) => p.name),
+    ["ProbeFailedExecutionsTooHigh", "TLSTargetCertificateCloseToExpiring"],
+  );
+  assert.deepEqual(alertsForCheck(SSL, ["TLSTargetCertificateCloseToExpiring"]), []);
 });
 
-test("failures and certificate expiry are ticked by default, latency is not", () => {
-  // See the note on the latency preset.
-  const defaults = presetsFor([UPTIME])
-    .filter((e) => e.preset.selectedByDefault)
-    .map((e) => e.preset.name);
-  assert.deepEqual(defaults, ["ProbeFailedExecutionsTooHigh", "TLSTargetCertificateCloseToExpiring"]);
-});
-
-test("preset rows report the threshold and the scope, and stay inside 80 columns", () => {
-  // The description carries the threshold, the meta carries the scope, and
-  // neither carries a period (see presetDescription).
-  const entries = presetsFor([UPTIME, BROWSER, SSL, AI_ENDPOINT]);
-  const byName = Object.fromEntries(entries.map((e) => [e.preset.name, e]));
-  assert.equal(presetDescription(byName.ProbeFailedExecutionsTooHigh.preset), "alert after 1 failed run");
-  assert.equal(presetMeta(byName.ProbeFailedExecutionsTooHigh), "(4 checks)");
-  assert.equal(presetDescription(byName.TLSTargetCertificateCloseToExpiring.preset), "alert 30 days before expiry");
-  assert.equal(presetMeta(byName.TLSTargetCertificateCloseToExpiring), "(2 checks)");
-  assert.equal(presetDescription(byName.HTTPRequestDurationTooHighAvg.preset), "alert above 300ms average");
-
-  // CheckboxList pads these into aligned columns, so the widest row
-  // decides whether the picker wraps. An earlier version of these strings
-  // pushed it past a standard terminal.
-  const labelWidth = Math.max(...entries.map((e) => e.preset.label.length));
-  const descWidth = Math.max(...entries.map((e) => presetDescription(e.preset).length));
-  const metaWidth = Math.max(...entries.map((e) => presetMeta(e).length));
-  const widest = 2 + 4 + labelWidth + 2 + descWidth + 1 + metaWidth;
-  assert.ok(widest <= 80, `widest preset row is ${widest} columns`);
-});
-
-test("the threshold is never written into a row twice", () => {
-  // So a changed threshold can't leave a stale copy behind in prose.
-  for (const entry of presetsFor([UPTIME])) {
-    assert.match(presetDescription(entry.preset), new RegExp(String(entry.preset.threshold)));
-  }
+test("the confirm sentence names only what the pass will actually get", () => {
+  // Reads as "... so you're notified when <this>." — a fragment, and one
+  // that must not promise a certificate alert an all-browser pass can't
+  // have. Thresholds are interpolated, so they can't drift from what's
+  // sent.
+  assert.equal(
+    alertsSummary(presetsFor([UPTIME, BROWSER, SSL, AI_ENDPOINT])),
+    "a check starts failing or a certificate is within 30 days of expiring",
+  );
+  assert.equal(alertsSummary(presetsFor([BROWSER, SSL])), "a check starts failing");
+  assert.equal(alertsSummary([]), "");
 });
 
 test("a placeholder address is recognised by its brackets, not its domain", () => {

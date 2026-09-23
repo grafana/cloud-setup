@@ -163,9 +163,11 @@ export interface StepProperties {
   failed?: number;
 
   // synthetics: alerting. The step's two halves land independently, so
-  // "rules_only" is alerts on the checks with no email destination, and
-  // "unavailable" is no session to reach the Alerting API with.
-  alerting_outcome?: "configured" | "rules_only" | "declined" | "unavailable";
+  // "rules_only" is alerts on the checks with no email destination (the
+  // step declined, or the prompt left blank), and "unavailable" is no
+  // session to reach the Alerting API with. A decline shows up as
+  // status:"declined" alongside it, not as its own outcome.
+  alerting_outcome?: "configured" | "rules_only" | "unavailable";
   alert_presets?: number;
   checks_alerted?: number;
   contact_point?: "created" | "updated" | "unchanged";

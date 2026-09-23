@@ -13,11 +13,11 @@ export interface AlertTarget {
 // (github.com/grafana/synthetic-monitoring-api internal/alerts/rules.go),
 // which is why nothing here authors PromQL.
 //
-// The API also has PingRequestDurationTooHighAvg and
-// DNSRequestDurationTooHighAvg, omitted because they are gated to ping/dns
-// checks and this wizard only creates http and browser ones.
-export type AlertPresetName =
-  "ProbeFailedExecutionsTooHigh" | "TLSTargetCertificateCloseToExpiring" | "HTTPRequestDurationTooHighAvg";
+// These are the two the wizard turns on. The API also has three latency
+// alerts (HTTP/Ping/DNS RequestDurationTooHighAvg), left out because a
+// latency budget needs to know something about the target and this wizard
+// only knows its URL.
+export type AlertPresetName = "ProbeFailedExecutionsTooHigh" | "TLSTargetCertificateCloseToExpiring";
 
 // Matches the SM API's own CheckAlert model
 // (github.com/grafana/synthetic-monitoring-api-go-client model/model.go).
@@ -57,13 +57,11 @@ export function periodFor(frequencyMs: number): string | undefined {
 
 export interface AlertPreset {
   name: AlertPresetName;
-  label: string;
   threshold: number;
   usesPeriod: boolean;
   // Sending an alert for a type the API doesn't accept it on fails the
-  // whole check, so this gates what the picker offers.
+  // whole check, so this gates which presets a pass gets.
   checkTypes: CheckType[];
-  selectedByDefault: boolean;
 }
 
 // Thresholds match the SM app's own form defaults
@@ -72,18 +70,15 @@ export interface AlertPreset {
 export const ALERT_PRESETS: AlertPreset[] = [
   {
     name: "ProbeFailedExecutionsTooHigh",
-    label: "Probe failures",
     // The API caps this at (period / frequency) * probes, which is always
     // at least 1 given periodFor's floor and runCreate refusing to run
     // with zero probes.
     threshold: 1,
     usesPeriod: true,
     checkTypes: ["http", "dns", "ping", "tcp", "traceroute", "grpc", "scripted", "browser", "multihttp"],
-    selectedByDefault: true,
   },
   {
     name: "TLSTargetCertificateCloseToExpiring",
-    label: "TLS certificate expiring",
     threshold: 30,
     usesPeriod: false,
     // http and tcp only, so this does not attach to the wizard's own "SSL"
@@ -92,17 +87,6 @@ export const ALERT_PRESETS: AlertPreset[] = [
     // warnDays: 30, so an expiring cert fails the check and probe failures
     // fire at the same threshold.
     checkTypes: ["http", "tcp"],
-    selectedByDefault: true,
-  },
-  {
-    name: "HTTPRequestDurationTooHighAvg",
-    label: "Request latency",
-    threshold: 300,
-    usesPeriod: true,
-    checkTypes: ["http"],
-    // Off by default: a latency budget needs to know something about the
-    // target, and this wizard only knows its URL.
-    selectedByDefault: false,
   },
 ];
 
@@ -118,24 +102,16 @@ function appliesTo(preset: AlertPreset, target: AlertTarget): boolean {
   return !preset.usesPeriod || periodFor(target.frequencyMs) !== undefined;
 }
 
-export interface ApplicablePreset<T extends AlertTarget = AlertTarget> {
-  preset: AlertPreset;
-  // Never empty: presetsFor drops presets that apply to nothing.
-  targets: T[];
+// Which presets a create pass gets: everything at least one of its checks
+// qualifies for. Per pass rather than per check, so a mixed pass qualifies
+// for the union and alertsForCheck narrows it again per check.
+export function presetsFor(targets: AlertTarget[]): AlertPreset[] {
+  return ALERT_PRESETS.filter((preset) => targets.some((t) => appliesTo(preset, t)));
 }
 
-// What's offerable for one create pass, so the picker never shows a preset
-// that every check in front of it would reject.
-export function presetsFor<T extends AlertTarget>(targets: T[]): ApplicablePreset<T>[] {
-  return ALERT_PRESETS.map((preset) => ({
-    preset,
-    targets: targets.filter((t) => appliesTo(preset, t)),
-  })).filter((entry) => entry.targets.length > 0);
-}
-
-// The picker is per-pass, not per-check, so a preset picked for a mixed
-// pass has to resolve to nothing on the checks it doesn't apply to rather
-// than failing them.
+// Presets are resolved per pass, not per check, so one that a mixed pass
+// qualifies for has to resolve to nothing on the checks it doesn't apply
+// to rather than failing them.
 export function alertsForCheck(target: AlertTarget, selected: Iterable<AlertPresetName>): CheckAlert[] {
   const chosen = new Set(selected);
   const alerts: CheckAlert[] = [];
@@ -151,23 +127,29 @@ export function alertsForCheck(target: AlertTarget, selected: Iterable<AlertPres
   return alerts;
 }
 
-// Interpolates the threshold rather than restating it, so the row can't
-// drift from the value being sent. Says nothing about the period: it
-// differs per check within one pass, so any single number would be wrong
-// for some row.
-export function presetDescription(preset: AlertPreset): string {
+// One clause per preset for the confirm screen, with the threshold
+// interpolated rather than restated so it can't drift from the value being
+// sent. Says nothing about the period: it differs per check inside one
+// pass, so any single number would be wrong for some of them.
+function presetClause(preset: AlertPreset): string {
   switch (preset.name) {
     case "ProbeFailedExecutionsTooHigh":
-      return `alert after ${preset.threshold} failed run${preset.threshold === 1 ? "" : "s"}`;
+      // At a threshold of 1 the literal "fails 1 time" is clumsy, and "starts
+      // failing" says the same thing. Still branches on the threshold rather
+      // than hard-coding either phrasing, so raising it can't leave the
+      // sentence claiming something narrower than what's sent.
+      return preset.threshold === 1 ? "a check starts failing" : `a check fails ${preset.threshold} times`;
     case "TLSTargetCertificateCloseToExpiring":
-      return `alert ${preset.threshold} days before expiry`;
-    case "HTTPRequestDurationTooHighAvg":
-      return `alert above ${preset.threshold}ms average`;
+      return `a certificate is within ${preset.threshold} days of expiring`;
   }
 }
 
-// How many of the pass's checks this lands on, which is the part the row
-// can't otherwise convey.
-export function presetMeta(entry: ApplicablePreset): string {
-  return `(${entry.targets.length} check${entry.targets.length === 1 ? "" : "s"})`;
+// Reads into the confirm screen's sentence, so it stays a fragment:
+// "... so you're notified when <this>." Built from what the pass actually
+// qualifies for, since an all-browser pass gets no certificate alert and
+// naming one there would be a lie.
+export function alertsSummary(presets: AlertPreset[]): string {
+  const clauses = presets.map(presetClause);
+  if (clauses.length <= 1) return clauses.join("");
+  return `${clauses.slice(0, -1).join(", ")} or ${clauses[clauses.length - 1]}`;
 }

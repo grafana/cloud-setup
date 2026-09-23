@@ -10,8 +10,7 @@ import { writeCredentials } from "../products/syntheticMonitoring/credentials.js
 import { aiEndpointCandidatesFor, candidatesFor, type Candidate } from "../products/syntheticMonitoring/discover.js";
 import {
   alertsForCheck,
-  presetDescription,
-  presetMeta,
+  alertsSummary,
   presetsFor,
   type AlertPresetName,
 } from "../products/syntheticMonitoring/checkAlerts.js";
@@ -231,15 +230,15 @@ function availableNextStepOptions(log: { key: string }[]): SelectMenuItem[] {
 type CreateSubPhase =
   "reviewing" | "auto-discovering" | "base-url-input" | "connecting" | "token-input" | "validating" | "creating";
 
-// The sub-phases split along the step's two halves. "picking"/"applying"
-// configure the checks' own alerts over the SM API and work on either
-// transport. "inspecting"/"email-input"/"default-confirm" configure where
-// those alerts go, need the OAuth session, and are skipped without one.
+// The sub-phases split along the step's two halves. "applying" configures
+// the checks' own alerts over the SM API and works on either transport.
+// "inspecting"/"email-input"/"default-confirm" configure where those
+// alerts go, need the OAuth session, and are skipped without one.
 // "default-confirm" appears only when the stack's default contact point
 // still holds a placeholder.
-type AlertingSubPhase = "confirm" | "inspecting" | "picking" | "email-input" | "default-confirm" | "applying";
+type AlertingSubPhase = "confirm" | "inspecting" | "email-input" | "default-confirm" | "applying";
 
-const ALERTING_WAITING_SUBPHASES: AlertingSubPhase[] = ["confirm", "picking", "email-input", "default-confirm"];
+const ALERTING_WAITING_SUBPHASES: AlertingSubPhase[] = ["confirm", "email-input", "default-confirm"];
 
 // Kept so a later discovery pass applies the same alerts without asking
 // again. `addresses` is undefined when no email destination was set.
@@ -320,7 +319,6 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
 
   // alerting step
   const [alertingSubPhase, setAlertingSubPhase] = useState<AlertingSubPhase>("confirm");
-  const [alertingPresets, setAlertingPresets] = useState<string[]>([]);
   const [emailInput, setEmailInput] = useState("");
   const [emailError, setEmailError] = useState<string>();
   const [placeholderAddresses, setPlaceholderAddresses] = useState<string>();
@@ -368,7 +366,6 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
   const lastPassItems = useRef<CreationItem[]>([]);
   const alertingChoice = useRef<AlertingChoice | undefined>(undefined);
   const alertingConfirmResolver = useRef<((proceed: boolean) => void) | undefined>(undefined);
-  const alertingPresetsResolver = useRef<((keys: string[]) => void) | undefined>(undefined);
   const emailResolver = useRef<((raw: string) => void) | undefined>(undefined);
   const defaultConfirmResolver = useRef<((repair: boolean) => void) | undefined>(undefined);
 
@@ -995,14 +992,14 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
         return;
       }
 
+      // Every preset the pass's check types qualify for — there's no picker,
+      // so this is the set that gets turned on.
       const applicable = presetsFor(targets.map((it) => it.candidate));
-      // Unreachable for anything discover.ts generates today, but
-      // CheckboxList with no items crashes rather than rendering empty.
       if (applicable.length === 0) {
         advance({ status: "skipped" });
         return;
       }
-      const defaultPresets = applicable.filter((e) => e.preset.selectedByDefault).map((e) => e.preset.name);
+      const presets = applicable.map((preset) => preset.name);
 
       // A later pass inherits the first pass's decision without asking
       // again, silently: the step's row is already checkmarked.
@@ -1021,10 +1018,8 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
           };
         }
         advance({
-          // No presets means the first pass was declined at the picker, and
-          // inheriting that is still a decline, not a successful no-op.
-          status: prior.presets.length === 0 ? "declined" : result.failed > 0 ? "failed" : "ok",
-          alerting_outcome: prior.presets.length === 0 ? "declined" : prior.addresses ? "configured" : "rules_only",
+          status: result.failed > 0 ? "failed" : "ok",
+          alerting_outcome: prior.addresses ? "configured" : "rules_only",
           alert_presets: prior.presets.length,
           checks_alerted: result.alerted,
         });
@@ -1040,9 +1035,9 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
       // Declining skips the email destination, not the alerts themselves,
       // which still route wherever the stack already routes things.
       if (!proceed) {
-        alertingChoice.current = { presets: defaultPresets };
+        alertingChoice.current = { presets };
         setAlertingSubPhase("applying");
-        const result = await applyCheckAlerts(targets, defaultPresets);
+        const result = await applyCheckAlerts(targets, presets);
         if (cancelled) return;
         setAlertingDetail([
           `Alerts enabled on ${result.alerted} check${result.alerted === 1 ? "" : "s"}.`,
@@ -1051,7 +1046,7 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
         advance({
           status: "declined",
           alerting_outcome: "rules_only",
-          alert_presets: defaultPresets.length,
+          alert_presets: presets.length,
           checks_alerted: result.alerted,
         });
         return;
@@ -1076,22 +1071,6 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
           }
         }
         if (cancelled) return;
-      }
-
-      setAlertingPresets(defaultPresets);
-      setAlertingSubPhase("picking");
-      const picked = (await new Promise<string[]>((resolve) => {
-        alertingPresetsResolver.current = resolve;
-      })) as AlertPresetName[];
-      if (cancelled) return;
-
-      // Unticking everything is saying no after all, so stop before
-      // creating a contact point for alerts that will never exist.
-      if (picked.length === 0) {
-        alertingChoice.current = { presets: [] };
-        setAlertingDetail(["No alerts enabled."]);
-        advance({ status: "declined", alerting_outcome: "declined", alert_presets: 0, checks_alerted: 0 });
-        return;
       }
 
       let addresses: string | undefined;
@@ -1130,8 +1109,8 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
       }
 
       setAlertingSubPhase("applying");
-      alertingChoice.current = { presets: picked, addresses };
-      const [result] = await Promise.all([applyCheckAlerts(targets, picked), sleep(MIN_SPINNER_MS)]);
+      alertingChoice.current = { presets, addresses };
+      const [result] = await Promise.all([applyCheckAlerts(targets, presets), sleep(MIN_SPINNER_MS)]);
       if (cancelled) return;
 
       const detail: string[] = [];
@@ -1198,7 +1177,7 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
       advance({
         status: result.failed > 0 || notificationsFailed ? "failed" : "ok",
         alerting_outcome: !client ? "unavailable" : addresses && !notificationsFailed ? "configured" : "rules_only",
-        alert_presets: picked.length,
+        alert_presets: presets.length,
         checks_alerted: result.alerted,
         contact_point: contactPoint,
         notification_route: notificationRoute,
@@ -1380,10 +1359,7 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
   }
 
   function Footer() {
-    // Shared by the wizard's two checkbox screens.
-    const pickingChecks = currentStep === "create" && createSubPhase === "reviewing" && (candidates?.length ?? 0) > 0;
-    const pickingPresets = currentStep === "alerting" && alertingSubPhase === "picking";
-    if (!pickingChecks && !pickingPresets) return null;
+    if (currentStep !== "create" || createSubPhase !== "reviewing" || (candidates?.length ?? 0) === 0) return null;
     // Same blank-line-before-the-hint spacing as the next-steps menu's own
     // hint (see NextStepsBody) — one line, same "· "-separated shape,
     // rather than three stacked lines (a selected-count line plus two more
@@ -1557,10 +1533,21 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
 
   function AlertingBody() {
     if (alertingSubPhase === "confirm") {
-      const count = lastPassItems.current.filter((it) => it.id !== undefined).length;
+      const targets = lastPassItems.current.filter((it) => it.id !== undefined);
+      // Named rather than picked: the alerts are fixed, so this confirm is
+      // the one place the user finds out what they're getting. Built from
+      // what the pass qualifies for, so an all-browser pass isn't told
+      // about a certificate alert it can't have (see alertsSummary).
+      //
+      // No check count here on purpose: "on this check ... when a check
+      // starts failing" reads badly, and the result line under the step row
+      // reports the count anyway.
       return (
         <Box flexDirection="column">
-          <Text>Set up alerting for {count === 1 ? "this check" : `these ${count} checks`}?</Text>
+          <Text>
+            Now let's set up alerting, so you're notified when{" "}
+            {alertsSummary(presetsFor(targets.map((it) => it.candidate)))}.
+          </Text>
           <EnterHint suffix="or n to skip" />
         </Box>
       );
@@ -1568,28 +1555,6 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
     // The step row's own spinner covers these, same as "create"'s
     // connect/auto-discover phases.
     if (alertingSubPhase === "inspecting" || alertingSubPhase === "applying") return null;
-    if (alertingSubPhase === "picking") {
-      const applicable = presetsFor(
-        lastPassItems.current.filter((it) => it.id !== undefined).map((it) => it.candidate),
-      );
-      return (
-        <Box flexDirection="column">
-          <Text>Which alerts should these checks raise?</Text>
-          <CheckboxList
-            items={applicable.map((entry) => ({
-              key: entry.preset.name,
-              label: entry.preset.label,
-              description: presetDescription(entry.preset),
-              meta: presetMeta(entry),
-            }))}
-            initialSelected={new Set(alertingPresets)}
-            accentColor={accent ?? "white"}
-            onSubmit={(keys) => alertingPresetsResolver.current?.(keys)}
-            onSelectionChange={setAlertingPresets}
-          />
-        </Box>
-      );
-    }
     if (alertingSubPhase === "email-input")
       return (
         <Box flexDirection="column">
