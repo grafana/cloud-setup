@@ -15,6 +15,12 @@ CONTRIBUTING.md covers the toolchain: the two tsconfigs, the Node version split,
 - **Four `react-hooks` rules are off on purpose** (`purity`, `refs`, `static-components`, `set-state-in-effect`). They target React Compiler, which this app does not run. Turning them back on means restructuring `SetupApp.tsx` and `FrontendApp.tsx`, so it is its own change, not a cleanup.
 - **`npm test` cannot run on the `engines.node` floor**, for a `mock.module()` bug in that Node rather than anything wrong with the wizard. Raising `engines.node` is not the fix.
 
+## Opening a PR or an issue
+
+`gh pr create` does not read `.github/PULL_REQUEST_TEMPLATE.md`, so pass it explicitly (`--body-file .github/PULL_REQUEST_TEMPLATE.md`, then fill it in) or write a body with the same two headings. It is short on purpose: what changed and why, how a reviewer checks it, and whether `npm run check` passed.
+
+Issues go through the forms in `.github/ISSUE_TEMPLATE` — blank issues are disabled. For a bug, the two things worth collecting before filing are the terminal output including the version line and, if the failing step talks to the Assistant, the file `--debug` writes.
+
 ## Telemetry
 
 All of it lives in `src/telemetry.ts`. Nothing else in the tree talks to the usage-stats service, and nothing should.
