@@ -10,6 +10,7 @@ export function useWorkflowInput<State extends WorkflowState, Inputs extends Com
   exit: HardExit,
   textPrompts: readonly string[],
   answer: (input: string, key: { return: boolean; escape: boolean }) => void,
+  onQuit: () => void = () => exit("Cancelled."),
 ) {
   useInput((input, key) => {
     if (state.done || state.failureSummary) return;
@@ -23,7 +24,7 @@ export function useWorkflowInput<State extends WorkflowState, Inputs extends Com
       return;
     }
     if (input.toLowerCase() === "q") {
-      exit("Cancelled.");
+      onQuit();
       return;
     }
     const yes = key.return || input.toLowerCase() === "y";

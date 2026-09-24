@@ -1,6 +1,6 @@
 import { readCredentials } from "../products/syntheticMonitoring/credentials.js";
 import { setDebugEnabled } from "../debug.js";
-import { runSetupUI } from "../ui/SetupApp.js";
+import { runSyntheticsUI } from "../ui/SyntheticsApp.js";
 import { applyFolder, parseCommandOptions, type Command } from "./shared.js";
 
 const USAGE_LINE =
@@ -16,11 +16,11 @@ async function run(rest: string[]): Promise<void> {
     const stored = await readCredentials();
     baseUrl = stored?.baseUrl;
   }
-  // Printed before runSetupUI hands the terminal to Ink — console.log is
+  // Printed before runSyntheticsUI hands the terminal to Ink — console.log is
   // safe here only because Ink hasn't started rendering yet.
   const debugFile = setDebugEnabled(booleans.has("debug"));
   if (debugFile) console.log(`Debug log: ${debugFile}`);
-  await runSetupUI(baseUrl, strings.url, strings.stack, booleans.has("force-gcx-install"));
+  await runSyntheticsUI(baseUrl, strings.url, strings.stack, booleans.has("force-gcx-install"));
 }
 
 export const syntheticsCommand: Command = {

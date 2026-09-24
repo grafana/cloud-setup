@@ -16,7 +16,7 @@ export interface Candidate {
   frequencyMs: number;
   // How many probe locations this check is created with — capped to
   // however many actually exist on the tenant (see runCreate in
-  // SetupApp.tsx). Varies per check type rather than one count applied to
+  // SyntheticsApp.tsx). Varies per check type rather than one count applied to
   // everything.
   probeCount: number;
 }
