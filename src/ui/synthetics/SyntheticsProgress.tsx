@@ -1,5 +1,6 @@
 import { Box, Text } from "ink";
-import { COLORS } from "../../theme.js";
+import Spinner from "ink-spinner";
+import { COLORS, ICONS } from "../../theme.js";
 import { Link } from "../shared.js";
 import { StepList } from "../workflow/StepList.js";
 import { CheckResults } from "./CheckResults.js";
@@ -12,6 +13,7 @@ export function SyntheticsProgress({ state }: { state: SyntheticsState }) {
       <StepList
         labels={SYNTHETICS_STEPS}
         state={state}
+        hidden={["next-steps"]}
         detail={(step) => (
           <>
             {step === "gcx" && state.gcx.error && <Text color={COLORS.MUTED}> {state.gcx.error}</Text>}
@@ -39,9 +41,16 @@ export function SyntheticsProgress({ state }: { state: SyntheticsState }) {
           </>
         )}
       />
+      {/* Each finished next-step action lands as its own standalone row,
+      formatted exactly like a fixed step row (StepList) rather than nested
+      under one — it's a completed item in the same list, not a detail of
+      something else. */}
       {state.nextStepsLog.map((entry) => (
         <Box key={entry.key} flexDirection="column">
-          <Text> {entry.label}</Text>
+          <Text>
+            {" "}
+            <Text color={COLORS.OK}>{ICONS.OK}</Text> {entry.label}
+          </Text>
           {entry.detail && <Text color={COLORS.MUTED}> {entry.detail}</Text>}
           {entry.items && <CheckResults items={entry.items} />}
         </Box>
@@ -50,12 +59,28 @@ export function SyntheticsProgress({ state }: { state: SyntheticsState }) {
         <Box flexDirection="column">
           <Text>
             {" "}
-            Find additional synthetic checks{state.currentStep === "analyze" ? `: ${state.analyzeProgress}%` : ""}
+            {state.prompt ? (
+              <Text color={COLORS.ACCENT}>{ICONS.WAITING}</Text>
+            ) : (
+              <Text color={COLORS.ACCENT}>
+                <Spinner type="dots" />
+              </Text>
+            )}{" "}
+            <Text bold>Find additional synthetic checks</Text>
+            {state.currentStep === "analyze" ? `: ${state.analyzeProgress}%` : ""}
           </Text>
           <CheckResults items={state.items} />
         </Box>
       )}
-      {state.exporting && <Text> Exporting checks as Terraform…</Text>}
+      {state.exporting && (
+        <Text>
+          {" "}
+          <Text color={COLORS.ACCENT}>
+            <Spinner type="dots" />
+          </Text>{" "}
+          Exporting checks as Terraform…
+        </Text>
+      )}
     </Box>
   );
 }
