@@ -21,7 +21,7 @@ export async function instrument(
   );
   ctx.onCleanup(() => progress.stop());
   let complete = false;
-  let packageInstall: "ok" | "failed" = "ok";
+  let packageInstall: "ok" | "failed" | undefined;
   let routerWired: boolean | undefined;
   let layoutWired: boolean | undefined;
   try {
@@ -57,6 +57,7 @@ export async function instrument(
           ...(instrumentation.sessionReplay ? [REPLAY_FARO_PACKAGE] : []),
         ]),
       );
+      packageInstall = "ok";
     } catch (error) {
       packageInstall = "failed";
       ctx.update({ error: `Package install failed: ${error instanceof Error ? error.message : String(error)}` });

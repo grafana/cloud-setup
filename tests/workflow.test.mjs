@@ -144,3 +144,52 @@ for (const [name, overrides] of [
     assert.equal(events.at(-1)[1].status, "failed");
     assert.ok(controller.getSnapshot().error);
   });
+
+test("failed gcx installation reports failure and still permits the next step", async () => {
+  const { controller, events } = frontend({
+    isGcxInstalled: () => false,
+    installGcx: async () => {
+      throw new Error("install failed");
+    },
+  });
+  controller.start();
+  await tick();
+  controller.answer("install", true);
+  await tick();
+  assert.deepEqual(events[0], ["gcx", { status: "failed", already_installed: false, install_declined: false }]);
+  assert.equal(controller.getSnapshot().prompt, "authenticate");
+  assert.equal(controller.getSnapshot().gcx.error, "install failed");
+  controller.dispose();
+});
+
+test("aborted sign-in ignores late credentials and does not retry app lookup", async () => {
+  const deferred = Promise.withResolvers();
+  const { controller, events } = frontend({
+    ensureAssistantAuth: () => deferred.promise,
+    setStackIdentity: () => assert.fail("late identity must not be applied"),
+  });
+  controller.start();
+  await tick();
+  controller.answer("authenticate", true);
+  await tick();
+  controller.answer("abortAuth", true);
+  await tick();
+  assert.equal(controller.getSnapshot().prompt, "createApp");
+  deferred.resolve({ stackId: "stale" });
+  await tick();
+  assert.deepEqual(events.find(([step]) => step === "auth")[1], { status: "aborted", auth_outcome: "aborted" });
+  controller.dispose();
+});
+
+test("a failed file edit does not claim packages were installed", async () => {
+  const { controller, events } = frontend({
+    instrumentReact: async () => {
+      throw new Error("edit failed");
+    },
+    installFaroPackages: () => assert.fail("must not install after failed edit"),
+  });
+  await configure(controller);
+  assert.equal(controller.getSnapshot().outcome, "incomplete");
+  assert.equal(events.at(-1)[1].status, "failed");
+  assert.equal(events.at(-1)[1].package_install, undefined);
+});

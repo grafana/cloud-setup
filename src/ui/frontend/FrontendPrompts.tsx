@@ -7,6 +7,14 @@ import { PromptInput } from "../workflow/PromptInput.js";
 import type { WorkflowController } from "../workflow/controller.js";
 import type { FrontendInputs, FrontendState } from "./model.js";
 
+function collectorHost(url: string): string {
+  try {
+    return new URL(url).hostname;
+  } catch {
+    return url;
+  }
+}
+
 export function FrontendPrompts({
   state,
   controller,
@@ -22,7 +30,10 @@ export function FrontendPrompts({
           <SelectMenu
             accentColor={COLORS.ACCENT}
             items={[
-              ...state.apps.map((app, index) => ({ key: String(index), label: app.name })),
+              ...state.apps.map((app, index) => ({
+                key: String(index),
+                label: `${app.name}${app.collectEndpointURL ? ` (${collectorHost(app.collectEndpointURL)})` : ""}`,
+              })),
               { key: "new", label: "Create a new app" },
             ]}
             onSelect={(key) => controller.answer("app", state.apps[Number(key)])}
@@ -33,7 +44,10 @@ export function FrontendPrompts({
     case "createApp":
       return (
         <Box flexDirection="column">
-          <Text>No existing app found. Create one?</Text>
+          <Text>
+            No existing app found. Create one? If automatic creation fails, this opens your browser. Come back with its
+            collector URL once it is created.
+          </Text>
           <EnterHint suffix="or n to skip" />
         </Box>
       );
