@@ -118,6 +118,43 @@ test("a browser-type check skips probes that can't run k6, but keeps every capab
   controller.dispose();
 });
 
+test("checks selected together draw probes from one shared, consistently filtered pool", async () => {
+  const uptimeCandidate = { ...first, key: "uptime", label: "uptime", probeCount: 3 };
+  const sslCandidate = {
+    ...second,
+    key: "ssl",
+    label: "ssl",
+    settings: { browser: { script: "" } },
+    probeCount: 1,
+  };
+  const probes = [
+    { id: 1, name: "Incapable", capabilities: { disableBrowserChecks: true } },
+    { id: 2, name: "London" },
+    { id: 3, name: "Paris" },
+    { id: 4, name: "Tokyo" },
+  ];
+  const client = {
+    createCheck: async () => ({ id: 1 }),
+    updateCheck: () => assert.fail("unexpected update"),
+    getCheckAlerts: async () => [],
+    putCheckAlerts: async () => {},
+  };
+  const { controller } = setup({
+    candidatesFor: async () => [uptimeCandidate, sslCandidate],
+    tryAutoSmSession: async () => ({ client, apiUrl: "https://sm.example", probes }),
+  });
+  await start(controller);
+  controller.answer("selection", ["uptime", "ssl"]);
+  await tick();
+  await tick();
+  const records = new Map(controller.getSnapshot().records.map((r) => [r.candidate.key, r]));
+  // ssl's single pick is the first of uptime's three, not some other probe
+  // it landed on only because it filters differently.
+  assert.deepEqual(records.get("uptime").probes, ["London", "Paris", "Tokyo"]);
+  assert.deepEqual(records.get("ssl").probes, ["London"]);
+  controller.dispose();
+});
+
 for (const prompt of ["baseUrl", "token"])
   test(`Back from ${prompt} returns to a working selection prompt and preserves the submitted selection`, async () => {
     const { controller, mutations } = setup({ tryAutoSmSession: () => assert.fail("auth was declined") });

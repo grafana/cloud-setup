@@ -16,15 +16,25 @@ function supportsK6Channel(probe: Probe): boolean {
   return probe.k6Versions?.[K6_V2_CHANNEL] !== null;
 }
 
+// One shared, ordered probe list for the whole pass rather than each
+// candidate re-filtering session.probes on its own — otherwise a plain
+// HTTP check (no capability needs) and a browser check (SSL/broken-links,
+// needs k6 v2) can end up drawing from different-looking slices of the
+// same list, so a check asking for 1 probe might land on a different
+// location than the first of another check's 3, which reads as arbitrary.
+// Filtering once up front, if anything selected needs it, means every
+// candidate's `probeCount` is just a prefix of this same list — a smaller
+// pick is always among a bigger one's.
+//
 // SSL and broken-links checks both run as a k6 script (settings.browser),
 // assigned to the v2 channel (see reconcile.ts's toPayload) — probes
 // predating the k6 runner, or whose k6 version doesn't satisfy that
 // channel, would otherwise still get slotted in and just fail to execute.
-// Prefer probes that can actually run it; only fall back to the full set
-// if that leaves none at all (a check with zero probes is a worse outcome
-// than one that might not run on every probe it was told to try).
-function eligibleProbes(probes: Probe[], candidate: Candidate): Probe[] {
-  if (!candidate.settings.browser) return probes;
+// Only fall back to the full set if filtering would leave none at all (a
+// check with zero probes is a worse outcome than one that might not run on
+// every probe it was told to try).
+function orderedProbes(probes: Probe[], selected: Candidate[]): Probe[] {
+  if (!selected.some((candidate) => candidate.settings.browser)) return probes;
   const capable = probes.filter((probe) => !probe.capabilities?.disableBrowserChecks && supportsK6Channel(probe));
   return capable.length ? capable : probes;
 }
@@ -41,10 +51,9 @@ export async function createChecks(
   ctx.update({ createPhase: "creating" });
   const selected = unhandledCandidates(ctx.get()).filter((candidate) => chosen.includes(candidate.key));
   if (!session.probes.length) throw new Error("No probes are available on this tenant.");
+  const probePool = orderedProbes(session.probes, selected);
   let items: CreationItem[] = selected.map((candidate) => {
-    const probes = eligibleProbes(session.probes, candidate)
-      .slice(0, candidate.probeCount)
-      .map((probe) => probe.name);
+    const probes = probePool.slice(0, candidate.probeCount).map((probe) => probe.name);
     return {
       candidate,
       pass: ctx.get().analyzeMode,
