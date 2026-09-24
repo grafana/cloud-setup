@@ -2,6 +2,7 @@ import type { Candidate } from "../../products/syntheticMonitoring/discover.js";
 import type { Probe, SmClient } from "../../products/syntheticMonitoring/api.js";
 import type { AlertPresetName } from "../../products/syntheticMonitoring/checkAlerts.js";
 import type { SyntheticConfig } from "../../products/syntheticMonitoring/types.js";
+import type { StepProperties, StepStatus } from "../../telemetry.js";
 import type { CommonInputs, CommonState } from "../workflow/commonSteps.js";
 import type { StepContext, WorkflowState } from "../workflow/controller.js";
 
@@ -31,6 +32,7 @@ export interface CreationItem {
 export interface NextStepLog {
   key: string;
   label: string;
+  status: StepStatus;
   detail?: string;
   items?: CreationItem[];
 }
@@ -67,7 +69,7 @@ export interface SyntheticsState extends WorkflowState<SyntheticsStep>, CommonSt
   items: CreationItem[];
   records: CreationItem[];
   alertingPhase: "confirm" | "inspecting" | "email-input" | "applying";
-  alertingChoice?: { presets: AlertPresetName[]; addresses?: string };
+  alertingChoice?: { presets: AlertPresetName[]; outcome: NonNullable<StepProperties["alerting_outcome"]> };
   alertingDetail: AlertingDetail[];
   emailInput: string;
   emailError?: string;

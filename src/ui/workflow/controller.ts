@@ -5,6 +5,8 @@ export interface WorkflowState<Step extends string = string> {
   started: boolean;
   completed: ReadonlySet<Step>;
   results: Partial<Record<Step, StepProperties>>;
+  // Retained across repeated passes, even when the latest step result is OK.
+  failedSteps: ReadonlySet<Step>;
   done: boolean;
   failureSummary?: string;
   prompt?: string;
@@ -40,6 +42,7 @@ export class WorkflowController<State extends WorkflowState, Inputs extends obje
     private state: State,
     private handlers: StepHandlers<State, Inputs>,
     private record: (step: State["currentStep"], properties: StepProperties) => void,
+    private requiredSteps: ReadonlyArray<State["currentStep"]>,
   ) {}
 
   getSnapshot = (): State => this.state;
@@ -126,23 +129,29 @@ export class WorkflowController<State extends WorkflowState, Inputs extends obje
         if (signal.aborted) return;
         if (result.properties) {
           this.record(step, result.properties);
+          const failedSteps = new Set(this.state.failedSteps);
+          if (result.properties.status === "failed" && this.requiredSteps.includes(step)) failedSteps.add(step);
           this.update({
             completed: new Set([...this.state.completed, step]),
             results: { ...this.state.results, [step]: result.properties } as State["results"],
+            failedSteps,
           });
         }
         if (result.next === "done") {
           this.dispose();
-          this.update({ done: true, prompt: undefined });
+          this.update({ done: true, prompt: undefined, outcome: this.state.failedSteps.size ? "incomplete" : "ok" });
         } else this.run(result.next);
       })
       .catch((error: unknown) => {
         if (signal.aborted) return;
         this.dispose();
+        this.record(step, { status: "failed" });
         this.update({
           failureSummary: error instanceof Error ? error.message : String(error),
           outcome: "error",
           prompt: undefined,
+          results: { ...this.state.results, [step]: { status: "failed" } } as State["results"],
+          failedSteps: new Set([...this.state.failedSteps, step]),
         });
       });
   }

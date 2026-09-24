@@ -18,7 +18,7 @@ mock.module("../dist/telemetry.js", {
 });
 const { useHardExit } = await import("../dist/ui/shared.js");
 
-test("explicit incomplete setup survives a clean process exit", () => {
+test("explicit incomplete setup is reported without a thrown Error", () => {
   useHardExit("frontend", "stack")(undefined, "incomplete");
   assert.equal(events.at(-1)[2], "incomplete");
 });
@@ -51,10 +51,13 @@ test("multiple exit callbacks produce only one finished event", (t) => {
 
 for (const [scenario, outcome, code] of [
   ["success", "ok", 0],
-  ["incomplete", "incomplete", 0],
+  ["incomplete", "incomplete", 1],
   ["error", "error", 1],
   ["cancel", "canceled", 0],
   ["repeated", "canceled", 0],
+  ["repeated-incomplete", "incomplete", 1],
+  ["repeated-error", "error", 1],
+  ["reported-error", "error", 1],
 ]) {
   test(`${scenario} exits the child process with code ${code} and one finished event`, () => {
     const child = spawnSync(
@@ -73,7 +76,7 @@ for (const [scenario, outcome, code] of [
     const reported = output.filter((line) => line.startsWith("{")).map((line) => JSON.parse(line));
     assert.equal(reported.length, 1, child.stdout);
     assert.equal(reported[0].outcome, outcome);
-    assert.equal(output.includes("telemetry flushed"), scenario !== "repeated", child.stdout);
+    assert.equal(output.includes("telemetry flushed"), !scenario.startsWith("repeated"), child.stdout);
     assert.equal(output.includes("Cancelled."), outcome === "canceled", child.stdout);
   });
 }

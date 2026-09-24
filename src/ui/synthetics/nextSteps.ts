@@ -14,8 +14,8 @@ export async function nextSteps(
   for (;;) {
     const action = availableActions(ctx.get()).length ? await ctx.ask("nextAction") : "finish";
     if (action === "finish") {
-      ctx.update({ outcome: "ok" });
-      return { next: "done", properties: { status: "ok" } };
+      const exportFailed = ctx.get().nextStepsLog.some((entry) => entry.key === "export" && entry.status === "failed");
+      return { next: "done", properties: { status: exportFailed ? "failed" : "ok" } };
     }
     if (action === "browser-discovery") {
       ctx.update({ items: [], analyzeMode: "browser-discovery" });
@@ -23,6 +23,7 @@ export async function nextSteps(
     }
     ctx.update({ exporting: true });
     let detail: string;
+    let status: "ok" | "failed" = "ok";
     try {
       const { records, session } = ctx.get();
       if (!session) throw new Error("No Synthetic Monitoring session is available.");
@@ -39,11 +40,12 @@ export async function nextSteps(
       detail = `Wrote to ${path.relative(options.cwd, written)}`;
     } catch (error) {
       ctx.signal.throwIfAborted();
+      status = "failed";
       detail = `Couldn't export (${error instanceof Error ? error.message : String(error)})`;
     }
     ctx.update({
       exporting: false,
-      nextStepsLog: [...ctx.get().nextStepsLog, { key: "export", label: "Export checks as Terraform", detail }],
+      nextStepsLog: [...ctx.get().nextStepsLog, { key: "export", label: "Export checks as Terraform", detail, status }],
     });
   }
 }

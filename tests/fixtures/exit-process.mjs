@@ -13,7 +13,7 @@ mock.module("../../dist/telemetry.js", {
     recordRun: (_command, _stack, outcome) => writeSync(1, `${JSON.stringify({ outcome })}\n`),
     waitForTelemetry: () =>
       new Promise((resolve) => {
-        if (scenario === "repeated") return;
+        if (scenario.startsWith("repeated")) return;
         setTimeout(() => {
           writeSync(1, "telemetry flushed\n");
           resolve();
@@ -30,6 +30,14 @@ const exit = useHardExit("frontend", "stack");
 if (scenario === "repeated") {
   process.emit("SIGINT");
   process.emit("SIGINT");
+} else if (scenario === "repeated-incomplete") {
+  exit(undefined, "incomplete");
+  process.emit("SIGINT");
+} else if (scenario === "repeated-error") {
+  exit(new Error("failed"));
+  process.emit("SIGINT");
+} else if (scenario === "reported-error") {
+  exit(undefined, "error");
 } else if (scenario === "cancel") {
   exit("Cancelled.");
 } else if (scenario === "error") {

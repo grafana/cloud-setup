@@ -88,14 +88,14 @@ export async function requireInteractiveTerminal(command: Command, stackUrl: str
 // — used for a user-initiated quit (Ctrl+C, 'q', declining the initial
 // prompt). An Error is a real failure (exit code 1); its message was
 // already rendered by the failing screen itself, so it isn't repeated
-// here. Undefined is a clean, silent exit (the "done" screen already
-// showed its own success message).
+// here. Undefined uses the supplied outcome: incomplete/error exits with
+// code 1, and a completed or deliberately skipped setup exits with code 0.
 export type HardExit = (errorOrMessage?: Error | string, setupOutcome?: Outcome) => void;
 
 export function useHardExit(command: Command, stackUrl: string): HardExit {
   const { exit } = useApp();
   const startedAt = useRef(Date.now());
-  const exiting = useRef(false);
+  const exitCode = useRef<number | undefined>(undefined);
   // The URL can be supplied by the initial prompt after this hook mounts.
   // The SIGINT handler must use the current stack, just like keyboard exit.
   const currentStackUrl = useRef(stackUrl);
@@ -104,18 +104,19 @@ export function useHardExit(command: Command, stackUrl: string): HardExit {
   function hardExit(errorOrMessage?: Error | string, setupOutcome?: Outcome): void {
     // Registering a SIGINT listener means nothing else will kill the process,
     // so a second Ctrl+C has to exit here or it would look ignored.
-    if (exiting.current) {
-      process.exit(errorOrMessage instanceof Error ? 1 : 0);
+    if (exitCode.current !== undefined) {
+      process.exit(exitCode.current);
     }
-    exiting.current = true;
     const error = errorOrMessage instanceof Error ? errorOrMessage : undefined;
+    const outcome: Outcome = error ? "error" : errorOrMessage !== undefined ? "canceled" : (setupOutcome ?? "ok");
+    const code = outcome === "ok" || outcome === "canceled" ? 0 : 1;
+    exitCode.current = code;
     // exit() first, while Ink still owns the terminal — it restores the
     // cursor and raw mode; printing before that would just get clobbered
     // by Ink's own rendering.
     exit(error);
     if (typeof errorOrMessage === "string") console.log(errorOrMessage);
 
-    const outcome: Outcome = error ? "error" : errorOrMessage !== undefined ? "canceled" : (setupOutcome ?? "ok");
     recordRun(command, currentStackUrl.current, outcome, Date.now() - startedAt.current);
 
     // setImmediate, not a same-tick process.exit() — Ink's own unmount
@@ -123,7 +124,7 @@ export function useHardExit(command: Command, stackUrl: string): HardExit {
     // need a turn of the event loop to actually flush before the process
     // dies, or they can get silently dropped.
     void waitForTelemetry().finally(() => {
-      setImmediate(() => process.exit(error ? 1 : 0));
+      setImmediate(() => process.exit(code));
     });
   }
 

@@ -73,11 +73,23 @@ export function FrontendApp({ initialStackUrl, forceGcxInstall, initialAppName, 
           />
           <Box marginTop={state.prompt || state.done || state.failureSummary ? 1 : 0} flexDirection="column">
             {state.failureSummary ? (
-              <Text color={COLORS.BAD}>Setup incomplete. {state.failureSummary}</Text>
+              <>
+                <Text color={COLORS.BAD}>Setup incomplete. {state.failureSummary}</Text>
+                <Text color={COLORS.MUTED}>Resolve the issue, then run `npx @grafana/cloud-setup frontend` again.</Text>
+              </>
             ) : state.done ? (
               <>
-                <Text bold>{state.outcome === "ok" ? "Cool, we're done!" : "Setup incomplete."}</Text>
-                {state.error && <Text color={COLORS.MUTED}>{state.error}</Text>}
+                <Text bold>
+                  {state.outcome !== "ok" ? "Setup incomplete." : config ? "Cool, we're done!" : "Setup skipped."}
+                </Text>
+                {state.outcome !== "ok" && (
+                  <>
+                    {state.error && <Text color={COLORS.MUTED}>{state.error}</Text>}
+                    <Text color={COLORS.MUTED}>
+                      Resolve the issue, then run `npx @grafana/cloud-setup frontend` again.
+                    </Text>
+                  </>
+                )}
                 {state.outcome === "ok" && state.appUrl && (
                   <Text color={COLORS.MUTED}>
                     Once changes are live, data will show up here: <Link>{state.appUrl}</Link>
