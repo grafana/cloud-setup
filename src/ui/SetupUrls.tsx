@@ -4,7 +4,7 @@ import { EditableTextInput } from "./EditableTextInput.js";
 import { recordStep, type Command } from "../telemetry.js";
 import { COLORS } from "../theme.js";
 import { validateSetupUrl, type UrlKind } from "../urls.js";
-import { EnterHint, Header, useHardExit, type HardExit } from "./shared.js";
+import { Header, useHardExit, type HardExit } from "./shared.js";
 
 interface ResolvedUrls {
   targetUrl: string;
@@ -66,11 +66,13 @@ function UrlInput({
     <Box flexDirection="column">
       <Text>
         {kind === "target"
-          ? "Which website or endpoint should we monitor?"
+          ? "What is the URL of the service you want to monitor?"
           : "Which Grafana Cloud stack should we use?"}
       </Text>
       <Text color={COLORS.MUTED}>
-        {kind === "target" ? "For example, https://example.com" : "For example, my-team or https://my-team.grafana.net"}
+        {kind === "target"
+          ? "You can enter a full URL (e.g. https://example.com) or just the domain (e.g. example.com)"
+          : "You can enter a full URL (e.g. https://my-team.grafana.net) or just the slug (e.g. my-team)"}
       </Text>
       <Box>
         <Text>{label}: </Text>
@@ -84,7 +86,6 @@ function UrlInput({
         />
       </Box>
       {error && <Text color={COLORS.BAD}>{error}</Text>}
-      <EnterHint />
       <Text color={COLORS.MUTED}>Ctrl+C to cancel</Text>
     </Box>
   );
