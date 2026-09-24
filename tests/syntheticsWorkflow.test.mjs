@@ -85,6 +85,26 @@ async function firstPass(controller) {
   assert.equal(controller.getSnapshot().prompt, "nextAction");
 }
 
+test("the skills step records which agents a fresh install ended up configured for", async () => {
+  const { controller } = setup({
+    getSkillStatus: async () => ({ installed: false, agents: [] }),
+    installSkill: async () => ["claude-code", "cursor"],
+  });
+  await start(controller);
+  assert.deepEqual(controller.getSnapshot().skillAgents, ["claude-code", "cursor"]);
+  controller.dispose();
+});
+
+test("an already-installed skill reads its agents from getSkillStatus, not installSkill", async () => {
+  const { controller } = setup({
+    getSkillStatus: async () => ({ installed: true, agents: ["windsurf"] }),
+    installSkill: async () => assert.fail("already installed — should not reinstall"),
+  });
+  await start(controller);
+  assert.deepEqual(controller.getSnapshot().skillAgents, ["windsurf"]);
+  controller.dispose();
+});
+
 test("a browser-type check skips probes that can't run k6, but keeps every capable one", async () => {
   const browserCandidate = {
     ...first,

@@ -54,17 +54,21 @@ export function FrontendApp({ initialStackUrl, forceGcxInstall, initialAppName, 
                 {step === "auth" && state.auth.error && (
                   <Text color={COLORS.MUTED}> Skipping auto-lookup ({state.auth.error})</Text>
                 )}
+                {/* Result lines (what got picked, instrumentation progress),
+                not a caveat — same 5-space indent CheckResults uses in the
+                synthetics wizard, not the 1-space gcx/auth caveat offset
+                above. */}
                 {step === "pick-app" && config && (
                   <Text color={COLORS.MUTED}>
-                    {" "}
+                    {"     "}
                     app: {config.name}
-                    {"\n"} sampling: {Math.round((config.samplingRate ?? 1) * 100)}%{"\n"} replay:{" "}
+                    {"\n     "}sampling: {Math.round((config.samplingRate ?? 1) * 100)}%{"\n     "}replay:{" "}
                     {config.sessionReplay ? `enabled (${config.replayMasking})` : "disabled"}
                   </Text>
                 )}
                 {step === "instrument" && config && (
                   <Text color={COLORS.MUTED}>
-                    {" "}
+                    {"     "}
                     {state.progress}%{state.instrumentedFile ? `: ${state.instrumentedFile}` : ""}
                   </Text>
                 )}

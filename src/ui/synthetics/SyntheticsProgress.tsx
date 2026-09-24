@@ -24,11 +24,21 @@ export function SyntheticsProgress({ state }: { state: SyntheticsState }) {
                 {state.auth.error})
               </Text>
             )}
+            {/* A result line (which agents it's configured for), not a
+            caveat — same 5-space indent as everywhere else below. */}
+            {step === "skills" && state.skillAgents.length > 0 && (
+              <Text color={COLORS.MUTED}>
+                {"     "}Configured for: {state.skillAgents.join(", ")}
+              </Text>
+            )}
             {step === "create" && <CheckResults items={firstPass} />}
+            {/* Same 5-space indent CheckResults uses above — these are
+            result lines for the alerting step, not a caveat/error aside
+            like the gcx/auth ones above them. */}
             {step === "alerting" &&
               state.alertingDetail.map((line, index) => (
                 <Text key={index} color={COLORS.MUTED}>
-                  {" "}
+                  {"     "}
                   {line.text}
                   {line.href && (
                     <>

@@ -23,6 +23,7 @@ export function createSyntheticsController(
       results: {},
       done: false,
       outcome: "incomplete",
+      skillAgents: [],
       candidates: [],
       selectedKeys: [],
       analyzeMode: "fast",
@@ -43,13 +44,21 @@ export function createSyntheticsController(
       auth: async (ctx) => ({ properties: await runAuth(ctx, services, options.stackUrl), next: "skills" }),
       skills: async (ctx) => {
         let installed = true;
+        let agents: string[] = [];
         try {
           const status = await ctx.wait(services.getSkillStatus());
-          await ctx.wait(Promise.all([status.installed ? undefined : services.installSkill(), services.sleep(4500)]));
+          if (status.installed) {
+            agents = status.agents ?? [];
+            await ctx.wait(services.sleep(4500));
+          } else {
+            const [installedAgents] = await ctx.wait(Promise.all([services.installSkill(), services.sleep(4500)]));
+            agents = installedAgents ?? [];
+          }
         } catch {
           ctx.signal.throwIfAborted();
           installed = false;
         }
+        ctx.update({ skillAgents: agents });
         return { properties: { status: installed ? "ok" : "failed" }, next: "analyze" };
       },
       analyze: (ctx) => analyze(ctx, services, options),
