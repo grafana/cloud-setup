@@ -31,10 +31,7 @@ export async function nextSteps(
       try {
         const skillStatus = await ctx.wait(services.getSkillStatus());
         const [result] = await ctx.wait(
-          Promise.all([
-            skillStatus.installed ? skillStatus : services.installSkill(),
-            services.sleep(MIN_SPINNER_MS),
-          ]),
+          Promise.all([skillStatus.installed ? skillStatus : services.installSkill(), services.sleep(MIN_SPINNER_MS)]),
         );
         if (result.path) {
           detail = `Wrote to ${path.relative(options.cwd, result.path)}`;

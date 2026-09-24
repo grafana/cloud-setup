@@ -92,7 +92,11 @@ const PROVISIONING_BASE = "/api/v1/provisioning";
 function extractErrorMessage(text: string): string {
   try {
     const parsed: unknown = JSON.parse(text);
-    if (parsed !== null && typeof parsed === "object" && typeof (parsed as { message?: unknown }).message === "string") {
+    if (
+      parsed !== null &&
+      typeof parsed === "object" &&
+      typeof (parsed as { message?: unknown }).message === "string"
+    ) {
       return (parsed as { message: string }).message;
     }
   } catch {
