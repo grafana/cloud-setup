@@ -20,8 +20,10 @@ export function StepList<Step extends string>({
   hidden?: readonly Step[];
   // Rendered inline on the row's own line, right after the label (e.g. a
   // live percent) — always muted, so it reads as secondary to the label
-  // rather than competing with it. `detail` is for content that needs its
-  // own line(s) below the row instead.
+  // rather than competing with it, and only while the row is active: once
+  // a step finishes, whatever it produced is a result, not a live status,
+  // and belongs in `detail` (its own line below the row) instead — the
+  // same reason a live "45%" doesn't stay glued to a checkmark forever.
   suffix?: (step: Step) => ReactNode;
 }) {
   return (
@@ -59,7 +61,7 @@ export function StepList<Step extends string>({
               : status === "failed"
                 ? COLORS.BAD
                 : COLORS.MUTED;
-          const suffixContent = suffix?.(step);
+          const suffixContent = active ? suffix?.(step) : undefined;
           return (
             <Box key={step} flexDirection="column">
               <Text>
