@@ -8,7 +8,6 @@ import type { StepContext, WorkflowState } from "../workflow/controller.js";
 export const SYNTHETICS_STEPS = {
   gcx: "Install Grafana Cloud CLI (gcx)",
   auth: "Authenticate with OAuth",
-  skills: "Configure agent skills",
   analyze: "Analyze target",
   create: "Create synthetic checks",
   alerting: "Configure alerts",
@@ -50,14 +49,9 @@ export interface SyntheticsInputs extends CommonInputs {
   token: string;
   alerting: boolean;
   email: string;
-  nextAction: "browser-discovery" | "export" | "finish";
+  nextAction: "browser-discovery" | "export" | "configure-skills" | "finish";
 }
 export interface SyntheticsState extends WorkflowState<SyntheticsStep>, CommonState {
-  // Where the synthetic-monitoring-checks skill landed — read back from
-  // `skills list`/`skills add` rather than assumed, so the "Configure
-  // skills" detail line shows a real, familiar path (e.g.
-  // .agents/skills/synthetic-monitoring-checks) rather than naming tools.
-  skillPath?: string;
   candidates: Candidate[];
   selectedKeys: string[];
   analyzeMode: AnalyzeMode;
@@ -79,6 +73,7 @@ export interface SyntheticsState extends WorkflowState<SyntheticsStep>, CommonSt
   nextStepsLog: NextStepLog[];
   pendingNextStepLog?: NextStepLog;
   exporting: boolean;
+  configuringSkills: boolean;
 }
 export interface SyntheticsOptions {
   stackUrl: string;
@@ -91,6 +86,7 @@ export type SyntheticsContext = StepContext<SyntheticsState, SyntheticsInputs>;
 export const NEXT_ACTIONS = [
   { key: "browser-discovery", label: "Find additional synthetic checks" },
   { key: "export", label: "Export checks as Terraform" },
+  { key: "configure-skills", label: "Configure agent skills" },
 ];
 export function availableActions(state: SyntheticsState) {
   return NEXT_ACTIONS.filter((option) => !state.nextStepsLog.some((entry) => entry.key === option.key));

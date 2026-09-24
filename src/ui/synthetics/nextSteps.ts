@@ -21,6 +21,25 @@ export async function nextSteps(
       ctx.update({ items: [], analyzeMode: "browser-discovery" });
       return { next: "analyze" };
     }
+    if (action === "configure-skills") {
+      ctx.update({ configuringSkills: true });
+      let detail: string;
+      try {
+        const status = await ctx.wait(services.getSkillStatus());
+        const [result] = await ctx.wait(
+          Promise.all([status.installed ? status : services.installSkill(), services.sleep(MIN_SPINNER_MS)]),
+        );
+        detail = result.path ? `Wrote to ${path.relative(options.cwd, result.path)}` : "Couldn't configure the skill.";
+      } catch (error) {
+        ctx.signal.throwIfAborted();
+        detail = `Couldn't configure the skill (${error instanceof Error ? error.message : String(error)}).`;
+      }
+      ctx.update({
+        configuringSkills: false,
+        nextStepsLog: [...ctx.get().nextStepsLog, { key: "configure-skills", label: "Configure agent skills", detail }],
+      });
+      continue;
+    }
     ctx.update({ exporting: true });
     let detail: string;
     try {

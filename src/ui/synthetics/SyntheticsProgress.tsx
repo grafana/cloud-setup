@@ -24,15 +24,6 @@ export function SyntheticsProgress({ state }: { state: SyntheticsState }) {
                 {state.auth.error})
               </Text>
             )}
-            {/* The shared folder every detected agent reads the skill from
-            (e.g. .agents/skills/synthetic-monitoring-checks) — a familiar,
-            single, checkable location, rather than naming tools. Same
-            "Wrote to ..." phrasing as the Terraform export result below. */}
-            {step === "skills" && state.skillPath && (
-              <Text color={COLORS.MUTED}>
-                {"     "}Wrote to {state.skillPath}
-              </Text>
-            )}
             {step === "create" && <CheckResults items={firstPass} />}
             {/* Same 5-space indent CheckResults uses above — these are
             result lines for the alerting step, not a caveat/error aside
@@ -108,6 +99,12 @@ export function SyntheticsProgress({ state }: { state: SyntheticsState }) {
         <Text>
           {" "}
           <Working label="Exporting checks as Terraform" />
+        </Text>
+      )}
+      {state.configuringSkills && (
+        <Text>
+          {" "}
+          <Working label="Configuring agent skills" />
         </Text>
       )}
     </Box>

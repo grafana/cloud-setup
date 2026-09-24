@@ -85,7 +85,7 @@ async function firstPass(controller) {
   assert.equal(controller.getSnapshot().prompt, "nextAction");
 }
 
-test("the skills step records where a fresh install landed, relative to cwd", async () => {
+test("the configure-skills next action records where a fresh install landed, relative to cwd", async () => {
   const { controller } = setup({
     getSkillStatus: async () => ({ installed: false, agents: [] }),
     installSkill: async () => ({
@@ -94,8 +94,12 @@ test("the skills step records where a fresh install landed, relative to cwd", as
       path: "/project/.agents/skills/synthetic-monitoring-checks",
     }),
   });
-  await start(controller);
-  assert.equal(controller.getSnapshot().skillPath, ".agents/skills/synthetic-monitoring-checks");
+  await firstPass(controller);
+  controller.answer("nextAction", "configure-skills");
+  await tick();
+  const entry = controller.getSnapshot().nextStepsLog.find((e) => e.key === "configure-skills");
+  assert.equal(entry.detail, "Wrote to .agents/skills/synthetic-monitoring-checks");
+  assert.equal(controller.getSnapshot().prompt, "nextAction");
   controller.dispose();
 });
 
@@ -108,8 +112,11 @@ test("an already-installed skill reads its path from getSkillStatus, not install
     }),
     installSkill: async () => assert.fail("already installed — should not reinstall"),
   });
-  await start(controller);
-  assert.equal(controller.getSnapshot().skillPath, ".agents/skills/synthetic-monitoring-checks");
+  await firstPass(controller);
+  controller.answer("nextAction", "configure-skills");
+  await tick();
+  const entry = controller.getSnapshot().nextStepsLog.find((e) => e.key === "configure-skills");
+  assert.equal(entry.detail, "Wrote to .agents/skills/synthetic-monitoring-checks");
   controller.dispose();
 });
 
@@ -241,6 +248,8 @@ test("export retains exact configurations and remote IDs from both creation pass
   assert.equal(controller.getSnapshot().prompt, "nextAction");
   controller.answer("nextAction", "export");
   await tick();
+  controller.answer("nextAction", "finish");
+  await tick();
   assert.equal(controller.getSnapshot().done, true);
   assert.deepEqual(mutations, ["first", "second"]);
   assert.deepEqual(Object.keys(exports[0][0]), ["first", "second"]);
@@ -271,6 +280,8 @@ for (const variant of ["empty", "declined", "failed"])
     controller.answer("browser", variant !== "declined");
     await tick();
     controller.answer("nextAction", "export");
+    await tick();
+    controller.answer("nextAction", "finish");
     await tick();
     assert.deepEqual([...exports[0][2]], [["first", 101]]);
     assert.deepEqual(Object.keys(exports[0][0]), ["first"]);
