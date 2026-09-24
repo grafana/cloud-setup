@@ -8,7 +8,7 @@ import type { StepContext, WorkflowState } from "../workflow/controller.js";
 export const SYNTHETICS_STEPS = {
   gcx: "Install Grafana Cloud CLI (gcx)",
   auth: "Authenticate with OAuth",
-  skills: "Add agent skills",
+  skills: "Configure agent skills",
   analyze: "Analyze target",
   create: "Create synthetic checks",
   alerting: "Configure alerts",
