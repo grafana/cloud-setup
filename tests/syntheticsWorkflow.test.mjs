@@ -196,3 +196,143 @@ test("cancelling during creation never starts another remote mutation", async ()
   assert.equal(controller.getSnapshot().failureSummary, undefined);
   assert.equal(controller.getSnapshot().done, false);
 });
+
+test("failed alerts remain incomplete after a successful later pass and export", async () => {
+  const { controller, client, events } = setup();
+  client.putCheckAlerts = async (id) => {
+    if (id === 101) throw new Error("alerts failed");
+  };
+  await firstPass(controller);
+  controller.answer("nextAction", "browser-discovery");
+  await tick();
+  controller.answer("browser", true);
+  await tick();
+  controller.answer("selection", ["second"]);
+  await tick();
+  controller.answer("nextAction", "export");
+  await tick();
+  const state = controller.getSnapshot();
+  assert.equal(state.done, true);
+  assert.equal(state.outcome, "incomplete");
+  assert.equal(state.results.alerting.status, "ok", "the later pass did succeed");
+  assert.deepEqual([...state.failedSteps], ["alerting"], "the earlier failure must remain visible");
+  assert.match(state.alertingDetail[0].text, /alerts failed/);
+  assert.deepEqual(
+    events.filter(([step]) => step === "alerting").map(([, result]) => result.status),
+    ["failed", "ok"],
+  );
+});
+
+test("a failure in a later alerting pass is reported and retains the checks", async () => {
+  const { controller, client } = setup();
+  await firstPass(controller);
+  client.putCheckAlerts = async () => {
+    throw new Error("later alert failure");
+  };
+  controller.answer("nextAction", "browser-discovery");
+  await tick();
+  controller.answer("browser", true);
+  await tick();
+  controller.answer("selection", ["second"]);
+  await tick();
+  assert.match(controller.getSnapshot().nextStepsLog[0].detail, /later alert failure/);
+  controller.answer("nextAction", "finish");
+  await tick();
+  assert.equal(controller.getSnapshot().outcome, "incomplete");
+  assert.equal(controller.getSnapshot().records.length, 2);
+});
+
+for (const failingOperation of ["ensureContactPoint", "ensureRoute", "inspect"])
+  test(`${failingOperation} failure survives later alerting passes`, async () => {
+    const notificationClient = {
+      inspect: async () => ({}),
+      ensureContactPoint: async () => "created",
+      ensureRoute: async () => "created",
+    };
+    notificationClient[failingOperation] = async () => {
+      throw new Error(`${failingOperation} failed`);
+    };
+    const { controller, events } = setup({ tryAlertingClient: async () => notificationClient });
+    await start(controller);
+    controller.answer("selection", ["first"]);
+    await tick();
+    controller.answer("alerting", true);
+    await tick();
+    if (failingOperation !== "inspect") {
+      controller.answer("email", "ops@example.com");
+      await tick();
+    }
+    controller.answer("nextAction", "browser-discovery");
+    await tick();
+    controller.answer("browser", true);
+    await tick();
+    controller.answer("selection", ["second"]);
+    await tick();
+    controller.answer("nextAction", "finish");
+    await tick();
+    assert.equal(controller.getSnapshot().outcome, "incomplete");
+    const alerts = events.filter(([step]) => step === "alerting");
+    assert.equal(alerts[0][1].status, "failed");
+    assert.notEqual(alerts[1][1].alerting_outcome, "configured");
+  });
+
+for (const email of ["", "ops@example.com"])
+  test(`${email ? "configured email" : "deliberately blank email"} allows a successful run`, async () => {
+    const { controller, events } = setup({
+      tryAlertingClient: async () => ({
+        inspect: async () => ({}),
+        ensureContactPoint: async () => "created",
+        ensureRoute: async () => "created",
+      }),
+    });
+    await start(controller);
+    controller.answer("selection", ["first"]);
+    await tick();
+    controller.answer("alerting", true);
+    await tick();
+    controller.answer("email", email);
+    await tick();
+    controller.answer("nextAction", "finish");
+    await tick();
+    assert.equal(controller.getSnapshot().outcome, "ok");
+    assert.equal(events.find(([step]) => step === "alerting")[1].alerting_outcome, email ? "configured" : "rules_only");
+  });
+
+test("a failed requested export survives returning from discovery", async () => {
+  const { controller, events } = setup({
+    writeTerraformExport: async () => {
+      throw new Error("disk full");
+    },
+  });
+  await firstPass(controller);
+  controller.answer("nextAction", "export");
+  await tick();
+  controller.answer("nextAction", "browser-discovery");
+  await tick();
+  controller.answer("browser", false);
+  await tick();
+  assert.equal(controller.getSnapshot().done, true);
+  assert.equal(controller.getSnapshot().outcome, "incomplete");
+  assert.deepEqual(events.at(-1), ["next-steps", { status: "failed" }]);
+});
+
+test("optional skill and discovery failures do not fail successful check setup", async () => {
+  const { controller, events } = setup({
+    getSkillStatus: async () => {
+      throw new Error("skills unavailable");
+    },
+    aiEndpointCandidatesFor: async () => {
+      throw new Error("discovery unavailable");
+    },
+  });
+  await firstPass(controller);
+  controller.answer("nextAction", "browser-discovery");
+  await tick();
+  controller.answer("browser", true);
+  await tick();
+  controller.answer("nextAction", "finish");
+  await tick();
+  assert.equal(controller.getSnapshot().outcome, "ok");
+  assert.equal(events.find(([step]) => step === "skills")[1].status, "failed");
+  assert.equal(events.filter(([step]) => step === "analyze").at(-1)[1].status, "failed");
+});

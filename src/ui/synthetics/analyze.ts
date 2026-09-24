@@ -1,4 +1,5 @@
 import type { StepResult } from "../workflow/controller.js";
+import type { StepStatus } from "../../telemetry.js";
 import { MIN_SPINNER_MS } from "../shared.js";
 import type { SyntheticsContext, SyntheticsOptions, SyntheticsStep } from "./model.js";
 import type { SyntheticsServices } from "./services.js";
@@ -18,10 +19,12 @@ export async function analyze(
     });
     return { next: "create", properties: { status: "ok", analyze_mode: mode, default_candidates: candidates.length } };
   }
-  const log = (detail: string) =>
-    ctx.update({ pendingNextStepLog: { key: "browser-discovery", label: "Find additional synthetic checks", detail } });
+  const log = (detail: string, status: StepStatus) =>
+    ctx.update({
+      pendingNextStepLog: { key: "browser-discovery", label: "Find additional synthetic checks", detail, status },
+    });
   if (ctx.get().auth.error) {
-    log(`Grafana Assistant isn't signed in (${ctx.get().auth.error}). Skipped.`);
+    log(`Grafana Assistant isn't signed in (${ctx.get().auth.error}). Skipped.`, "skipped");
     return { next: "next-steps", properties: { status: "skipped", analyze_mode: mode } };
   }
   ctx.update({ analyzeProgress: 0 });
@@ -36,7 +39,7 @@ export async function analyze(
   const allowed = await ctx.ask("browser");
   progress.resume();
   if (!allowed) {
-    log("Skipped. No browser opened.");
+    log("Skipped. No browser opened.", "declined");
     return {
       next: "next-steps",
       properties: { status: "declined", analyze_mode: mode, browser_permission: "declined" },
@@ -56,7 +59,7 @@ export async function analyze(
       known.add(candidate.key);
       return true;
     });
-    log(fresh.length ? `${fresh.length} new checks found` : "No new endpoints found.");
+    log(fresh.length ? `${fresh.length} new checks found` : "No new endpoints found.", "ok");
     ctx.update({ candidates: [...state.candidates, ...fresh] });
     if (fresh.length) await ctx.wait(progress.finish());
     return {
@@ -64,7 +67,7 @@ export async function analyze(
       properties: { status: "ok", analyze_mode: mode, browser_permission: "allowed", ai_candidates: fresh.length },
     };
   } catch {
-    log("Couldn't discover additional endpoints.");
+    log("Couldn't discover additional endpoints.", "failed");
     return { next: "next-steps", properties: { status: "failed", analyze_mode: mode, browser_permission: "allowed" } };
   }
 }

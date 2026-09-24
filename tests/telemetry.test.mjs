@@ -1,4 +1,7 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
+import { stripVTControlCharacters } from "node:util";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -276,7 +279,7 @@ test("shutdown waits for older deliveries even when the newest finishes first", 
   assert.equal(drained, true);
 });
 
-// send() runs inside a step's advance() and inside hardExit(), so it must not
+// send() runs inside workflow completion and hardExit(), so it must not
 // throw for any reason. The property types are compile-time only, and an
 // unserializable value makes JSON.stringify throw synchronously.
 test("an unserializable property drops the event instead of throwing", async (t) => {
@@ -462,6 +465,65 @@ test("the endpoint is overridable for development", async (t) => {
   delete process.env.CLOUD_SETUP_TELEMETRY_ENDPOINT;
   await api.waitForTelemetry();
 });
+
+for (const [scenario, outcome, code, message, failedStep] of [
+  ["frontend-success", "ok", 0, "Cool, we're done!"],
+  ["frontend-partial", "incomplete", 1, "Needs router wiring", "instrument"],
+  ["frontend-packages", "incomplete", 1, "registry unavailable", "instrument"],
+  ["frontend-declined", "ok", 0, "Setup skipped."],
+  ["synthetics-success", "ok", 0, "1 check created."],
+  ["synthetics-alerts", "incomplete", 1, "alerts unavailable", "alerting"],
+])
+  test(`${scenario}: rendered result, telemetry, and process exit agree`, () => {
+    const child = spawnSync(
+      process.execPath,
+      [fileURLToPath(new URL("./fixtures/wizard-outcome-process.mjs", import.meta.url)), scenario],
+      {
+        encoding: "utf8",
+        timeout: 8000,
+        env: { ...process.env, CLOUD_SETUP_TELEMETRY: "log", DO_NOT_TRACK: "0", NO_COLOR: "1" },
+      },
+    );
+    assert.ifError(child.error);
+    assert.equal(child.signal, null, child.stderr);
+    assert.equal(child.status, code, child.stderr + child.stdout);
+    const output = stripVTControlCharacters(child.stdout);
+    const events = output
+      .split("\n")
+      .filter((line) => line.startsWith("EVENT "))
+      .map((line) => JSON.parse(line.slice(6)));
+    const finished = events.filter((event) => event.event === "finished_setup");
+    assert.equal(finished.length, 1, output);
+    assert.equal(finished[0].outcome, outcome);
+    assert.ok(output.includes(message), output);
+    if (failedStep) {
+      assert.ok(output.includes("Setup incomplete."), output);
+      assert.ok(output.includes("Resolve the issue, then run"), output);
+      assert.ok(events.some((event) => event.step === failedStep && event.status === "failed"));
+      assert.ok(!output.includes("Cool, we're done!"));
+    }
+    if (scenario === "synthetics-alerts") {
+      assert.deepEqual(
+        events.filter((event) => event.step === "alerting").map((event) => event.status),
+        ["failed", "ok"],
+      );
+      assert.ok(output.includes("2 checks created."), output);
+      assert.equal(events.find((event) => event.step === "next-steps").status, "ok");
+    }
+    if (scenario === "frontend-declined") {
+      assert.equal(events.find((event) => event.step === "pick-app").status, "declined");
+      assert.equal(events.find((event) => event.step === "instrument").status, "skipped");
+      assert.ok(!output.includes("Setup incomplete."));
+    }
+    if (scenario === "frontend-partial" || scenario === "frontend-packages") assert.ok(output.includes("src/main.tsx"));
+    for (const event of events) {
+      const serialized = JSON.stringify(event);
+      assert.ok(!serialized.includes("example.com"));
+      assert.ok(!serialized.includes("example/key"));
+      assert.ok(!serialized.includes("unavailable"));
+      assert.ok(!serialized.includes("Needs router wiring"));
+    }
+  });
 
 test.after(() => {
   fs.rmSync(stateRoot, { recursive: true, force: true });

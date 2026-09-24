@@ -44,7 +44,7 @@ export async function instrument(
       complete = result.complete;
       layoutWired = Boolean(result.layoutFile);
       ctx.update({
-        instrumentedFile: result.componentFile,
+        instrumentedFile: [result.componentFile, result.layoutFile].filter(Boolean).join(", ") || undefined,
         error: result.complete
           ? undefined
           : (result.detail ?? "Add <FrontendObservability /> to the layout to finish instrumentation."),
@@ -60,16 +60,19 @@ export async function instrument(
       packageInstall = "ok";
     } catch (error) {
       packageInstall = "failed";
-      ctx.update({ error: `Package install failed: ${error instanceof Error ? error.message : String(error)}` });
+      ctx.update({
+        error: [ctx.get().error, `Package install failed: ${error instanceof Error ? error.message : String(error)}`]
+          .filter(Boolean)
+          .join("\n"),
+      });
     }
   } catch (error) {
     ctx.update({ error: error instanceof Error ? error.message : String(error) });
   }
   await ctx.wait(progress.finish());
-  const outcome = complete && packageInstall === "ok" ? "ok" : "incomplete";
-  ctx.update({ outcome });
+  const succeeded = complete && packageInstall === "ok";
   return {
-    status: outcome === "ok" ? "ok" : "failed",
+    status: succeeded ? "ok" : "failed",
     instrumentation: complete ? "complete" : "partial",
     target_kind: target.kind,
     package_install: packageInstall,

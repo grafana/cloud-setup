@@ -1,5 +1,5 @@
 import { Box, Text } from "ink";
-import { COLORS } from "../../theme.js";
+import { COLORS, ICONS } from "../../theme.js";
 import { Link } from "../shared.js";
 import { StepList } from "../workflow/StepList.js";
 import { CheckResults } from "./CheckResults.js";
@@ -41,7 +41,11 @@ export function SyntheticsProgress({ state }: { state: SyntheticsState }) {
       />
       {state.nextStepsLog.map((entry) => (
         <Box key={entry.key} flexDirection="column">
-          <Text> {entry.label}</Text>
+          <Text>
+            {" "}
+            {entry.status === "failed" && <Text color={COLORS.BAD}>{ICONS.FAIL} </Text>}
+            {entry.label}
+          </Text>
           {entry.detail && <Text color={COLORS.MUTED}> {entry.detail}</Text>}
           {entry.items && <CheckResults items={entry.items} />}
         </Box>

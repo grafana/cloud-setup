@@ -10,6 +10,7 @@ const initial = {
   started: false,
   completed: new Set(),
   results: {},
+  failedSteps: new Set(),
   done: false,
   outcome: "incomplete",
 };
@@ -30,6 +31,7 @@ test("restart cancels a pending prompt and ignores a late operation from the pre
       },
     },
     (...event) => events.push(event),
+    ["edit"],
   );
   controller.start();
   controller.answer("confirm", true);
@@ -56,6 +58,7 @@ test("disposing a controller cancels its outstanding question without reporting 
       },
     },
     () => assert.fail("cancelled steps must not report completion"),
+    ["edit"],
   );
   controller.start();
   controller.dispose();
@@ -193,3 +196,82 @@ test("a failed file edit does not claim packages were installed", async () => {
   assert.equal(events.at(-1)[1].status, "failed");
   assert.equal(events.at(-1)[1].package_install, undefined);
 });
+
+test("declining app creation deliberately skips setup without a failure", async () => {
+  const { controller, events } = frontend();
+  controller.start();
+  await tick();
+  controller.answer("authenticate", false);
+  await tick();
+  controller.answer("createApp", false);
+  await tick();
+  assert.equal(controller.getSnapshot().done, true);
+  assert.equal(controller.getSnapshot().outcome, "ok");
+  assert.equal(controller.getSnapshot().failedSteps.size, 0);
+  assert.equal(events.find(([step]) => step === "pick-app")[1].status, "declined");
+  assert.equal(events.at(-1)[1].status, "skipped");
+});
+
+test("failed app resolution remains incomplete when instrumentation is skipped", async () => {
+  const { controller, events } = frontend({
+    openFrontendO11ySetupPage: () => {
+      throw new Error("cannot open setup");
+    },
+  });
+  controller.start();
+  await tick();
+  controller.answer("authenticate", false);
+  await tick();
+  controller.answer("createApp", true);
+  await tick();
+  assert.equal(controller.getSnapshot().outcome, "incomplete");
+  assert.deepEqual([...controller.getSnapshot().failedSteps], ["pick-app"]);
+  assert.equal(events.at(-1)[1].status, "skipped");
+});
+
+test("unsupported projects record a failed step and error outcome", async () => {
+  const { controller, events } = frontend({ detectFrontendTarget: () => ({ kind: "unsupported" }) });
+  controller.start();
+  await tick();
+  controller.answer("authenticate", false);
+  await tick();
+  assert.equal(controller.getSnapshot().outcome, "error");
+  assert.match(controller.getSnapshot().failureSummary, /supported/);
+  assert.deepEqual(events.at(-1), ["pick-app", { status: "failed" }]);
+});
+
+test("partial wiring and a failed package install both remain in the recovery details", async () => {
+  const { controller } = frontend({
+    instrumentReact: async () => ({ entryFile: "src/main.tsx", complete: false, detail: "Needs router wiring" }),
+    installFaroPackages: async () => {
+      throw new Error("registry unavailable");
+    },
+  });
+  await configure(controller);
+  assert.equal(controller.getSnapshot().outcome, "incomplete");
+  assert.match(controller.getSnapshot().error, /Needs router wiring/);
+  assert.match(controller.getSnapshot().error, /registry unavailable/);
+});
+
+for (const complete of [false, true])
+  test(`Next.js ${complete ? "package failure" : "partial wiring"} reports incomplete setup and its changed files`, async () => {
+    const { controller, events } = frontend({
+      detectFrontendTarget: () => ({ kind: "nextjs" }),
+      instrumentNextjs: async () => ({
+        componentFile: "src/FrontendObservability.tsx",
+        layoutFile: complete ? "src/app/layout.tsx" : undefined,
+        complete,
+        detail: "Add the component to the layout",
+      }),
+      installFaroPackages: async () => {
+        if (complete) throw new Error("registry unavailable");
+      },
+    });
+    await configure(controller);
+    assert.equal(controller.getSnapshot().outcome, "incomplete");
+    assert.match(controller.getSnapshot().instrumentedFile, /FrontendObservability.tsx/);
+    if (complete) assert.match(controller.getSnapshot().instrumentedFile, /layout.tsx/);
+    assert.match(controller.getSnapshot().error, complete ? /registry unavailable/ : /Add the component/);
+    assert.equal(events.at(-1)[1].target_kind, "nextjs");
+    assert.equal(events.at(-1)[1].status, "failed");
+  });

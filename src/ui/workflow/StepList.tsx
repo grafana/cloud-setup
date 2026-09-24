@@ -16,7 +16,7 @@ export function StepList<Step extends string>({
   return (
     <Box flexDirection="column">
       {(Object.keys(labels) as Step[]).map((step) => {
-        const status = state.results[step]?.status;
+        const status = state.failedSteps.has(step) ? "failed" : state.results[step]?.status;
         const active = !state.done && !state.failureSummary && step === state.currentStep;
         const icon = active ? (
           state.prompt ? (

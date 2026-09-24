@@ -21,6 +21,7 @@ export function createSyntheticsController(
       started: false,
       completed: new Set(),
       results: {},
+      failedSteps: new Set(),
       done: false,
       outcome: "incomplete",
       candidates: [],
@@ -58,5 +59,6 @@ export function createSyntheticsController(
       "next-steps": (ctx) => nextSteps(ctx, services, options),
     },
     record,
+    ["create", "alerting", "next-steps"],
   );
 }
