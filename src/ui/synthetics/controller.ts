@@ -1,3 +1,4 @@
+import path from "node:path";
 import { recordStep, type StepProperties } from "../../telemetry.js";
 import { initialCommonState, runAuth, runGcx } from "../workflow/commonSteps.js";
 import { WorkflowController } from "../workflow/controller.js";
@@ -23,7 +24,6 @@ export function createSyntheticsController(
       results: {},
       done: false,
       outcome: "incomplete",
-      skillAgents: [],
       candidates: [],
       selectedKeys: [],
       analyzeMode: "fast",
@@ -43,21 +43,21 @@ export function createSyntheticsController(
       auth: async (ctx) => ({ properties: await runAuth(ctx, services, options.stackUrl), next: "skills" }),
       skills: async (ctx) => {
         let installed = true;
-        let agents: string[] = [];
+        let skillPath: string | undefined;
         try {
           const status = await ctx.wait(services.getSkillStatus());
           if (status.installed) {
-            agents = status.agents ?? [];
+            skillPath = status.path;
             await ctx.wait(services.sleep(4500));
           } else {
-            const [installedAgents] = await ctx.wait(Promise.all([services.installSkill(), services.sleep(4500)]));
-            agents = installedAgents ?? [];
+            const [result] = await ctx.wait(Promise.all([services.installSkill(), services.sleep(4500)]));
+            skillPath = result.path;
           }
         } catch {
           ctx.signal.throwIfAborted();
           installed = false;
         }
-        ctx.update({ skillAgents: agents });
+        ctx.update({ skillPath: skillPath ? path.relative(options.cwd, skillPath) : undefined });
         return { properties: { status: installed ? "ok" : "failed" }, next: "analyze" };
       },
       analyze: (ctx) => analyze(ctx, services, options),

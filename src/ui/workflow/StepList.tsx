@@ -9,6 +9,7 @@ export function StepList<Step extends string>({
   state,
   detail,
   hidden,
+  suffix,
 }: {
   labels: Record<Step, string>;
   state: WorkflowState<Step>;
@@ -17,6 +18,11 @@ export function StepList<Step extends string>({
   // menu) has no meaningful pending/done state of its own to show as a row
   // — whatever it produces shows up as its own standalone row instead.
   hidden?: readonly Step[];
+  // Rendered inline on the row's own line, right after the label (e.g. a
+  // live percent) — always muted, so it reads as secondary to the label
+  // rather than competing with it. `detail` is for content that needs its
+  // own line(s) below the row instead.
+  suffix?: (step: Step) => ReactNode;
 }) {
   return (
     <Box flexDirection="column">
@@ -53,11 +59,13 @@ export function StepList<Step extends string>({
               : status === "failed"
                 ? COLORS.BAD
                 : COLORS.MUTED;
+          const suffixContent = suffix?.(step);
           return (
             <Box key={step} flexDirection="column">
               <Text>
                 {" "}
                 <Text color={color}>{icon}</Text> <Text bold={active}>{labels[step]}</Text>
+                {suffixContent != null && suffixContent !== "" && <Text color={COLORS.MUTED}> {suffixContent}</Text>}
               </Text>
               {detail?.(step)}
             </Box>

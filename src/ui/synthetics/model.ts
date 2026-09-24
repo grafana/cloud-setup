@@ -53,10 +53,11 @@ export interface SyntheticsInputs extends CommonInputs {
   nextAction: "browser-discovery" | "export" | "finish";
 }
 export interface SyntheticsState extends WorkflowState<SyntheticsStep>, CommonState {
-  // Which coding agents the synthetic-monitoring-checks skill ended up
-  // configured for — read back from `skills list`/`skills add` rather than
-  // assumed, so the "Configure skills" detail line shows real data.
-  skillAgents: string[];
+  // Where the synthetic-monitoring-checks skill landed — read back from
+  // `skills list`/`skills add` rather than assumed, so the "Configure
+  // skills" detail line shows a real, familiar path (e.g.
+  // .agents/skills/synthetic-monitoring-checks) rather than naming tools.
+  skillPath?: string;
   candidates: Candidate[];
   selectedKeys: string[];
   analyzeMode: AnalyzeMode;

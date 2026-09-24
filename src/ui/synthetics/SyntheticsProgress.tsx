@@ -6,13 +6,6 @@ import { StepList } from "../workflow/StepList.js";
 import { CheckResults } from "./CheckResults.js";
 import { SYNTHETICS_STEPS, type SyntheticsState } from "./model.js";
 
-// Named agents can pile up (every coding assistant `skills add` found on
-// the machine) — past two, collapse the rest into a count rather than
-// letting the line run long.
-function summarizeAgents(agents: string[]): string {
-  return agents.length <= 2 ? agents.join(", ") : `${agents.slice(0, 2).join(", ")} and ${agents.length - 2} more`;
-}
-
 export function SyntheticsProgress({ state }: { state: SyntheticsState }) {
   const firstPass = state.analyzeMode === "fast" ? state.items : state.records.filter((item) => item.pass === "fast");
   return (
@@ -31,13 +24,13 @@ export function SyntheticsProgress({ state }: { state: SyntheticsState }) {
                 {state.auth.error})
               </Text>
             )}
-            {/* A result line (which agents it's configured for), not a
-            caveat — same 5-space indent as everywhere else below. "For"
-            rather than "Configured for" — the row above already says
-            "Configure skills". */}
-            {step === "skills" && state.skillAgents.length > 0 && (
+            {/* The shared folder every detected agent reads the skill from
+            (e.g. .agents/skills/synthetic-monitoring-checks) — a familiar,
+            single, checkable location, rather than naming tools. Same
+            "Wrote to ..." phrasing as the Terraform export result below. */}
+            {step === "skills" && state.skillPath && (
               <Text color={COLORS.MUTED}>
-                {"     "}For {summarizeAgents(state.skillAgents)}
+                {"     "}Wrote to {state.skillPath}
               </Text>
             )}
             {step === "create" && <CheckResults items={firstPass} />}
@@ -100,10 +93,13 @@ export function SyntheticsProgress({ state }: { state: SyntheticsState }) {
               "…"
             )}{" "}
             <Text bold>Find additional synthetic checks</Text>
-            {/* A colon only ever separates a percent from extra context
-            (FrontendApp's instrument step: "45%: src/main.tsx") — never
-            glues a label to its own percent, so this is a plain space. */}
-            {state.currentStep === "analyze" ? ` ${state.analyzeProgress}%` : ""}
+            {/* Muted, same as StepList's own inline suffix (e.g. Frontend's
+            "Instrument project with Faro SDK 45%") — a live percent reads
+            as secondary to the label, not part of it. A colon only ever
+            separates a percent from extra context (FrontendApp's instrument
+            step: "45%: src/main.tsx"), never a label from its own percent,
+            so this is a plain space. */}
+            {state.currentStep === "analyze" && <Text color={COLORS.MUTED}> {state.analyzeProgress}%</Text>}
           </Text>
           <CheckResults items={state.items} />
         </Box>
