@@ -140,10 +140,28 @@ for (const [name, overrides] of [
     await configure(controller);
     assert.equal(controller.getSnapshot().done, true);
     assert.equal(controller.getSnapshot().outcome, "incomplete");
-    assert.equal(controller.getSnapshot().instrumentedFile, "src/main.tsx");
+    assert.deepEqual(controller.getSnapshot().instrumentedFiles, [{ file: "src/main.tsx", created: false }]);
     assert.equal(events.at(-1)[1].status, "failed");
     assert.ok(controller.getSnapshot().error);
   });
+
+test("a Next.js run reports which files it created versus which it only edited", async () => {
+  const { controller } = frontend({
+    detectFrontendTarget: () => ({ kind: "nextjs" }),
+    instrumentNextjs: async () => ({
+      componentFile: "components/frontend-observability.tsx",
+      componentCreated: true,
+      layoutFile: "app/layout.tsx",
+      layoutCreated: false,
+      complete: true,
+    }),
+  });
+  await configure(controller);
+  assert.deepEqual(controller.getSnapshot().instrumentedFiles, [
+    { file: "components/frontend-observability.tsx", created: true },
+    { file: "app/layout.tsx", created: false },
+  ]);
+});
 
 test("failed gcx installation reports failure and still permits the next step", async () => {
   const { controller, events } = frontend({

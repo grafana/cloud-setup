@@ -70,15 +70,21 @@ export function FrontendApp({ initialStackUrl, forceGcxInstall, initialAppName, 
                     {"     "}
                     App: {config.name}
                     {"\n     "}Sampling: {Math.round((config.samplingRate ?? 1) * 100)}%{"\n     "}Replay:{" "}
-                    {config.sessionReplay ? `enabled (${config.replayMasking})` : "disabled"}
+                    {config.sessionReplay
+                      ? `enabled${state.replayMaskingKnown ? ` (${config.replayMasking})` : ""}`
+                      : "disabled"}
                   </Text>
                 )}
-                {step === "instrument" && state.instrumentedFile && (
-                  <Text color={COLORS.MUTED}>
-                    {"     "}
-                    {state.instrumentedFile}
-                  </Text>
-                )}
+                {/* One file per line rather than joined on one — a
+                Next.js run can touch two (component + layout), and
+                cramming both onto one line runs long fast. */}
+                {step === "instrument" &&
+                  state.instrumentedFiles?.map(({ file, created }) => (
+                    <Text key={file} color={COLORS.MUTED}>
+                      {"     "}
+                      {created ? "Created" : "Edited"} {file}
+                    </Text>
+                  ))}
               </>
             )}
           />

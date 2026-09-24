@@ -96,16 +96,22 @@ export async function pickApp(
   ctx.update({ instrumentation: { ...instrumentation, samplingRate } });
   await transition();
   const sessionReplay = await ctx.ask("replay");
-  // Not updated yet — `instrumentation.replayMasking` is still its
-  // placeholder default here, and exposing sessionReplay=true alongside it
-  // would render as "enabled (balanced)" before the user has actually been
-  // asked, or answered, the masking question below.
+  // Reveal "enabled"/"disabled" right away — that much is genuinely decided
+  // — but replayMaskingKnown stays false, since `instrumentation.
+  // replayMasking` is still its placeholder default here, not a real
+  // choice. Without that flag the render would show "enabled (balanced)"
+  // before the user has actually been asked, or answered, the masking
+  // question below.
+  ctx.update({ instrumentation: { ...instrumentation, samplingRate, sessionReplay }, replayMaskingKnown: false });
   let replayMasking: ReplayMasking = instrumentation.replayMasking;
   if (sessionReplay) {
     await transition();
     replayMasking = await ctx.ask("masking");
   }
-  ctx.update({ instrumentation: { ...instrumentation, samplingRate, sessionReplay, replayMasking } });
+  ctx.update({
+    instrumentation: { ...instrumentation, samplingRate, sessionReplay, replayMasking },
+    replayMaskingKnown: true,
+  });
   return {
     status: "ok",
     app_resolution: resolution,

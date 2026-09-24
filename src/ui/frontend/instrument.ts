@@ -28,15 +28,19 @@ export async function instrument(
     if (target.kind === "javascript") {
       services.insertFaroSnippet(cwd, target, instrumentation);
       complete = true;
-      ctx.update({ instrumentedFile: target.file });
+      ctx.update({ instrumentedFiles: [{ file: target.file, created: false }] });
     } else if (target.kind === "react") {
       const result = await ctx.wait(services.instrumentReact(cwd, stackUrl, target.file, instrumentation));
       complete = result.complete;
       routerWired = Boolean(result.routerFile);
       ctx.update({
-        instrumentedFile: result.routerFile
-          ? `${result.entryFile}, router wrapped in ${result.routerFile}`
-          : result.entryFile,
+        // Both are always pre-existing files (the detected entry point,
+        // and a router file the discovery agent found, never created) —
+        // edited either way.
+        instrumentedFiles: [
+          { file: result.entryFile, created: false },
+          ...(result.routerFile ? [{ file: result.routerFile, created: false }] : []),
+        ],
         error: result.complete ? undefined : (result.detail ?? "React instrumentation is incomplete."),
       });
     } else {
@@ -44,7 +48,10 @@ export async function instrument(
       complete = result.complete;
       layoutWired = Boolean(result.layoutFile);
       ctx.update({
-        instrumentedFile: result.componentFile,
+        instrumentedFiles: [
+          ...(result.componentFile ? [{ file: result.componentFile, created: Boolean(result.componentCreated) }] : []),
+          ...(result.layoutFile ? [{ file: result.layoutFile, created: Boolean(result.layoutCreated) }] : []),
+        ],
         error: result.complete
           ? undefined
           : (result.detail ?? "Add <FrontendObservability /> to the layout to finish instrumentation."),

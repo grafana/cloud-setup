@@ -48,15 +48,17 @@ test("session replay isn't shown enabled with a masking level before masking is 
   assert.equal(controller.getSnapshot().prompt, "replay");
   controller.answer("replay", true);
   await tick();
-  // Right after answering "replay" (yes) but before "masking" is even
-  // asked, sessionReplay must not already read as enabled — otherwise the
-  // detail line renders "enabled (balanced)" from the placeholder default,
-  // before the user has picked (or even seen) a masking level.
+  // Right after answering "replay" (yes), sessionReplay is enabled right
+  // away — but replayMaskingKnown must stay false until "masking" is
+  // actually answered, or the detail line would render the masking level
+  // still held in its placeholder default ("balanced") as if chosen.
   assert.equal(controller.getSnapshot().prompt, "masking");
-  assert.equal(controller.getSnapshot().instrumentation.sessionReplay, false);
+  assert.equal(controller.getSnapshot().instrumentation.sessionReplay, true);
+  assert.equal(controller.getSnapshot().replayMaskingKnown, false);
   controller.answer("masking", "strict");
   await tick();
   assert.equal(controller.getSnapshot().instrumentation.sessionReplay, true);
   assert.equal(controller.getSnapshot().instrumentation.replayMasking, "strict");
+  assert.equal(controller.getSnapshot().replayMaskingKnown, true);
   controller.dispose();
 });
