@@ -1,4 +1,4 @@
-import type { RemoteCheck, SmClient } from "./api.js";
+import { K6_V2_CHANNEL, type RemoteCheck, type SmClient } from "./api.js";
 import type { CheckDefinition, CheckSettings, SyntheticConfig } from "./types.js";
 
 // The SM API stores scripted/browser check bodies as base64, not plaintext —
@@ -56,6 +56,12 @@ function toPayload(name: string, def: CheckDefinition, probeIds: Map<string, num
     enabled: def.enabled ?? true,
     alertSensitivity: def.alertSensitivity ?? "none",
     basicMetricsOnly: def.basicMetricsOnly ?? true,
+    // A browser-settings check is a k6 script — pin it to the v2 channel
+    // rather than whatever the tenant's default channel happens to be
+    // (that default has flipped before). eligibleProbes (create.ts) is
+    // what actually keeps probes that can't run this channel out of
+    // `probes` above.
+    ...(def.settings.browser ? { channels: { k6: { id: K6_V2_CHANNEL } } } : {}),
   };
 }
 
@@ -92,6 +98,7 @@ function isUnchanged(payload: Record<string, unknown>, existing: RemoteCheck): b
     enabled: existing.enabled,
     alertSensitivity: existing.alertSensitivity,
     basicMetricsOnly: existing.basicMetricsOnly,
+    channels: existing.channels ?? null,
   };
   const desired = {
     target: payload.target,
@@ -102,6 +109,7 @@ function isUnchanged(payload: Record<string, unknown>, existing: RemoteCheck): b
     enabled: payload.enabled,
     alertSensitivity: payload.alertSensitivity,
     basicMetricsOnly: payload.basicMetricsOnly,
+    channels: payload.channels ?? null,
   };
   return JSON.stringify(current) === JSON.stringify(desired) && isSubsetDeepEqual(payload.settings, existing.settings);
 }

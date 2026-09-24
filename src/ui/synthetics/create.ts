@@ -1,10 +1,33 @@
-import { SmApiError } from "../../products/syntheticMonitoring/api.js";
+import { K6_V2_CHANNEL, SmApiError, type Probe } from "../../products/syntheticMonitoring/api.js";
+import type { Candidate } from "../../products/syntheticMonitoring/discover.js";
 import type { SyntheticConfig } from "../../products/syntheticMonitoring/types.js";
 import type { StepProperties } from "../../telemetry.js";
 import { MIN_SPINNER_MS } from "../shared.js";
 import { connect } from "./connect.js";
 import { unhandledCandidates, type CreationItem, type SyntheticsContext, type SyntheticsOptions } from "./model.js";
 import type { SyntheticsServices } from "./services.js";
+
+// Only `null` for this channel actually means "not eligible" — the probe
+// reported k6 versions and none satisfy it. An absent key or "unknown"
+// means we don't have enough information, and the SM API itself allows
+// those by default (see synthetic-monitoring-api's
+// probeK6ChannelsValidator), so this stays permissive to match.
+function supportsK6Channel(probe: Probe): boolean {
+  return probe.k6Versions?.[K6_V2_CHANNEL] !== null;
+}
+
+// SSL and broken-links checks both run as a k6 script (settings.browser),
+// assigned to the v2 channel (see reconcile.ts's toPayload) — probes
+// predating the k6 runner, or whose k6 version doesn't satisfy that
+// channel, would otherwise still get slotted in and just fail to execute.
+// Prefer probes that can actually run it; only fall back to the full set
+// if that leaves none at all (a check with zero probes is a worse outcome
+// than one that might not run on every probe it was told to try).
+function eligibleProbes(probes: Probe[], candidate: Candidate): Probe[] {
+  if (!candidate.settings.browser) return probes;
+  const capable = probes.filter((probe) => !probe.capabilities?.disableBrowserChecks && supportsK6Channel(probe));
+  return capable.length ? capable : probes;
+}
 
 export async function createChecks(
   ctx: SyntheticsContext,
@@ -19,7 +42,9 @@ export async function createChecks(
   const selected = unhandledCandidates(ctx.get()).filter((candidate) => chosen.includes(candidate.key));
   if (!session.probes.length) throw new Error("No probes are available on this tenant.");
   let items: CreationItem[] = selected.map((candidate) => {
-    const probes = session.probes.slice(0, candidate.probeCount).map((probe) => probe.name);
+    const probes = eligibleProbes(session.probes, candidate)
+      .slice(0, candidate.probeCount)
+      .map((probe) => probe.name);
     return {
       candidate,
       pass: ctx.get().analyzeMode,

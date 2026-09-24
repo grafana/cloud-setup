@@ -85,6 +85,39 @@ async function firstPass(controller) {
   assert.equal(controller.getSnapshot().prompt, "nextAction");
 }
 
+test("a browser-type check skips probes that can't run k6, but keeps every capable one", async () => {
+  const browserCandidate = {
+    ...first,
+    key: "ssl",
+    label: "ssl",
+    settings: { browser: { script: "" } },
+    probeCount: 3,
+  };
+  const probes = [
+    { id: 1, name: "Legacy", capabilities: { disableBrowserChecks: true } },
+    { id: 2, name: "NoV2", k6Versions: { v2: null } },
+    { id: 3, name: "Unreported", k6Versions: { v2: "unknown" } },
+    { id: 4, name: "London" },
+    { id: 5, name: "Paris", k6Versions: { v2: "2.3.1" } },
+  ];
+  const client = {
+    createCheck: async () => ({ id: 1 }),
+    updateCheck: () => assert.fail("unexpected update"),
+    getCheckAlerts: async () => [],
+    putCheckAlerts: async () => {},
+  };
+  const { controller } = setup({
+    candidatesFor: async () => [browserCandidate],
+    tryAutoSmSession: async () => ({ client, apiUrl: "https://sm.example", probes }),
+  });
+  await start(controller);
+  controller.answer("selection", ["ssl"]);
+  await tick();
+  await tick();
+  assert.deepEqual(controller.getSnapshot().records[0].probes, ["Unreported", "London", "Paris"]);
+  controller.dispose();
+});
+
 for (const prompt of ["baseUrl", "token"])
   test(`Back from ${prompt} returns to a working selection prompt and preserves the submitted selection`, async () => {
     const { controller, mutations } = setup({ tryAutoSmSession: () => assert.fail("auth was declined") });

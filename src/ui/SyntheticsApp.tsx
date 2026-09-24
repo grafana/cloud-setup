@@ -106,5 +106,9 @@ export async function runSyntheticsUI(
     </SetupUrls>,
     { exitOnCtrlC: false },
   );
-  await app.waitUntilExit();
+  // Ink rejects this promise for an error exit, but that error's message is
+  // already on screen (the "Setup incomplete" text) and hardExit already
+  // owns the real process.exit(code) below — letting the rejection reach
+  // main()'s own catch would just print the same message a second time.
+  await app.waitUntilExit().catch(() => {});
 }
