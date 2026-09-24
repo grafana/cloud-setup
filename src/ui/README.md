@@ -44,4 +44,6 @@ An exception that stops a workflow records a failed step and an `error` run. Suc
 
 ## Checks
 
-`npm run check` covers both product workflows and the shared controller, plus the existing URL entry, telemetry, exit, and product tests. Workflow tests inject services and do not create real resources. Subprocess scenarios in `tests/telemetry.test.mjs` run the actual UI, telemetry in log mode, and exit handler together to verify their results agree. Live OAuth and cloud integration remain separate manual checks.
+`npm run check` covers both product workflows and the shared controller, plus the existing URL entry, telemetry, exit, and product tests. Workflow tests inject services and do not create real resources. Subprocess scenarios in `tests/telemetry.test.mjs` run the actual UI, telemetry, and exit handler together to verify their results agree.
+
+Log-mode scenarios check emitted payloads. Delayed-delivery scenarios enable telemetry with a mocked transport and a temporary state directory. The mock completes failed step requests after the final run request, so the assertions verify that shutdown waits for older pending events too. These scenarios cover thrown step errors, HTTP 401/403 responses, and required-step failures that let the wizard continue. They mirror the CLI's handling of Ink rejections to catch exits that bypass the telemetry wait. No events are sent to the usage-stats service. Live OAuth and cloud integration remain separate manual checks.
