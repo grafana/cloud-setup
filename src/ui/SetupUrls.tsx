@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Box, Text } from "ink";
 import { EditableTextInput } from "./EditableTextInput.js";
 import { recordStep, type Command } from "../telemetry.js";
-import { COLORS } from "../theme.js";
+import { COLORS, ICONS } from "../theme.js";
 import { validateSetupUrl, type UrlKind } from "../urls.js";
 import { Header, useHardExit, type HardExit } from "./shared.js";
 
@@ -40,7 +40,7 @@ export function SetupUrls({ command, initialTargetUrl, initialStackUrl, children
 
   return (
     <Box flexDirection="column" paddingLeft={1}>
-      <Header stackUrl={stackUrl || "Not set"} />
+      <Header stackUrl={stackUrl || "-"} />
       <UrlInput
         key={field}
         kind={field}
@@ -61,12 +61,17 @@ function UrlInput({
   onSubmit: (url: string) => void;
 }) {
   const [error, setError] = useState(() => (initialValue ? validateSetupUrl(initialValue, kind).error : undefined));
-  const label = kind === "target" ? "Target URL" : "Grafana Cloud stack (slug or URL)";
+  const label = kind === "target" ? "Target URL" : "Stack";
   return (
     <Box flexDirection="column">
+      {error && (
+        <Text color={COLORS.BAD}>
+          {ICONS.FAIL} {error}
+        </Text>
+      )}
       <Text>
         {kind === "target"
-          ? "What is the URL of the service you want to monitor?"
+          ? "What's the URL of the service you want to monitor?"
           : "Which Grafana Cloud stack should we use?"}
       </Text>
       <Text color={COLORS.MUTED}>
@@ -85,8 +90,6 @@ function UrlInput({
           }}
         />
       </Box>
-      {error && <Text color={COLORS.BAD}>{error}</Text>}
-      <Text color={COLORS.MUTED}>Ctrl+C to cancel</Text>
     </Box>
   );
 }

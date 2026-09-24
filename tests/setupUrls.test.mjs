@@ -74,7 +74,7 @@ test("Synthetics asks for each missing URL and blocks empty or invalid submissio
   assert.equal(term.resolved.length, 0);
   await term.send("example.com/query");
   await term.send("\r");
-  assert.match(term.output(), /Grafana Cloud stack \(slug or URL\):/);
+  assert.match(term.output(), /Stack:/);
   assert.equal(term.resolved.length, 0);
   await term.send("https:stackname.grafana.net");
   await term.send("\r");
@@ -140,7 +140,7 @@ test("an invalid supplied target is corrected without asking for an already vali
   await term.send("https://example.com");
   await term.send("\r");
   assert.match(term.output(), /Ready for setup/);
-  assert.doesNotMatch(term.output(), /Grafana Cloud stack \(slug or URL\):/);
+  assert.doesNotMatch(term.output(), /Stack:/);
 });
 
 test("URL input accepts intro and quit shortcut characters as ordinary text", async (t) => {
