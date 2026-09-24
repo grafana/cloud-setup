@@ -21,7 +21,7 @@ export function PromptInput({
         <Text>{label}: </Text>
         <TextInput value={value} onChange={setValue} onSubmit={onSubmit} mask={mask} />
       </Box>
-      <EnterHint />
+      <EnterHint action="submit" />
     </Box>
   );
 }
