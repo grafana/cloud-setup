@@ -113,9 +113,6 @@ export function SyntheticsPrompts({
         <Box flexDirection="column">
           {state.emailError && <Text color={COLORS.BAD}>{state.emailError}</Text>}
           <Text>Where should these alerts go? Separate several addresses with a comma</Text>
-          {state.reusingAddresses && (
-            <Text color={COLORS.MUTED}>Changing this also moves alerts from every check on this stack.</Text>
-          )}
           <PromptInput
             label="Email"
             initialValue={state.emailInput}

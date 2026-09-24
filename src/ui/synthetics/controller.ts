@@ -35,7 +35,6 @@ export function createSyntheticsController(
       alertingPhase: "confirm",
       alertingDetail: [],
       emailInput: "",
-      reusingAddresses: false,
       nextStepsLog: [],
       exporting: false,
     },

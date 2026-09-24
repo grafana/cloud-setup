@@ -75,7 +75,6 @@ export interface SyntheticsState extends WorkflowState<SyntheticsStep>, CommonSt
   alertingDetail: AlertingDetail[];
   emailInput: string;
   emailError?: string;
-  reusingAddresses: boolean;
   nextStepsLog: NextStepLog[];
   pendingNextStepLog?: NextStepLog;
   exporting: boolean;

@@ -68,7 +68,6 @@ export async function configureAlerting(
   if (client && inspection) {
     ctx.update({
       emailInput: inspection.existingAddresses ?? inspection.userEmail ?? "",
-      reusingAddresses: inspection.existingAddresses !== undefined,
       emailError: undefined,
     });
     for (;;) {
