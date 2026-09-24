@@ -28,6 +28,7 @@ import { tryAutoSmSession } from "../products/syntheticMonitoring/smAuth.js";
 import { writeTerraformExport } from "../products/syntheticMonitoring/terraform.js";
 import { CheckboxList } from "./CheckboxList.js";
 import { SelectMenu, type SelectMenuItem } from "./SelectMenu.js";
+import { SetupUrls } from "./SetupUrls.js";
 import {
   EnterHint,
   Header,
@@ -35,7 +36,7 @@ import {
   MIN_SPINNER_MS,
   requireInteractiveTerminal,
   startFakeProgress,
-  useHardExit,
+  type HardExit,
   Working,
 } from "./shared.js";
 import { recordStep, type StepProperties } from "../telemetry.js";
@@ -266,11 +267,10 @@ interface Props {
   initialTargetUrl: string;
   initialStackUrl: string;
   forceGcxInstall: boolean;
+  exit: HardExit;
 }
 
-export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, forceGcxInstall }: Props) {
-  const exit = useHardExit("synthetics", initialStackUrl);
-
+export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, forceGcxInstall, exit }: Props) {
   const [started, setStarted] = useState(false);
   const [currentStep, setCurrentStep] = useState<StepId>("gcx");
   const [completed, setCompleted] = useState<Set<StepId>>(new Set());
@@ -1678,23 +1678,28 @@ export function SetupApp({ initialBaseUrl, initialTargetUrl, initialStackUrl, fo
 
 export async function runSetupUI(
   initialBaseUrl: string | undefined,
-  initialTargetUrl: string,
-  initialStackUrl: string,
+  initialTargetUrl: string | undefined,
+  initialStackUrl: string | undefined,
   forceGcxInstall: boolean,
 ): Promise<void> {
-  await requireInteractiveTerminal("synthetics", initialStackUrl);
+  await requireInteractiveTerminal("synthetics", initialStackUrl ?? "");
   // exitOnCtrlC disabled — Ink's own default Ctrl+C handling runs before
   // useHardExit's useInput callback ever gets a turn (both listen on the
   // same stdin stream, and Ink's own listener wins the race), so it kills
   // the process first and our "Cancelled." message never prints. Letting
   // useHardExit be the only Ctrl+C handler avoids that race entirely.
   const app = render(
-    <SetupApp
-      initialBaseUrl={initialBaseUrl}
-      initialTargetUrl={initialTargetUrl}
-      initialStackUrl={initialStackUrl}
-      forceGcxInstall={forceGcxInstall}
-    />,
+    <SetupUrls command="synthetics" initialTargetUrl={initialTargetUrl} initialStackUrl={initialStackUrl}>
+      {({ targetUrl, stackUrl, exit }) => (
+        <SetupApp
+          initialBaseUrl={initialBaseUrl}
+          initialTargetUrl={targetUrl}
+          initialStackUrl={stackUrl}
+          forceGcxInstall={forceGcxInstall}
+          exit={exit}
+        />
+      )}
+    </SetupUrls>,
     { exitOnCtrlC: false },
   );
   await app.waitUntilExit();

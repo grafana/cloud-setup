@@ -22,6 +22,7 @@ import {
 import type { FaroInstrumentation, FrontendTarget, ReplayMasking } from "../products/frontendO11y/instrument.js";
 import { instrumentNextjs } from "../products/frontendO11y/nextjs.js";
 import { instrumentReact } from "../products/frontendO11y/react.js";
+import { SetupUrls } from "./SetupUrls.js";
 import {
   EnterHint,
   Header,
@@ -29,7 +30,7 @@ import {
   MIN_SPINNER_MS,
   requireInteractiveTerminal,
   startFakeProgress,
-  useHardExit,
+  type HardExit,
 } from "./shared.js";
 import { recordStep, type Outcome, type StepProperties, type StepStatus } from "../telemetry.js";
 import { useGcxStep } from "./steps/useGcxStep.js";
@@ -146,11 +147,10 @@ interface Props {
   initialStackUrl: string;
   forceGcxInstall: boolean;
   initialAppName?: string;
+  exit: HardExit;
 }
 
-export function FrontendApp({ initialStackUrl, forceGcxInstall, initialAppName }: Props) {
-  const exit = useHardExit("frontend", initialStackUrl);
-
+export function FrontendApp({ initialStackUrl, forceGcxInstall, initialAppName, exit }: Props) {
   const [started, setStarted] = useState(false);
   const [currentStep, setCurrentStep] = useState<StepId>("gcx");
   const [completed, setCompleted] = useState<Set<StepId>>(new Set());
@@ -928,17 +928,26 @@ export function FrontendApp({ initialStackUrl, forceGcxInstall, initialAppName }
 }
 
 export async function runFrontendUI(
-  initialStackUrl: string,
+  initialStackUrl: string | undefined,
   forceGcxInstall: boolean,
   initialAppName?: string,
 ): Promise<void> {
-  await requireInteractiveTerminal("frontend", initialStackUrl);
+  await requireInteractiveTerminal("frontend", initialStackUrl ?? "");
   // exitOnCtrlC disabled — see the matching comment in SetupApp.tsx's
   // runSetupUI: Ink's own default Ctrl+C handling otherwise wins the race
   // against useHardExit's useInput callback and kills the process before
   // our "Cancelled." message ever prints.
   const app = render(
-    <FrontendApp initialStackUrl={initialStackUrl} forceGcxInstall={forceGcxInstall} initialAppName={initialAppName} />,
+    <SetupUrls command="frontend" initialStackUrl={initialStackUrl}>
+      {({ stackUrl, exit }) => (
+        <FrontendApp
+          initialStackUrl={stackUrl}
+          forceGcxInstall={forceGcxInstall}
+          initialAppName={initialAppName}
+          exit={exit}
+        />
+      )}
+    </SetupUrls>,
     { exitOnCtrlC: false },
   );
   await app.waitUntilExit();

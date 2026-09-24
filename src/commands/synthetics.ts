@@ -1,46 +1,26 @@
 import { readCredentials } from "../products/syntheticMonitoring/credentials.js";
 import { setDebugEnabled } from "../debug.js";
 import { runSetupUI } from "../ui/SetupApp.js";
-import { applyFolder, printCliError, type Command } from "./shared.js";
+import { applyFolder, parseCommandOptions, type Command } from "./shared.js";
 
 const USAGE_LINE =
-  "npx @grafana/cloud-setup synthetics --url <target-url> --stack <stack-url> [--folder <path>] [--base-url <url>] [--force-gcx-install] [--debug]";
-const SHORT_USAGE_LINE = "npx @grafana/cloud-setup synthetics --url <url> --stack <url>";
-const EXAMPLE = [
-  "npx @grafana/cloud-setup synthetics \\",
-  "  --url https://example.com \\",
-  "  --stack https://my-team.grafana.net",
-];
+  "npx @grafana/cloud-setup synthetics [--url <target-url>] [--stack <slug-or-url>] [--folder <path>] [--base-url <url>] [--force-gcx-install] [--debug]";
+const SHORT_USAGE_LINE = "npx @grafana/cloud-setup synthetics";
+const EXAMPLE = ["npx @grafana/cloud-setup synthetics \\", "  --url https://example.com \\", "  --stack my-team"];
 
 async function run(rest: string[]): Promise<void> {
-  let baseUrl = process.env.SM_API_URL;
-  let targetUrl: string | undefined;
-  let stackUrl: string | undefined;
-  let folder: string | undefined;
-  let forceGcxInstall = false;
-  let debug = false;
-  for (let i = 0; i < rest.length; i++) {
-    if (rest[i] === "--base-url") baseUrl = rest[++i];
-    else if (rest[i] === "--url") targetUrl = rest[++i];
-    else if (rest[i] === "--stack") stackUrl = rest[++i];
-    else if (rest[i] === "--folder") folder = rest[++i];
-    else if (rest[i] === "--force-gcx-install") forceGcxInstall = true;
-    else if (rest[i] === "--debug") debug = true;
-  }
-  if (!targetUrl && !stackUrl) printCliError(syntheticsCommand, "Missing required arguments: --url, --stack");
-  else if (!targetUrl) printCliError(syntheticsCommand, "Missing required argument: --url");
-  else if (!stackUrl) printCliError(syntheticsCommand, "Missing required argument: --stack");
-  if (!/^https?:\/\//.test(stackUrl)) stackUrl = `https://${stackUrl}`;
-  applyFolder(folder, syntheticsCommand);
+  const { strings, booleans } = parseCommandOptions(rest, syntheticsCommand);
+  let baseUrl = strings["base-url"] ?? process.env.SM_API_URL;
+  applyFolder(strings.folder, syntheticsCommand);
   if (!baseUrl) {
     const stored = await readCredentials();
     baseUrl = stored?.baseUrl;
   }
   // Printed before runSetupUI hands the terminal to Ink — console.log is
   // safe here only because Ink hasn't started rendering yet.
-  const debugFile = setDebugEnabled(debug);
+  const debugFile = setDebugEnabled(booleans.has("debug"));
   if (debugFile) console.log(`Debug log: ${debugFile}`);
-  await runSetupUI(baseUrl, targetUrl, stackUrl, forceGcxInstall);
+  await runSetupUI(baseUrl, strings.url, strings.stack, booleans.has("force-gcx-install"));
 }
 
 export const syntheticsCommand: Command = {
@@ -50,8 +30,8 @@ export const syntheticsCommand: Command = {
   example: EXAMPLE,
   summary: "Set up Synthetic Monitoring checks",
   flags: [
-    { flag: "--url <url>", description: "Target URL to check (required)" },
-    { flag: "--stack <url>", description: "Grafana Cloud stack URL, e.g. https://my-team.grafana.net (required)" },
+    { flag: "--url <url>", description: "Target URL to check (prompted if omitted or invalid)" },
+    { flag: "--stack <slug-or-url>", description: "Grafana Cloud stack slug or URL (prompted if omitted or invalid)" },
     { flag: "--folder <path>", description: "Project directory to set up (default: .)" },
     { flag: "--base-url <url>", description: "Synthetic Monitoring API URL (skips the prompt during setup)" },
     { flag: "--force-gcx-install", description: "Install the Grafana Cloud CLI (gcx) without asking, if it's missing" },

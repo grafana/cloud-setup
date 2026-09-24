@@ -109,6 +109,21 @@ test("the device ID persists across runs while the run ID does not", async (t) =
   assert.notEqual(second[0].payload.run_id, first[0].payload.run_id, "run ID is not");
 });
 
+test("URL validation reports completion without collecting either URL", async (t) => {
+  const sent = captureSends(t);
+  const api = await telemetry();
+  api.recordStep("synthetics", stack, "urls", { status: "ok" });
+  assert.equal(sent.length, 1);
+  assert.equal(sent[0].payload.step, "urls");
+  assert.equal(sent[0].payload.status, "ok");
+  assert.equal(sent[0].payload.stack_id, undefined);
+  assert.equal(sent[0].payload.stack_url, undefined);
+  assert.equal(sent[0].payload.target_url, undefined);
+  assert.ok(!JSON.stringify(sent[0].payload).includes(stack));
+  sent[0].settle({ ok: true });
+  await api.waitForTelemetry();
+});
+
 test("an unwritable state directory omits the device ID rather than sending a throwaway", async (t) => {
   const home = fs.mkdtempSync(path.join(stateRoot, "readonly-"));
   fs.chmodSync(home, 0o500);

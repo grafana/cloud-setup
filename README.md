@@ -34,13 +34,13 @@ You'll be relying on it directly from day 2 onward, which is why this wizard set
 Set up Synthetic Monitoring checks.
 
 ```sh
-npx @grafana/cloud-setup synthetics --url https://example.com --stack https://my-team.grafana.net
+npx @grafana/cloud-setup synthetics --url https://example.com --stack my-team
 ```
 
 | Flag              | Description                                                                |
 | ----------------- | -------------------------------------------------------------------------- |
 | `--url <url>`     | Target URL to check (required)                                             |
-| `--stack <url>`   | Grafana Cloud stack URL (required)                                         |
+| `--stack <slug>`  | Grafana Cloud stack slug, e.g. `my-team` (URLs also accepted)              |
 | `--folder <path>` | Project directory to set up (default: `.`)                                 |
 | `--debug`         | Log raw Assistant tool calls/responses to a temp file, for troubleshooting |
 
@@ -49,12 +49,12 @@ npx @grafana/cloud-setup synthetics --url https://example.com --stack https://my
 Instrument local app with Frontend Observability.
 
 ```sh
-npx @grafana/cloud-setup frontend --stack https://my-team.grafana.net
+npx @grafana/cloud-setup frontend --stack my-team
 ```
 
 | Flag              | Description                                                                |
 | ----------------- | -------------------------------------------------------------------------- |
-| `--stack <url>`   | Grafana Cloud stack URL (required)                                         |
+| `--stack <slug>`  | Grafana Cloud stack slug, e.g. `my-team` (URLs also accepted)              |
 | `--app <name>`    | Frontend Observability app to attach to (skips the picker if it exists)    |
 | `--folder <path>` | Project directory to set up (default: `.`)                                 |
 | `--debug`         | Log raw Assistant tool calls/responses to a temp file, for troubleshooting |

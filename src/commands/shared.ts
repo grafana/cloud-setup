@@ -1,5 +1,6 @@
 import { existsSync, statSync } from "node:fs";
 import path from "node:path";
+import { parseArgs } from "node:util";
 import { bad, titleLine } from "../cliStyle.js";
 import { ICONS } from "../theme.js";
 
@@ -11,14 +12,50 @@ export interface CommandFlag {
 export interface Command {
   name: string;
   usageLine: string; // full usage, every optional flag in [...] — shown in `<command> --help`
-  shortUsageLine: string; // required flags only — shown alongside a usage error
+  shortUsageLine: string; // minimum invocation, shown alongside a usage error
   example: string[]; // a realistic invocation, one line per array entry
   summary: string; // one-line summary shown in the global help's Commands list
   flags: CommandFlag[]; // shown in `<command> --help`
   run(rest: string[]): Promise<void>;
 }
 
-// The one error screen for any usage problem (a missing required flag, an
+export function parseCommandOptions(
+  rest: string[],
+  command: Command,
+): {
+  strings: Record<string, string | undefined>;
+  booleans: Set<string>;
+} {
+  const options: Record<string, { type: "string" | "boolean" }> = Object.fromEntries(
+    command.flags.map(({ flag }) => [
+      flag.split(" ")[0]!.slice(2),
+      { type: flag.includes(" <") ? "string" : "boolean" },
+    ]),
+  );
+  // A URL flag without a value is equivalent to omitting it: the wizard
+  // will ask. Never consume the following flag as if it were a URL.
+  const args = rest.map((arg, i) =>
+    options[arg.slice(2)]?.type === "string" &&
+    (arg === "--url" || arg === "--stack") &&
+    (rest[i + 1] === undefined || rest[i + 1]!.startsWith("-"))
+      ? `${arg}=`
+      : arg,
+  );
+  try {
+    const { values } = parseArgs({ args, options, strict: true, allowPositionals: false });
+    const strings: Record<string, string | undefined> = {};
+    const booleans = new Set<string>();
+    for (const [key, value] of Object.entries(values)) {
+      if (typeof value === "string") strings[key] = value;
+      else if (value) booleans.add(key);
+    }
+    return { strings, booleans };
+  } catch (err) {
+    printCliError(command, err instanceof Error ? err.message : String(err));
+  }
+}
+
+// The one error screen for any usage problem (an unknown flag, an
 // invalid --folder, ...) — always points at the short/required usage and
 // a realistic example rather than the full flag list, which lives in
 // `<command> --help` instead.
