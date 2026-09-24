@@ -92,7 +92,10 @@ export function FrontendPrompts({
             ]}
             onSelect={(key) => controller.answer("masking", key as ReplayMasking)}
           />
-          <EnterHint />
+          {/* Same marginTop={1} gap as the "app" prompt above. */}
+          <Box marginTop={1}>
+            <EnterHint />
+          </Box>
         </Box>
       );
     default:
