@@ -71,7 +71,17 @@ export function SyntheticsApp({ initialBaseUrl, initialTargetUrl, initialStackUr
                 <Text color={COLORS.MUTED}>Resolve the issue, then run `npx @grafana/cloud-setup` again.</Text>
               </>
             ) : state.done ? (
-              <ChecksSummary items={state.records} stackUrl={initialStackUrl} />
+              <>
+                {state.outcome === "incomplete" && (
+                  <Text color={COLORS.BAD}>Setup incomplete. Review the failed steps above.</Text>
+                )}
+                <ChecksSummary items={state.records} stackUrl={initialStackUrl} />
+                {state.outcome === "incomplete" && (
+                  <Text color={COLORS.MUTED}>
+                    Resolve the issue, then run `npx @grafana/cloud-setup synthetics` again.
+                  </Text>
+                )}
+              </>
             ) : (
               <>
                 <CommonStepBody {...state} />

@@ -48,6 +48,8 @@ Adding a new **top-level** field is different, because the receiver has to know 
 
 Both product controllers use `src/ui/workflow/controller.ts` to call `recordStep` once for each returned step result. A new step belongs in the product's `model.ts` and `controller.ts`, with an async handler returning `{ next, properties }`. Give `properties` an accurate `status`.
 
+Declare whether the step is required in its product controller. A failed required step makes the completed run `incomplete` and exits with code 1, while deliberate skips and failures in best-effort steps do not. The controller retains required failures across repeated passes and records a failed step if a handler throws. See `src/ui/README.md` for the outcome policy.
+
 Routing-only transitions can omit properties. Synthetics uses this when the next-actions menu routes to another discovery pass, then reports that menu step when it finishes. Every analyze exit returns its own result. See `src/ui/README.md` for the structure and cancellation rules.
 
 ### Choosing a status

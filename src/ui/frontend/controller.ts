@@ -19,6 +19,7 @@ export function createFrontendController(
       started: false,
       completed: new Set(),
       results: {},
+      failedSteps: new Set(),
       done: false,
       outcome: "incomplete",
       apps: [],
@@ -32,5 +33,6 @@ export function createFrontendController(
       instrument: async (ctx) => ({ properties: await instrument(ctx, services, options), next: "done" }),
     },
     record,
+    ["pick-app", "instrument"],
   );
 }

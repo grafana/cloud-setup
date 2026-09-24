@@ -52,7 +52,12 @@ export function SyntheticsProgress({ state }: { state: SyntheticsState }) {
         <Box key={entry.key} flexDirection="column">
           <Text>
             {" "}
-            <Text color={COLORS.OK}>{ICONS.OK}</Text> {entry.label}
+            {entry.status === "failed" ? (
+              <Text color={COLORS.BAD}>{ICONS.FAIL}</Text>
+            ) : (
+              <Text color={COLORS.OK}>{ICONS.OK}</Text>
+            )}{" "}
+            {entry.label}
           </Text>
           {/* Same 5-space indent CheckResults uses for its own result rows
           (create step, above) — this is a result line too, just without

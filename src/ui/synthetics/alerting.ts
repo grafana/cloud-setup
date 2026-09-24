@@ -27,20 +27,32 @@ export async function configureAlerting(
     ctx.update({ alertingPhase: "applying" });
     const result = await applyCheckAlerts(ctx, targets, prior.presets);
     const pending = ctx.get().pendingNextStepLog;
-    if (pending && result.alerted)
-      ctx.update({ pendingNextStepLog: { ...pending, detail: `Alerts enabled on ${result.alerted} more checks.` } });
+    if (pending)
+      ctx.update({
+        pendingNextStepLog: {
+          ...pending,
+          status: result.failed ? "failed" : "ok",
+          detail: result.failed
+            ? `Couldn't enable alerts on ${result.failed} checks. ${result.firstError ?? ""}`
+            : `Alerts enabled on ${result.alerted} more checks.`,
+        },
+      });
     return {
       status: result.failed ? "failed" : "ok",
-      alerting_outcome: prior.addresses ? "configured" : "rules_only",
+      alerting_outcome: prior.outcome,
       alert_presets: prior.presets.length,
       checks_alerted: result.alerted,
     };
   }
   ctx.update({ alertingPhase: "confirm" });
   if (!(await ctx.ask("alerting"))) {
-    ctx.update({ alertingChoice: { presets }, alertingPhase: "applying" });
+    ctx.update({ alertingChoice: { presets, outcome: "rules_only" }, alertingPhase: "applying" });
     const result = await applyCheckAlerts(ctx, targets, presets);
-    ctx.update({ alertingDetail: [NO_EMAIL_DETAIL, ...(result.firstError ? [{ text: result.firstError }] : [])] });
+    ctx.update({
+      alertingDetail: result.failed
+        ? [{ text: `Couldn't enable alerts on ${result.failed} checks. ${result.firstError ?? ""}` }]
+        : [NO_EMAIL_DETAIL],
+    });
     return {
       status: result.failed ? "failed" : "declined",
       alerting_outcome: "rules_only",
@@ -83,7 +95,7 @@ export async function configureAlerting(
       ctx.update({ emailInput: raw, emailError: `"${invalid}" doesn't look like an email address` });
     }
   }
-  ctx.update({ alertingPhase: "applying", alertingChoice: { presets, addresses } });
+  ctx.update({ alertingPhase: "applying" });
   const [result] = await ctx.wait(
     Promise.all([applyCheckAlerts(ctx, targets, presets), services.sleep(MIN_SPINNER_MS)]),
   );
@@ -94,7 +106,9 @@ export async function configureAlerting(
   const href = `${options.stackUrl.replace(/\/$/, "")}/alerting/notifications`;
   let contactPoint: StepProperties["contact_point"];
   let notificationRoute: StepProperties["notification_route"];
-  let notificationsFailed = false;
+  // Declined sign-in intentionally uses the stack's default routing. A failed
+  // lookup after signing in means requested notification setup did not finish.
+  let notificationsFailed = !ctx.get().auth.error && !client;
   if (client && addresses) {
     try {
       contactPoint = await ctx.wait(client.ensureContactPoint(addresses));
@@ -111,10 +125,11 @@ export async function configureAlerting(
       });
     }
   } else detail.push(client ? NO_EMAIL_DETAIL : { text: "Couldn't set an email. Add a contact point at", href });
-  ctx.update({ alertingDetail: detail });
+  const outcome = !client ? "unavailable" : addresses && !notificationsFailed ? "configured" : "rules_only";
+  ctx.update({ alertingDetail: detail, alertingChoice: { presets, outcome } });
   return {
     status: result.failed || notificationsFailed ? "failed" : "ok",
-    alerting_outcome: !client ? "unavailable" : addresses && !notificationsFailed ? "configured" : "rules_only",
+    alerting_outcome: outcome,
     alert_presets: presets.length,
     checks_alerted: result.alerted,
     contact_point: contactPoint,

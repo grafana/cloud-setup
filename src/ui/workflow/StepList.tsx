@@ -31,7 +31,7 @@ export function StepList<Step extends string>({
       {(Object.keys(labels) as Step[])
         .filter((step) => !hidden?.includes(step))
         .map((step) => {
-          const status = state.results[step]?.status;
+          const status = state.failedSteps.has(step) ? "failed" : state.results[step]?.status;
           // A step already in `completed` never reactivates, even if a later
           // pass (e.g. a repeated "Find additional synthetic checks" run)
           // sends currentStep back through it — that pass's own progress

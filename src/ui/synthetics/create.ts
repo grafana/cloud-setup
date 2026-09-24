@@ -105,6 +105,7 @@ export async function createChecks(
       pendingNextStepLog: {
         key: "browser-discovery",
         label: "Additional synthetic checks",
+        status: "ok",
         items,
         detail: items.length ? undefined : "No checks created.",
       },
