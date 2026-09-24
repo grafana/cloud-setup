@@ -1,7 +1,7 @@
 import { Box, Text } from "ink";
 import Spinner from "ink-spinner";
-import { COLORS, ICONS } from "../../theme.js";
-import { Link } from "../shared.js";
+import { ANIMATE, COLORS, ICONS } from "../../theme.js";
+import { Link, Working } from "../shared.js";
 import { StepList } from "../workflow/StepList.js";
 import { CheckResults } from "./CheckResults.js";
 import { SYNTHETICS_STEPS, type SyntheticsState } from "./model.js";
@@ -59,15 +59,24 @@ export function SyntheticsProgress({ state }: { state: SyntheticsState }) {
         <Box flexDirection="column">
           <Text>
             {" "}
+            {/* ICONS.WAITING (not the spinner) while a question is actually
+            pending, same as StepList's own active row — the spinner alone
+            would look like idle progress rather than something waiting on
+            the user. */}
             {state.prompt ? (
               <Text color={COLORS.ACCENT}>{ICONS.WAITING}</Text>
-            ) : (
+            ) : ANIMATE ? (
               <Text color={COLORS.ACCENT}>
                 <Spinner type="dots" />
               </Text>
+            ) : (
+              "…"
             )}{" "}
             <Text bold>Find additional synthetic checks</Text>
-            {state.currentStep === "analyze" ? `: ${state.analyzeProgress}%` : ""}
+            {/* A colon only ever separates a percent from extra context
+            (FrontendApp's instrument step: "45%: src/main.tsx") — never
+            glues a label to its own percent, so this is a plain space. */}
+            {state.currentStep === "analyze" ? ` ${state.analyzeProgress}%` : ""}
           </Text>
           <CheckResults items={state.items} />
         </Box>
@@ -75,10 +84,7 @@ export function SyntheticsProgress({ state }: { state: SyntheticsState }) {
       {state.exporting && (
         <Text>
           {" "}
-          <Text color={COLORS.ACCENT}>
-            <Spinner type="dots" />
-          </Text>{" "}
-          Exporting checks as Terraform…
+          <Working label="Exporting checks as Terraform…" />
         </Text>
       )}
     </Box>
