@@ -2,6 +2,7 @@ import { execFile, spawn } from "node:child_process";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { promisify } from "node:util";
+import { updateFaroSnippet } from "./snippet.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -226,31 +227,14 @@ function webSdkSnippet(instrumentation: FaroInstrumentation): string {
   ].join("\n");
 }
 
-// The snippet's own first import line through its closing `});` — unique
-// to our call: the nested `app: {...}` / `instrumentations: [...]` closes
-// inside it are always "},"/"]," with a trailing comma, never a bare
-// "});" line, so this can't accidentally swallow unrelated code.
-const FARO_WEB_SDK_BLOCK =
-  /import \{ getWebInstrumentations, initializeFaro \} from '@grafana\/faro-web-sdk';[\s\S]*?\n\}\);\n/;
-
-// Prepends the init snippet so it runs before the file's existing code —
-// "load as early as possible" only works if it's first. Re-syncing, not
-// just idempotent: a later run with different answers (Session Replay,
-// masking, sampling, a different app/collector URL, ...) replaces the
-// previously-inserted block with the freshly generated one — matched via
-// FARO_WEB_SDK_BLOCK — rather than leaving it stale because *some*
-// version of our snippet was already there. "javascript" only — React
-// goes through reactInstrument.ts (different package, plus optional
-// router wrapping), Next.js through nextjsInstrument.ts.
+// Prepend on first setup, then update the initialization in place so later
+// runs preserve application code around it. React shares the same updater
+// with a different SDK package and optional router wrapping.
 export function insertFaroSnippet(cwd: string, target: FrontendTarget, instrumentation: FaroInstrumentation): boolean {
   if (target.kind !== "javascript") return false;
   const full = path.join(cwd, target.file);
   const existing = existsSync(full) ? readFileSync(full, "utf8") : "";
-  const match = existing.match(FARO_WEB_SDK_BLOCK);
-  const rest = (match ? existing.slice(match.index! + match[0].length) : existing).replace(/^\n+/, "");
-
-  const snippet = webSdkSnippet(instrumentation);
-  const next = rest ? `${snippet}\n${rest}` : snippet;
+  const next = updateFaroSnippet(existing, webSdkSnippet(instrumentation), target.file);
   if (next === existing) return false;
   writeFileSync(full, next, "utf8");
   return true;
