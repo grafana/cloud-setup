@@ -51,7 +51,15 @@ export function SyntheticsProgress({ state }: { state: SyntheticsState }) {
             {" "}
             <Text color={COLORS.OK}>{ICONS.OK}</Text> {entry.label}
           </Text>
-          {entry.detail && <Text color={COLORS.MUTED}> {entry.detail}</Text>}
+          {/* Same 5-space indent CheckResults uses for its own result rows
+          (create step, above) — this is a result line too, just without
+          items to itemize, and should nest under its row the same way. */}
+          {entry.detail && (
+            <Text color={COLORS.MUTED}>
+              {"     "}
+              {entry.detail}
+            </Text>
+          )}
           {entry.items && <CheckResults items={entry.items} />}
         </Box>
       ))}
