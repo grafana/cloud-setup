@@ -14,7 +14,7 @@ CONTRIBUTING.md covers the toolchain: the two tsconfigs, the Node version split,
 
 - **The supported Node floor lives in `engines.node`, once.** `checkNodeVersion()` in `src/ui/shared.tsx` parses it out of the manifest and CI installs exactly that version. Do not add a hardcoded minimum next to the gate.
 - **`lib` tracks `engines.node`, not the newest spec.** Raising it past what the floor's Node provides lets the compiler bless calls that crash for real users.
-- **Four `react-hooks` rules are off on purpose** (`purity`, `refs`, `static-components`, `set-state-in-effect`). They target React Compiler, which this app does not run. Turning them back on means restructuring `SetupApp.tsx` and `FrontendApp.tsx`, so it is its own change, not a cleanup.
+- **Four `react-hooks` rules are off on purpose** (`purity`, `refs`, `static-components`, `set-state-in-effect`). They target React Compiler, which this app does not run. Changing this policy is its own change, not part of the wizard modularity refactor.
 - **`npm test` cannot run on the `engines.node` floor**, for a `mock.module()` bug in that Node rather than anything wrong with the wizard. Raising `engines.node` is not the fix.
 - **Never hand-edit the version in package.json, CHANGELOG.md or `.release-please-manifest.json`.** release-please owns all three. To force a version, put `Release-As: x.y.z` in a commit body.
 
@@ -38,7 +38,7 @@ Both carry `run_id` (one per process, groups a run's events) and, from sign-in o
 ### Adding a property to an existing step
 
 1. Add the key to `StepProperties` in `src/telemetry.ts`. It is a closed interface, so an undeclared key is a compile error rather than a silently ignored one.
-2. Pass it at the `advance()` call for that step.
+2. Return it in the step's result properties.
 
 No coordination with the receiving service is needed: step properties are carried through as-is. The same is true of adding a value to an existing string field such as `Outcome` or `StepStatus`.
 
@@ -46,9 +46,9 @@ Adding a new **top-level** field is different, because the receiver has to know 
 
 ### Adding a new step
 
-Both apps call `recordStep` from a single `advance(properties)` function (`FrontendApp.tsx`, `SetupApp.tsx`), so a step added to `STEP_ORDER` that exits through `advance()` reports automatically. Give it a `status`.
+Both product controllers use `src/ui/workflow/controller.ts` to call `recordStep` once for each returned step result. A new step belongs in the product's `model.ts` and `controller.ts`, with an async handler returning `{ next, properties }`. Give `properties` an accurate `status`.
 
-Watch for steps that exit some other way. `SetupApp`'s `analyze` step can leave through `advance()`, `proceedToReview()` or `backToNextSteps()`, so each of those paths calls `recordStep` explicitly. If you add a step-exit path, it needs its own call or that path goes unmeasured.
+Routing-only transitions can omit properties. Synthetics uses this when the next-actions menu routes to another discovery pass, then reports that menu step when it finishes. Every analyze exit returns its own result. See `src/ui/README.md` for the structure and cancellation rules.
 
 ### Choosing a status
 

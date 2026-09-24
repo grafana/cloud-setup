@@ -80,6 +80,10 @@ Also deliberate: `types: ["node", "react"]` is explicit so a transitive `@types`
 
 Prettier runs at `printWidth: 120`, the width the code was already written to, with `proseWrap: preserve` so markdown prose is never hard-wrapped.
 
-ESLint uses `typescript-eslint`'s type-aware rules, so it needs no build first. Four `react-hooks` rules are off (`purity`, `refs`, `static-components`, `set-state-in-effect`): they encode React Compiler's requirements, which this Ink app does not run, and satisfying them means restructuring `SetupApp.tsx` and `FrontendApp.tsx`. `rules-of-hooks` and `exhaustive-deps` stay on. `no-useless-assignment` is off because it flags initializers that exist so a value can outlive the `try` block computing it.
+ESLint uses `typescript-eslint`'s type-aware rules, so it needs no build first. Four `react-hooks` rules are off (`purity`, `refs`, `static-components`, `set-state-in-effect`): they encode React Compiler's requirements, which this Ink app does not run, and changing that lint policy is separate from the wizard refactor. `rules-of-hooks` and `exhaustive-deps` stay on. `no-useless-assignment` is off because it flags initializers that exist so a value can outlive the `try` block computing it.
 
 `@typescript-eslint/no-floating-promises` is on, which makes the "never `await` telemetry" rule in AGENTS.md enforceable: a deliberate fire-and-forget call must say so with `void`.
+
+## Wizard workflows
+
+See [the UI development guide](src/ui/README.md) for step modules, typed prompts, cancellation, and testing workflows with injected services.

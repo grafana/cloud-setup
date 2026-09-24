@@ -16,7 +16,7 @@ mock.module("../dist/telemetry.js", {
   },
 });
 const { SetupUrls } = await import("../dist/ui/SetupUrls.js");
-const { SetupApp } = await import("../dist/ui/SetupApp.js");
+const { SyntheticsApp } = await import("../dist/ui/SyntheticsApp.js");
 const { FrontendApp } = await import("../dist/ui/FrontendApp.js");
 
 async function terminal(t, props, child) {
@@ -228,7 +228,7 @@ test("submitting a stack slug shows its resolved hostname before starting either
         t,
         { command, initialTargetUrl: "https://example.com" },
         ({ stackUrl, targetUrl, exit }) =>
-          React.createElement(command === "synthetics" ? SetupApp : FrontendApp, {
+          React.createElement(command === "synthetics" ? SyntheticsApp : FrontendApp, {
             initialTargetUrl: targetUrl,
             initialStackUrl: stackUrl,
             forceGcxInstall: false,
