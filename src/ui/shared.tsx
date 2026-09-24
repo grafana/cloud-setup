@@ -90,13 +90,16 @@ export async function requireInteractiveTerminal(command: Command, stackUrl: str
 // already rendered by the failing screen itself, so it isn't repeated
 // here. Undefined is a clean, silent exit (the "done" screen already
 // showed its own success message).
-export function useHardExit(
-  command: Command,
-  stackUrl: string,
-): (errorOrMessage?: Error | string, setupOutcome?: Outcome) => void {
+export type HardExit = (errorOrMessage?: Error | string, setupOutcome?: Outcome) => void;
+
+export function useHardExit(command: Command, stackUrl: string): HardExit {
   const { exit } = useApp();
   const startedAt = useRef(Date.now());
   const exiting = useRef(false);
+  // The URL can be supplied by the initial prompt after this hook mounts.
+  // The SIGINT handler must use the current stack, just like keyboard exit.
+  const currentStackUrl = useRef(stackUrl);
+  currentStackUrl.current = stackUrl;
 
   function hardExit(errorOrMessage?: Error | string, setupOutcome?: Outcome): void {
     // Registering a SIGINT listener means nothing else will kill the process,
@@ -113,7 +116,7 @@ export function useHardExit(
     if (typeof errorOrMessage === "string") console.log(errorOrMessage);
 
     const outcome: Outcome = error ? "error" : errorOrMessage !== undefined ? "canceled" : (setupOutcome ?? "ok");
-    recordRun(command, stackUrl, outcome, Date.now() - startedAt.current);
+    recordRun(command, currentStackUrl.current, outcome, Date.now() - startedAt.current);
 
     // setImmediate, not a same-tick process.exit() — Ink's own unmount
     // cleanup and the console.log above both write to the terminal, and
