@@ -68,8 +68,8 @@ export function FrontendApp({ initialStackUrl, forceGcxInstall, initialAppName, 
                 {step === "pick-app" && config && (
                   <Text color={COLORS.MUTED}>
                     {"     "}
-                    app: {config.name}
-                    {"\n     "}sampling: {Math.round((config.samplingRate ?? 1) * 100)}%{"\n     "}replay:{" "}
+                    App: {config.name}
+                    {"\n     "}Sampling: {Math.round((config.samplingRate ?? 1) * 100)}%{"\n     "}Replay:{" "}
                     {config.sessionReplay ? `enabled (${config.replayMasking})` : "disabled"}
                   </Text>
                 )}
