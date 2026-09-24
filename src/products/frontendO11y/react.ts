@@ -3,6 +3,7 @@ import path from "node:path";
 import ts from "typescript";
 import { fileToolsWithWrite, runTask } from "../../harness/index.js";
 import { replayInstrumentationLines, sessionTrackingLines, type FaroInstrumentation } from "./instrument.js";
+import { updateFaroSnippet } from "./snippet.js";
 
 const IGNORED_DIRS = new Set(["node_modules", ".git", "dist", "build", ".turbo", ".next"]);
 const SOURCE_EXTENSIONS = new Set([".ts", ".tsx", ".js", ".jsx"]);
@@ -55,24 +56,11 @@ function basicInitSnippet(instrumentation: FaroInstrumentation): string {
   ].join("\n");
 }
 
-// Same first-line-to-closing-`});` anchor as instrument.ts's
-// FARO_WEB_SDK_BLOCK — see that constant's comment for why it's safe
-// against the snippet's own nested closes.
-const FARO_REACT_BLOCK =
-  /import \{ getWebInstrumentations, initializeFaro \} from '@grafana\/faro-react';[\s\S]*?\n\}\);\n/;
-
-// Same re-syncing prepend as instrument.ts's insertFaroSnippet — a later
-// run with different answers replaces the previously-inserted block
-// instead of leaving it stale. Deterministic, no agent needed, since both
-// the content and the target file are fully known ahead of time.
+// Use the same deterministic updater as the vanilla JavaScript entry point.
 function insertBasicInit(cwd: string, entryFile: string, instrumentation: FaroInstrumentation): void {
   const full = path.join(cwd, entryFile);
   const existing = existsSync(full) ? readFileSync(full, "utf8") : "";
-  const match = existing.match(FARO_REACT_BLOCK);
-  const rest = (match ? existing.slice(match.index! + match[0].length) : existing).replace(/^\n+/, "");
-
-  const snippet = basicInitSnippet(instrumentation);
-  const next = rest ? `${snippet}\n${rest}` : snippet;
+  const next = updateFaroSnippet(existing, basicInitSnippet(instrumentation), entryFile);
   if (next === existing) return;
   writeFileSync(full, next, "utf8");
 }
@@ -144,7 +132,8 @@ export interface ReactInstrumentResult {
 // agent runs, so its job is narrow: edit this one file, not explore the
 // whole project. Validated the same way as every other agent-written
 // file in this tool — syntax and shrinkage checked, rolled back to the
-// pre-task snapshot if either fires. Never throws.
+// pre-task snapshot if either fires. Entry-file errors propagate to the
+// caller before the Assistant runs.
 export async function instrumentReact(
   cwd: string,
   stackUrl: string,
