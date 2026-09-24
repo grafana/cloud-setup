@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Box, Text } from "ink";
-import TextInput from "ink-text-input";
+import { EditableTextInput } from "./EditableTextInput.js";
 import { recordStep, type Command } from "../telemetry.js";
 import { COLORS } from "../theme.js";
 import { validateSetupUrl, type UrlKind } from "../urls.js";
@@ -60,7 +60,6 @@ function UrlInput({
   initialValue: string;
   onSubmit: (url: string) => void;
 }) {
-  const [value, setValue] = useState(initialValue);
   const [error, setError] = useState(() => (initialValue ? validateSetupUrl(initialValue, kind).error : undefined));
   const label = kind === "target" ? "Target URL" : "Grafana Cloud stack (slug or URL)";
   return (
@@ -75,9 +74,8 @@ function UrlInput({
       </Text>
       <Box>
         <Text>{label}: </Text>
-        <TextInput
-          value={value}
-          onChange={setValue}
+        <EditableTextInput
+          initialValue={initialValue}
           onSubmit={(raw) => {
             const result = validateSetupUrl(raw, kind);
             if (result.error !== undefined) setError(result.error);

@@ -152,6 +152,74 @@ test("URL input accepts intro and quit shortcut characters as ordinary text", as
   assert.equal(term.resolved.length, 0);
 });
 
+test("malformed URLs can be corrected with arrow keys and Backspace", async (t) => {
+  for (const [name, left, presses, together] of [
+    ["individual left arrows", "\x1b[D", 11, false],
+    ["application-mode left arrows", "\x1bOD", 11, false],
+    ["held left arrow", "\x1b[D", 11, true],
+    ["Ctrl+B cursor sequence", "\x02", 11, false],
+    ["Meta+B word movement", "\x1bb", 2, false],
+    ["modified left arrow word movement", "\x1b[1;5D", 2, false],
+  ]) {
+    await t.test(name, async (t) => {
+      const term = await terminal(t, { command: "synthetics", initialStackUrl: "my-team" });
+      await term.send("http:example.com");
+      await term.send("\r");
+      assert.equal(term.resolved.length, 0);
+      if (together) await term.send(left.repeat(presses));
+      else for (let i = 0; i < presses; i++) await term.send(left);
+      await term.send("\x7f");
+      await term.send("s://");
+      await term.send("\r");
+      assert.equal(term.resolved.at(-1)?.targetUrl, "https://example.com/");
+    });
+  }
+});
+
+test("held Backspace clears an invalid URL without leaving stale characters", async (t) => {
+  const term = await terminal(t, {
+    command: "synthetics",
+    initialTargetUrl: "http:example.com",
+    initialStackUrl: "my-team",
+  });
+  await term.send("\x1b[C".repeat(5));
+  await term.send("\x7f".repeat(20));
+  await term.send("example.com");
+  await term.send("\r");
+  assert.equal(term.resolved.at(-1)?.targetUrl, "https://example.com/");
+});
+
+test("cursor boundaries and forward Delete preserve the rest of the URL", async (t) => {
+  const term = await terminal(t, {
+    command: "synthetics",
+    initialTargetUrl: "http:example.com",
+    initialStackUrl: "my-team",
+  });
+  await term.send("\x1b[D".repeat(20));
+  await term.send("\x7f");
+  await term.send("\x1b[3~".repeat(5));
+  await term.send("https://");
+  await term.send("\x1b[F");
+  await term.send("/b");
+  await term.send("\x1b[H");
+  await term.send("\x05"); // Ctrl+E, end of line
+  await term.send("b");
+  await term.send("\r");
+  assert.equal(term.resolved.at(-1)?.targetUrl, "https://example.com/bb");
+});
+
+test("pasted URL text is editable without splitting Unicode characters", async (t) => {
+  const term = await terminal(t, { command: "synthetics", initialStackUrl: "my-team" });
+  await term.send("\x1b[200~https://example.com/👩‍💻\x1b[201~");
+  await term.send("\x7f");
+  await term.send("b");
+  await term.send("\x07"); // Ctrl+G must not insert a g.
+  await term.send("\x1bx"); // Unknown Meta shortcuts must not insert text.
+  await term.send("b");
+  await term.send("\r");
+  assert.equal(term.resolved.at(-1)?.targetUrl, "https://example.com/bb");
+});
+
 test("submitting a stack slug shows its resolved hostname before starting either wizard", async (t) => {
   for (const command of ["synthetics", "frontend"]) {
     await t.test(command, async (t) => {
