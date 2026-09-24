@@ -59,12 +59,6 @@ npx @grafana/cloud-setup frontend --stack my-team
 | `--folder <path>` | Project directory to set up (default: `.`)                                 |
 | `--debug`         | Log raw Assistant tool calls/responses to a temp file, for troubleshooting |
 
-## Exit status
-
-The wizard exits with code `0` after successful setup, deliberate skips, or user cancellation. It exits with code `1` when required setup is incomplete or an error stops the run. Files already changed and checks already created remain in place. The final screen identifies unfinished work and how to continue.
-
-For example, a failed Faro package installation or failed Synthetics alert configuration produces an incomplete result, even if instrumentation files or checks were created successfully. A failure in optional endpoint discovery does not invalidate checks that are already configured.
-
 ## Development
 
 ```sh
