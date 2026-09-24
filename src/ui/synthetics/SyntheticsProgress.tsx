@@ -6,6 +6,13 @@ import { StepList } from "../workflow/StepList.js";
 import { CheckResults } from "./CheckResults.js";
 import { SYNTHETICS_STEPS, type SyntheticsState } from "./model.js";
 
+// Named agents can pile up (every coding assistant `skills add` found on
+// the machine) — past two, collapse the rest into a count rather than
+// letting the line run long.
+function summarizeAgents(agents: string[]): string {
+  return agents.length <= 2 ? agents.join(", ") : `${agents.slice(0, 2).join(", ")} and ${agents.length - 2} more`;
+}
+
 export function SyntheticsProgress({ state }: { state: SyntheticsState }) {
   const firstPass = state.analyzeMode === "fast" ? state.items : state.records.filter((item) => item.pass === "fast");
   return (
@@ -25,10 +32,12 @@ export function SyntheticsProgress({ state }: { state: SyntheticsState }) {
               </Text>
             )}
             {/* A result line (which agents it's configured for), not a
-            caveat — same 5-space indent as everywhere else below. */}
+            caveat — same 5-space indent as everywhere else below. "For"
+            rather than "Configured for" — the row above already says
+            "Configure skills". */}
             {step === "skills" && state.skillAgents.length > 0 && (
               <Text color={COLORS.MUTED}>
-                {"     "}Configured for: {state.skillAgents.join(", ")}
+                {"     "}For {summarizeAgents(state.skillAgents)}
               </Text>
             )}
             {step === "create" && <CheckResults items={firstPass} />}
