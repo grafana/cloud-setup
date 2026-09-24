@@ -190,6 +190,9 @@ export function Link({ children }: { children: ReactNode }) {
   );
 }
 
+// `label` shouldn't add its own trailing "…" — the spinner (or its static
+// "…" fallback) in front already signals "in progress"; one at both ends
+// just doubles up on the same signal.
 export function Working({ label }: { label: string }) {
   return (
     <Text>

@@ -145,7 +145,7 @@ export function SyntheticsPrompts({
     default:
       body =
         state.currentStep === "create" && state.createPhase === "validating" ? (
-          <Working label="Validating access token…" />
+          <Working label="Validating access token" />
         ) : null;
   }
   return <Box flexDirection="column">{body}</Box>;

@@ -84,7 +84,7 @@ export function SyntheticsProgress({ state }: { state: SyntheticsState }) {
       {state.exporting && (
         <Text>
           {" "}
-          <Working label="Exporting checks as Terraform…" />
+          <Working label="Exporting checks as Terraform" />
         </Text>
       )}
     </Box>
