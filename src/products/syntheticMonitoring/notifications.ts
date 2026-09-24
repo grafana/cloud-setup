@@ -85,6 +85,22 @@ function routesSmNamespace(route: Route): boolean {
 // (github.com/grafana/synthetic-monitoring-api internal/hg/client.go).
 const PROVISIONING_BASE = "/api/v1/provisioning";
 
+// Grafana's access-control errors (and most others) are JSON with a
+// human-readable `message` — e.g. "You'll need additional permissions...".
+// Surfacing that instead of the raw body avoids dumping accessErrorId/title
+// and JSON punctuation into a message a user just has to read as prose.
+function extractErrorMessage(text: string): string {
+  try {
+    const parsed: unknown = JSON.parse(text);
+    if (parsed !== null && typeof parsed === "object" && typeof (parsed as { message?: unknown }).message === "string") {
+      return (parsed as { message: string }).message;
+    }
+  } catch {
+    // Not JSON — fall through to the raw text.
+  }
+  return text;
+}
+
 export class AlertingClient {
   constructor(
     private proxyBase: string,
@@ -113,7 +129,11 @@ export class AlertingClient {
       signal: AbortSignal.timeout(10000),
     });
     const text = await res.text();
-    if (!res.ok) throw new Error(`Grafana Alerting API ${method} ${path} failed with status ${res.status}: ${text}`);
+    if (!res.ok) {
+      throw new Error(
+        `Grafana Alerting API ${method} ${path} failed with status ${res.status}: ${extractErrorMessage(text)}`,
+      );
+    }
     return text ? (JSON.parse(text) as T) : (undefined as T);
   }
 
