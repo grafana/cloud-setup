@@ -2,6 +2,7 @@ import path from "node:path";
 import { debugLog } from "../../debug.js";
 import type { StepProperties } from "../../telemetry.js";
 import { MIN_SPINNER_MS } from "../shared.js";
+import type { ReplayMasking } from "../../products/frontendO11y/instrument.js";
 import type { FrontendContext, FrontendOptions } from "./model.js";
 import type { FrontendServices } from "./services.js";
 
@@ -95,8 +96,11 @@ export async function pickApp(
   ctx.update({ instrumentation: { ...instrumentation, samplingRate } });
   await transition();
   const sessionReplay = await ctx.ask("replay");
-  ctx.update({ instrumentation: { ...instrumentation, samplingRate, sessionReplay } });
-  let replayMasking = ctx.get().instrumentation!.replayMasking;
+  // Not updated yet — `instrumentation.replayMasking` is still its
+  // placeholder default here, and exposing sessionReplay=true alongside it
+  // would render as "enabled (balanced)" before the user has actually been
+  // asked, or answered, the masking question below.
+  let replayMasking: ReplayMasking = instrumentation.replayMasking;
   if (sessionReplay) {
     await transition();
     replayMasking = await ctx.ask("masking");
