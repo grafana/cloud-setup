@@ -9,7 +9,6 @@ import type { WorkflowController } from "../workflow/controller.js";
 import { ChecksSummary } from "./CheckResults.js";
 import {
   availableActions,
-  canGoBack,
   unhandledCandidates,
   type SyntheticsInputs,
   type SyntheticsOptions,
@@ -149,10 +148,5 @@ export function SyntheticsPrompts({
           <Working label="Validating access token…" />
         ) : null;
   }
-  return (
-    <Box flexDirection="column">
-      {body}
-      {canGoBack(state) && <Text color={COLORS.MUTED}>Esc to return to check selection</Text>}
-    </Box>
-  );
+  return <Box flexDirection="column">{body}</Box>;
 }

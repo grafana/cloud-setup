@@ -50,7 +50,7 @@ async function terminal(t, component) {
   };
 }
 
-test("Synthetics accepts b and q in URL/token fields, supports Esc back, then q finishes the menu", async (t) => {
+test("Synthetics accepts b and q in URL/token fields, then q finishes the menu", async (t) => {
   const exits = [];
   const credentials = [];
   const client = {
@@ -97,19 +97,13 @@ test("Synthetics accepts b and q in URL/token fields, supports Esc back, then q 
   await term.send("bq");
   assert.match(term.output(), /Synthetic Monitoring API URL: bq/);
   assert.equal(exits.length, 0);
-  await term.send("\x1b");
-  await term.send("\r");
-  await term.send("https://bq.example");
   await term.send("\r");
   assert.match(term.output(), /Token:/);
   await term.send("bq");
   assert.equal(exits.length, 0);
-  await term.send("\x1b");
   await term.send("\r");
-  await term.send("token-bq");
-  await term.send("\r");
-  assert.equal(credentials[0].token, "token-bq");
-  assert.equal(credentials[0].baseUrl, "https://bq.example");
+  assert.equal(credentials[0].token, "bq");
+  assert.equal(credentials[0].baseUrl, "bq");
   await term.send("n");
   assert.match(term.output(), /Next actions/);
   await term.send("q");

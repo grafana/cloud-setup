@@ -6,7 +6,7 @@ import { CommonStepBody } from "./workflow/CommonStepBody.js";
 import { useWorkflow } from "./workflow/useWorkflow.js";
 import { useWorkflowInput } from "./workflow/useWorkflowInput.js";
 import { createSyntheticsController } from "./synthetics/controller.js";
-import { canGoBack, unhandledCandidates } from "./synthetics/model.js";
+import { unhandledCandidates } from "./synthetics/model.js";
 import { ChecksSummary } from "./synthetics/CheckResults.js";
 import { SyntheticsPrompts } from "./synthetics/SyntheticsPrompts.js";
 import { SyntheticsProgress } from "./synthetics/SyntheticsProgress.js";
@@ -34,10 +34,6 @@ export function SyntheticsApp({ initialBaseUrl, initialTargetUrl, initialStackUr
     exit,
     ["baseUrl", "token", "email"],
     (input, key) => {
-      if (canGoBack(state) && (key.escape || input.toLowerCase() === "b")) {
-        controller.restart("create");
-        return;
-      }
       if (state.prompt === "selection" && !unhandledCandidates(state).length && key.return)
         controller.answer("selection", []);
       const yes = key.return || input.toLowerCase() === "y";

@@ -95,6 +95,3 @@ export function unhandledCandidates(state: SyntheticsState) {
   const handled = new Set(state.records.filter((item) => item.id !== undefined).map((item) => item.candidate.key));
   return state.candidates.filter((candidate) => !handled.has(candidate.key));
 }
-export function canGoBack(state: SyntheticsState) {
-  return state.currentStep === "create" && state.createPhase !== "reviewing" && state.createPhase !== "creating";
-}

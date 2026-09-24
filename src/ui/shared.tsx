@@ -113,7 +113,11 @@ export function useHardExit(command: Command, stackUrl: string): HardExit {
     // cursor and raw mode; printing before that would just get clobbered
     // by Ink's own rendering.
     exit(error);
-    if (typeof errorOrMessage === "string") console.log(errorOrMessage);
+    // Ink leaves the cursor wherever the last frame's content ended, not
+    // necessarily at column 0 of a fresh line — without the leading "\n"
+    // this message can land glued onto the tail of the last rendered line
+    // instead of its own line.
+    if (typeof errorOrMessage === "string") console.log(`\n${errorOrMessage}`);
 
     const outcome: Outcome = error ? "error" : errorOrMessage !== undefined ? "canceled" : (setupOutcome ?? "ok");
     recordRun(command, currentStackUrl.current, outcome, Date.now() - startedAt.current);
