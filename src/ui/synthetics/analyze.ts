@@ -56,7 +56,7 @@ export async function analyze(
       known.add(candidate.key);
       return true;
     });
-    log(fresh.length ? `${fresh.length} new checks found` : "No new endpoints found.");
+    log(fresh.length ? `${fresh.length} new checks found.` : "No new endpoints found.");
     ctx.update({ candidates: [...state.candidates, ...fresh] });
     if (fresh.length) await ctx.wait(progress.finish());
     return {

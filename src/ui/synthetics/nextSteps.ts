@@ -39,7 +39,7 @@ export async function nextSteps(
       detail = `Wrote to ${path.relative(options.cwd, written)}`;
     } catch (error) {
       ctx.signal.throwIfAborted();
-      detail = `Couldn't export (${error instanceof Error ? error.message : String(error)})`;
+      detail = `Couldn't export (${error instanceof Error ? error.message : String(error)}).`;
     }
     ctx.update({
       exporting: false,

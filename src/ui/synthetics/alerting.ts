@@ -99,7 +99,7 @@ export async function configureAlerting(
     try {
       contactPoint = await ctx.wait(client.ensureContactPoint(addresses));
       notificationRoute = await ctx.wait(client.ensureRoute());
-      detail.push({ text: `Alerts go to ${parseAddresses(addresses).join(", ")}` });
+      detail.push({ text: `Alerts go to ${parseAddresses(addresses).join(", ")}.` });
     } catch (error) {
       ctx.signal.throwIfAborted();
       notificationsFailed = true;
