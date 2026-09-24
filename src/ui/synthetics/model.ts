@@ -11,7 +11,7 @@ export const SYNTHETICS_STEPS = {
   skills: "Configure skills",
   analyze: "Analyze target",
   create: "Create synthetic checks",
-  alerting: "Configure alerting",
+  alerting: "Configure alerts",
   "next-steps": "Next steps",
 };
 export type SyntheticsStep = keyof typeof SYNTHETICS_STEPS;
