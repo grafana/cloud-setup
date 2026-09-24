@@ -14,12 +14,44 @@ export async function nextSteps(
   for (;;) {
     const action = availableActions(ctx.get()).length ? await ctx.ask("nextAction") : "finish";
     if (action === "finish") {
+      // Only export counts toward the overall outcome — configuring the
+      // skill (like the old dedicated step it replaced) is a nice-to-have,
+      // never required for a successful setup.
       const exportFailed = ctx.get().nextStepsLog.some((entry) => entry.key === "export" && entry.status === "failed");
       return { next: "done", properties: { status: exportFailed ? "failed" : "ok" } };
     }
     if (action === "browser-discovery") {
       ctx.update({ items: [], analyzeMode: "browser-discovery" });
       return { next: "analyze" };
+    }
+    if (action === "configure-skills") {
+      ctx.update({ configuringSkills: true });
+      let detail: string;
+      let status: "ok" | "failed" = "ok";
+      try {
+        const skillStatus = await ctx.wait(services.getSkillStatus());
+        const [result] = await ctx.wait(
+          Promise.all([skillStatus.installed ? skillStatus : services.installSkill(), services.sleep(MIN_SPINNER_MS)]),
+        );
+        if (result.path) {
+          detail = `Wrote to ${path.relative(options.cwd, result.path)}`;
+        } else {
+          status = "failed";
+          detail = "Couldn't configure the skill.";
+        }
+      } catch (error) {
+        ctx.signal.throwIfAborted();
+        status = "failed";
+        detail = `Couldn't configure the skill (${error instanceof Error ? error.message : String(error)}).`;
+      }
+      ctx.update({
+        configuringSkills: false,
+        nextStepsLog: [
+          ...ctx.get().nextStepsLog,
+          { key: "configure-skills", label: "Configure agent skills", detail, status },
+        ],
+      });
+      continue;
     }
     ctx.update({ exporting: true });
     let detail: string;
@@ -41,7 +73,7 @@ export async function nextSteps(
     } catch (error) {
       ctx.signal.throwIfAborted();
       status = "failed";
-      detail = `Couldn't export (${error instanceof Error ? error.message : String(error)})`;
+      detail = `Couldn't export (${error instanceof Error ? error.message : String(error)}).`;
     }
     ctx.update({
       exporting: false,

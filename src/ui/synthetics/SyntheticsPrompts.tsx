@@ -9,7 +9,6 @@ import type { WorkflowController } from "../workflow/controller.js";
 import { ChecksSummary } from "./CheckResults.js";
 import {
   availableActions,
-  canGoBack,
   unhandledCandidates,
   type SyntheticsInputs,
   type SyntheticsOptions,
@@ -114,9 +113,6 @@ export function SyntheticsPrompts({
         <Box flexDirection="column">
           {state.emailError && <Text color={COLORS.BAD}>{state.emailError}</Text>}
           <Text>Where should these alerts go? Separate several addresses with a comma</Text>
-          {state.reusingAddresses && (
-            <Text color={COLORS.MUTED}>Changing this also moves alerts from every check on this stack.</Text>
-          )}
           <PromptInput
             label="Email"
             initialValue={state.emailInput}
@@ -146,13 +142,8 @@ export function SyntheticsPrompts({
     default:
       body =
         state.currentStep === "create" && state.createPhase === "validating" ? (
-          <Working label="Validating access token…" />
+          <Working label="Validating access token" />
         ) : null;
   }
-  return (
-    <Box flexDirection="column">
-      {body}
-      {canGoBack(state) && <Text color={COLORS.MUTED}>Esc to return to check selection</Text>}
-    </Box>
-  );
+  return <Box flexDirection="column">{body}</Box>;
 }

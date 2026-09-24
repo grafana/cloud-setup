@@ -35,24 +35,13 @@ export function createSyntheticsController(
       alertingPhase: "confirm",
       alertingDetail: [],
       emailInput: "",
-      reusingAddresses: false,
       nextStepsLog: [],
       exporting: false,
+      configuringSkills: false,
     },
     {
       gcx: async (ctx) => ({ properties: await runGcx(ctx, services, options.forceGcxInstall), next: "auth" }),
-      auth: async (ctx) => ({ properties: await runAuth(ctx, services, options.stackUrl), next: "skills" }),
-      skills: async (ctx) => {
-        let installed = true;
-        try {
-          const status = await ctx.wait(services.getSkillStatus());
-          await ctx.wait(Promise.all([status.installed ? undefined : services.installSkill(), services.sleep(4500)]));
-        } catch {
-          ctx.signal.throwIfAborted();
-          installed = false;
-        }
-        return { properties: { status: installed ? "ok" : "failed" }, next: "analyze" };
-      },
+      auth: async (ctx) => ({ properties: await runAuth(ctx, services, options.stackUrl), next: "analyze" }),
       analyze: (ctx) => analyze(ctx, services, options),
       create: async (ctx) => ({ properties: await createChecks(ctx, services, options), next: "alerting" }),
       alerting: async (ctx) => ({ properties: await configureAlerting(ctx, services, options), next: "next-steps" }),
