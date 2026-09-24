@@ -59,7 +59,12 @@ export function SyntheticsApp({ initialBaseUrl, initialTargetUrl, initialStackUr
       ) : (
         <>
           <SyntheticsProgress state={state} />
-          <Box marginTop={state.prompt || state.done || state.failureSummary ? 1 : 0} flexDirection="column">
+          {/* Always 1, not state.prompt ? 1 : 0 — controller.answer()
+          clears prompt synchronously, one render before the resumed step's
+          own update (e.g. auth's subPhase) catches up. A body that doesn't
+          depend on prompt (like CommonStepBody's auth text) would render
+          unchanged but suddenly hugging the row above for that one frame. */}
+          <Box marginTop={1} flexDirection="column">
             {state.failureSummary ? (
               <>
                 <Text color={COLORS.BAD}>Setup incomplete. {state.failureSummary}</Text>
