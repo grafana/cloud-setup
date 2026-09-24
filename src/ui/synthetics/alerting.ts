@@ -99,7 +99,9 @@ export async function configureAlerting(
     try {
       contactPoint = await ctx.wait(client.ensureContactPoint(addresses));
       notificationRoute = await ctx.wait(client.ensureRoute());
-      detail.push({ text: `Alerts go to ${parseAddresses(addresses).join(", ")}.` });
+      // No trailing period — right after an email address it reads as
+      // part of it, same reason "Wrote to <path>" doesn't get one either.
+      detail.push({ text: `Alerts go to ${parseAddresses(addresses).join(", ")}` });
     } catch (error) {
       ctx.signal.throwIfAborted();
       notificationsFailed = true;
