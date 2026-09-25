@@ -4,11 +4,14 @@ import { mock, test } from "node:test";
 import { fileURLToPath } from "node:url";
 
 const events = [];
+const inkExits = [];
 mock.module("react", {
   defaultExport: {},
   namedExports: { useEffect() {}, useRef: (current) => ({ current }) },
 });
-mock.module("ink", { namedExports: { Box() {}, Text() {}, useInput() {}, useApp: () => ({ exit() {} }) } });
+mock.module("ink", {
+  namedExports: { Box() {}, Text() {}, useInput() {}, useApp: () => ({ exit: (...args) => inkExits.push(args) }) },
+});
 mock.module("ink-spinner", { defaultExport() {} });
 mock.module("../dist/telemetry.js", {
   namedExports: {
@@ -27,6 +30,7 @@ test("errors and cancellation take precedence over a setup result", (t) => {
   t.mock.method(console, "log", () => {});
   useHardExit("frontend", "stack")(new Error("failed"), "ok");
   assert.equal(events.at(-1)[2], "error");
+  assert.deepEqual(inkExits.at(-1), [], "rendered errors must not reject Ink's waitUntilExit and print again");
   useHardExit("frontend", "stack")("Cancelled.", "ok");
   assert.equal(events.at(-1)[2], "canceled");
 });

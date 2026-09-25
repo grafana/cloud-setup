@@ -44,4 +44,4 @@ An exception that stops a workflow records a failed step and an `error` run. Suc
 
 ## Checks
 
-`npm run check` covers both product workflows and the shared controller, plus the existing URL entry, telemetry, exit, and product tests. Workflow tests inject services and do not create real resources. Subprocess scenarios in `tests/telemetry.test.mjs` run the actual UI, telemetry in log mode, and exit handler together to verify their results agree. Live OAuth and cloud integration remain separate manual checks.
+`npm run check` covers both product workflows and the shared controller, plus the existing URL entry, telemetry, exit, and product tests. Workflow tests inject services and do not create real resources. Subprocess scenarios in `tests/telemetry.test.mjs` run the actual UI, telemetry, and exit handler together to verify their results agree. They also check that shutdown waits for pending telemetry, without sending real events. Live OAuth and cloud integration remain separate manual checks.

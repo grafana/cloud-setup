@@ -525,6 +525,60 @@ for (const [scenario, outcome, code, message, failedStep] of [
     }
   });
 
+for (const [scenario, failedStep, outcome] of [
+  ["synthetics-crash", "create", "error"],
+  ["synthetics-401", "create", "error"],
+  ["synthetics-403", "create", "error"],
+  ["synthetics-alerts", "alerting", "incomplete"],
+  ["frontend-packages", "instrument", "incomplete"],
+])
+  test(`${scenario}: failed step and final outcome are delivered before exit`, () => {
+    const child = spawnSync(
+      process.execPath,
+      [fileURLToPath(new URL("./fixtures/wizard-outcome-process.mjs", import.meta.url)), scenario, "delayed"],
+      {
+        encoding: "utf8",
+        timeout: 8000,
+        env: {
+          ...process.env,
+          CLOUD_SETUP_TELEMETRY: "enabled",
+          CLOUD_SETUP_TELEMETRY_ENDPOINT: "https://telemetry.invalid/cloud-setup-test",
+          XDG_STATE_HOME: fs.mkdtempSync(path.join(stateRoot, "delivery-")),
+          DO_NOT_TRACK: "0",
+          NO_COLOR: "1",
+        },
+      },
+    );
+    assert.ifError(child.error);
+    assert.equal(child.signal, null, child.stderr);
+    assert.equal(child.status, 1, child.stderr + child.stdout);
+    const output = stripVTControlCharacters(child.stdout);
+    const delivered = output
+      .split("\n")
+      .filter((line) => line.startsWith("EVENT "))
+      .map((line) => JSON.parse(line.slice(6)));
+    const failures = delivered.filter(
+      (event) => event.event === "completed_step" && event.step === failedStep && event.status === "failed",
+    );
+    const finished = delivered.filter((event) => event.event === "finished_setup");
+    assert.equal(failures.length, 1, output);
+    assert.equal(finished.length, 1, output);
+    assert.equal(finished[0].outcome, outcome);
+    assert.equal(new Set(delivered.map((event) => event.run_id)).size, 1);
+    assert.ok(finished[0].duration_ms > 0);
+    assert.ok(delivered.indexOf(failures[0]) > delivered.indexOf(finished[0]), "older step delivery was still pending");
+    assert.equal(child.stderr, "", "rendered failures must not be printed again by cli.ts");
+    assert.match(output, /Setup incomplete\./);
+    if (outcome === "error") {
+      assert.equal(delivered.filter((event) => event.step === failedStep).length, 1);
+      assert.equal(
+        delivered.some((event) => event.step === "alerting" || event.step === "next-steps"),
+        false,
+      );
+    }
+    assert.doesNotMatch(JSON.stringify(delivered), /check planning crashed|access denied|unavailable|example\.com/);
+  });
+
 test.after(() => {
   fs.rmSync(stateRoot, { recursive: true, force: true });
   assert.equal(fs.existsSync(deviceIdFile()), false);

@@ -114,7 +114,9 @@ export function useHardExit(command: Command, stackUrl: string): HardExit {
     // exit() first, while Ink still owns the terminal — it restores the
     // cursor and raw mode; printing before that would just get clobbered
     // by Ink's own rendering.
-    exit(error);
+    // The screen already rendered failures. Passing an Error to Ink would
+    // reject waitUntilExit(), causing cli.ts to print it again and exit early.
+    exit();
     // Ink leaves the cursor wherever the last frame's content ended, not
     // necessarily at column 0 of a fresh line — without the leading "\n"
     // this message can land glued onto the tail of the last rendered line
