@@ -22,6 +22,8 @@ CONTRIBUTING.md covers the toolchain: the two tsconfigs, the Node version split,
 
 `gh pr create` does not read `.github/PULL_REQUEST_TEMPLATE.md`, so pass it explicitly (`--body-file .github/PULL_REQUEST_TEMPLATE.md`, then fill it in) or write a body with the same two headings. It is short on purpose: what changed and why, how a reviewer checks it, and whether `npm run check` passed.
 
+For changes to visible terminal output, include **text snapshots in the PR description**, like screenshots for a GUI. Use short, labeled Before/After captures in fenced `text` blocks under "What and why", showing the affected prompts, progress, or error states. Capture actual rendered output (a mocked UI test is fine), preserve spacing, and remove ANSI escape codes and repeated animation frames. For a new screen, an After snapshot is enough.
+
 Issues go through the forms in `.github/ISSUE_TEMPLATE` — blank issues are disabled. For a bug, the two things worth collecting before filing are the terminal output including the version line and, if the failing step talks to the Assistant, the file `--debug` writes.
 
 ## Telemetry

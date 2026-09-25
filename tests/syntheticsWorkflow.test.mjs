@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { createSyntheticsController } from "../dist/ui/synthetics/controller.js";
 import { syntheticsServices } from "../dist/ui/synthetics/services.js";
+import { SmApiError } from "../dist/products/syntheticMonitoring/api.js";
+import { AlertingApiError } from "../dist/products/syntheticMonitoring/notifications.js";
 
 const tick = () => new Promise((resolve) => setImmediate(resolve));
 const candidate = (key) => ({
@@ -306,6 +308,143 @@ test("cancelling during creation never starts another remote mutation", async ()
   assert.equal(controller.getSnapshot().done, false);
 });
 
+for (const status of [401, 403])
+  for (const partial of [false, true])
+    test(`creation stops after HTTP ${status} and preserves ${partial ? "earlier successes" : "unattempted checks"}`, async () => {
+      const third = candidate("third");
+      const { controller, client, mutations, events } = setup({ candidatesFor: async () => [first, second, third] });
+      client.createCheck = async (payload) => {
+        mutations.push(payload.job);
+        if (partial && payload.job === "first") return { id: 101 };
+        throw new SmApiError("POST check/add failed", status, '{"message":"plugin proxy route access denied"}');
+      };
+      await start(controller);
+      controller.answer("selection", ["first", "second", "third"]);
+      await tick();
+      const state = controller.getSnapshot();
+      assert.deepEqual(mutations, partial ? ["first", "second"] : ["first"]);
+      assert.deepEqual(
+        state.items.map((item) => item.status),
+        partial ? ["created", "failed", "not-run"] : ["failed", "not-run", "not-run"],
+      );
+      assert.deepEqual(
+        state.records.map((item) => item.id),
+        partial ? [101] : [],
+      );
+      assert.match(
+        state.failureSummary,
+        status === 403 ? /administrator.*Synthetic Monitoring write access/ : /Sign in again/,
+      );
+      assert.doesNotMatch(state.failureSummary, /plugin proxy|\{"/);
+      assert.equal(state.outcome, "error");
+      assert.equal(state.prompt, undefined);
+      assert.deepEqual(events.at(-1), ["create", { status: "failed" }]);
+    });
+
+test("a denied check lookup explains read access and leaves all checks unattempted", async () => {
+  const { controller, mutations } = setup({
+    candidatesFor: async () => [first, second],
+    buildPlan: async () => {
+      throw new SmApiError("GET check/query failed", 403, '{"message":"plugin proxy route access denied"}');
+    },
+  });
+  await start(controller);
+  controller.answer("selection", ["first", "second"]);
+  await tick();
+  assert.match(controller.getSnapshot().failureSummary, /access to read synthetic checks and probes/);
+  assert.deepEqual(
+    controller.getSnapshot().items.map((item) => item.status),
+    ["not-run", "not-run"],
+  );
+  assert.deepEqual(mutations, []);
+});
+
+test("a non-permission creation failure keeps its message and still tries other checks", async () => {
+  const { controller, client, mutations } = setup({ candidatesFor: async () => [first, second] });
+  client.createCheck = async (payload) => {
+    mutations.push(payload.job);
+    if (payload.job === "first") throw new SmApiError("POST check/add failed", 400, '{"message":"invalid target"}');
+    return { id: 202 };
+  };
+  await start(controller);
+  controller.answer("selection", ["first", "second"]);
+  await tick();
+  assert.deepEqual(mutations, ["first", "second"]);
+  assert.equal(controller.getSnapshot().items[0].detail, "invalid target");
+  assert.equal(controller.getSnapshot().failureSummary, "Could not create first: invalid target");
+  assert.deepEqual(
+    controller.getSnapshot().records.map((item) => item.id),
+    [202],
+  );
+});
+
+for (const [operation, resource] of [
+  ["inspect", "read alerting contact points"],
+  ["ensureContactPoint", "manage alerting contact points"],
+  ["ensureRoute", "manage notification policies"],
+])
+  test(`permission denied during ${operation} gives a concise resource-specific error`, async () => {
+    const calls = [];
+    const notificationClient = Object.fromEntries(
+      ["inspect", "ensureContactPoint", "ensureRoute"].map((name) => [
+        name,
+        async () => {
+          calls.push(name);
+          if (name === operation)
+            throw new AlertingApiError(
+              "Grafana Alerting API failed with status 403",
+              403,
+              JSON.stringify({
+                accessErrorId: "ACE3209940705",
+                message: "You'll need additional permissions. Permissions needed: any of alert.provisioning:write",
+                title: "Access denied",
+              }),
+            );
+          return name === "inspect" ? {} : "created";
+        },
+      ]),
+    );
+    const { controller, events } = setup({ tryAlertingClient: async () => notificationClient });
+    await start(controller);
+    controller.answer("selection", ["first"]);
+    await tick();
+    controller.answer("alerting", true);
+    await tick();
+    if (operation !== "inspect") {
+      controller.answer("email", "ops@example.com");
+      await tick();
+    }
+    assert.equal(controller.getSnapshot().prompt, "nextAction");
+    controller.answer("nextAction", "finish");
+    await tick();
+    const state = controller.getSnapshot();
+    assert.equal(state.outcome, "incomplete");
+    assert.equal(state.records.length, 1);
+    assert.match(
+      state.alertingDetail[0].text,
+      /^Couldn't (read|configure) (alerting contact points|notification policies)\.$/,
+    );
+    assert.equal(state.alertingDetail[0].error, `Permission denied to ${resource}.`);
+    assert.equal(state.alertingDetail[0].href, undefined);
+    assert.doesNotMatch(state.alertingDetail[0].error, /ACE320|alert.provisioning|\{"|Alerts go to/);
+    assert.equal(calls.at(-1), operation);
+    assert.equal(events.find(([step]) => step === "alerting")[1].status, "failed");
+  });
+
+test("denied check alerts explain Synthetic Monitoring write access", async () => {
+  const { controller, client } = setup();
+  client.putCheckAlerts = async () => {
+    throw new SmApiError("PUT alerts failed", 403, '{"message":"plugin proxy route access denied"}');
+  };
+  await firstPass(controller);
+  controller.answer("nextAction", "finish");
+  await tick();
+  assert.equal(controller.getSnapshot().outcome, "incomplete");
+  assert.equal(controller.getSnapshot().alertingDetail[0].text, "Couldn't enable alerts on 1 check.");
+  assert.match(controller.getSnapshot().alertingDetail[0].error, /administrator.*Synthetic Monitoring write access/);
+  assert.doesNotMatch(controller.getSnapshot().alertingDetail[0].error, /plugin proxy/);
+});
+
 test("failed alerts remain incomplete after a successful later pass and export", async () => {
   const { controller, client, events } = setup();
   client.putCheckAlerts = async (id) => {
@@ -327,7 +466,7 @@ test("failed alerts remain incomplete after a successful later pass and export",
   assert.equal(state.outcome, "incomplete");
   assert.equal(state.results.alerting.status, "ok", "the later pass did succeed");
   assert.deepEqual([...state.failedSteps], ["alerting"], "the earlier failure must remain visible");
-  assert.match(state.alertingDetail[0].text, /alerts failed/);
+  assert.match(state.alertingDetail[0].error, /alerts failed/);
   assert.deepEqual(
     events.filter(([step]) => step === "alerting").map(([, result]) => result.status),
     ["failed", "ok"],
@@ -346,7 +485,8 @@ test("a failure in a later alerting pass is reported and retains the checks", as
   await tick();
   controller.answer("selection", ["second"]);
   await tick();
-  assert.match(controller.getSnapshot().nextStepsLog[0].detail, /later alert failure/);
+  assert.equal(controller.getSnapshot().nextStepsLog[0].detail, "Couldn't enable alerts on 1 check.");
+  assert.match(controller.getSnapshot().nextStepsLog[0].error, /later alert failure/);
   controller.answer("nextAction", "finish");
   await tick();
   assert.equal(controller.getSnapshot().outcome, "incomplete");

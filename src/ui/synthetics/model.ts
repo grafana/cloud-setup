@@ -18,7 +18,7 @@ export type SyntheticsStep = keyof typeof SYNTHETICS_STEPS;
 export type AnalyzeMode = "fast" | "browser-discovery";
 export type CreatePhase =
   "reviewing" | "auto-discovering" | "base-url-input" | "connecting" | "token-input" | "validating" | "creating";
-export type ItemStatus = "pending" | "running" | "created" | "updated" | "skipped" | "failed";
+export type ItemStatus = "pending" | "running" | "created" | "updated" | "skipped" | "failed" | "not-run";
 export interface CreationItem {
   candidate: Candidate;
   pass: AnalyzeMode;
@@ -33,10 +33,12 @@ export interface NextStepLog {
   label: string;
   status: StepStatus;
   detail?: string;
+  error?: string;
   items?: CreationItem[];
 }
 export interface AlertingDetail {
   text: string;
+  error?: string;
   href?: string;
 }
 export interface Session {

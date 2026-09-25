@@ -75,7 +75,11 @@ const client = {
   createCheck: async (payload) => {
     if (scenario === "synthetics-401" || scenario === "synthetics-403") {
       const status = Number(scenario.slice(-3));
-      throw new SmApiError(`POST check/add failed with status ${status}`, status, '{"message":"access denied"}');
+      throw new SmApiError(
+        `POST check/add failed with status ${status}`,
+        status,
+        '{"message":"plugin proxy route access denied"}',
+      );
     }
     return { id: payload.job === "first" ? 101 : 202 };
   },

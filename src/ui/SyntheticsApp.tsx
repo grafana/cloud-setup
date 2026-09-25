@@ -10,6 +10,7 @@ import { unhandledCandidates } from "./synthetics/model.js";
 import { ChecksSummary } from "./synthetics/CheckResults.js";
 import { SyntheticsPrompts } from "./synthetics/SyntheticsPrompts.js";
 import { SyntheticsProgress } from "./synthetics/SyntheticsProgress.js";
+import { WrappedText } from "./synthetics/StepDetail.js";
 
 interface Props {
   initialBaseUrl?: string;
@@ -28,6 +29,15 @@ export function SyntheticsApp({ initialBaseUrl, initialTargetUrl, initialStackUr
     cwd: process.cwd(),
   };
   const { controller, state } = useWorkflow(() => createSyntheticsController(options), exit);
+  const setupFailed = Boolean(state.failureSummary) || (state.done && state.outcome === "incomplete");
+  const errors: { text: string; href?: string }[] = [
+    ...(state.failureSummary ? [{ text: state.failureSummary }] : []),
+    ...state.alertingDetail.flatMap((line) => (line.error ? [{ text: line.error, href: line.href }] : [])),
+    ...state.nextStepsLog.flatMap((entry) => {
+      const error = entry.error ?? (entry.key === "export" && entry.status === "failed" ? entry.detail : undefined);
+      return error ? [{ text: error }] : [];
+    }),
+  ];
   useWorkflowInput(
     controller,
     state,
@@ -65,21 +75,37 @@ export function SyntheticsApp({ initialBaseUrl, initialTargetUrl, initialStackUr
           depend on prompt (like CommonStepBody's auth text) would render
           unchanged but suddenly hugging the row above for that one frame. */}
           <Box marginTop={1} flexDirection="column">
-            {state.failureSummary ? (
+            {state.failureSummary || state.done ? (
               <>
-                <Text color={COLORS.BAD}>Setup incomplete. {state.failureSummary}</Text>
-                <Text color={COLORS.MUTED}>Resolve the issue, then run `npx @grafana/cloud-setup` again.</Text>
-              </>
-            ) : state.done ? (
-              <>
-                {state.outcome === "incomplete" && (
-                  <Text color={COLORS.BAD}>Setup incomplete. Review the failed steps above.</Text>
+                {(!state.failureSummary || state.records.length > 0) && (
+                  <Box flexDirection="column" marginBottom={setupFailed ? 1 : 0}>
+                    <ChecksSummary items={state.records} stackUrl={initialStackUrl} />
+                  </Box>
                 )}
-                <ChecksSummary items={state.records} stackUrl={initialStackUrl} />
-                {state.outcome === "incomplete" && (
-                  <Text color={COLORS.MUTED}>
-                    Resolve the issue, then run `npx @grafana/cloud-setup synthetics` again.
-                  </Text>
+                {setupFailed && (
+                  <>
+                    {(errors.length ? errors : [{ text: "Requested setup could not be completed." }]).map(
+                      (error, index) => (
+                        <WrappedText key={index}>
+                          <Text color={COLORS.BAD}>
+                            {index === 0 && "Setup incomplete. "}
+                            {error.text}
+                            {error.href && (
+                              <>
+                                {" "}
+                                <Link>{error.href}</Link>
+                              </>
+                            )}
+                          </Text>
+                        </WrappedText>
+                      ),
+                    )}
+                    <WrappedText>
+                      <Text color={COLORS.MUTED}>
+                        After resolving the issue, run `npx @grafana/cloud-setup synthetics` again.
+                      </Text>
+                    </WrappedText>
+                  </>
                 )}
               </>
             ) : (
@@ -122,7 +148,7 @@ export async function runSyntheticsUI(
     { exitOnCtrlC: false },
   );
   // Ink rejects this promise for an error exit, but that error's message is
-  // already on screen (the "Setup incomplete" text) and hardExit already
+  // already on screen in the setup summary and hardExit already
   // owns the real process.exit(code) below — letting the rejection reach
   // main()'s own catch would just print the same message a second time.
   await app.waitUntilExit().catch(() => {});
