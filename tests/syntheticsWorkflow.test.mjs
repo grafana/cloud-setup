@@ -378,12 +378,12 @@ test("a non-permission creation failure keeps its message and still tries other 
   );
 });
 
-for (const [operation, resource, href] of [
-  ["inspect", "read alerting contact points", "/alerting/notifications"],
-  ["ensureContactPoint", "manage alerting contact points", "/alerting/notifications"],
-  ["ensureRoute", "manage notification policies", "/alerting/routes"],
+for (const [operation, resource] of [
+  ["inspect", "read alerting contact points"],
+  ["ensureContactPoint", "manage alerting contact points"],
+  ["ensureRoute", "manage notification policies"],
 ])
-  test(`permission denied during ${operation} gives specific recovery guidance`, async () => {
+  test(`permission denied during ${operation} gives a concise resource-specific error`, async () => {
     const calls = [];
     const notificationClient = Object.fromEntries(
       ["inspect", "ensureContactPoint", "ensureRoute"].map((name) => [
@@ -424,9 +424,8 @@ for (const [operation, resource, href] of [
       state.alertingDetail[0].text,
       /^Couldn't (read|configure) (alerting contact points|notification policies)\.$/,
     );
-    assert.match(state.alertingDetail[0].error, /Permission denied.*stack administrator/);
-    assert.ok(state.alertingDetail[0].error.includes(resource));
-    assert.equal(state.alertingDetail[0].href, `https://example.grafana.net${href}`);
+    assert.equal(state.alertingDetail[0].error, `Permission denied to ${resource}.`);
+    assert.equal(state.alertingDetail[0].href, undefined);
     assert.doesNotMatch(state.alertingDetail[0].error, /ACE320|alert.provisioning|\{"|Alerts go to/);
     assert.equal(calls.at(-1), operation);
     assert.equal(events.find(([step]) => step === "alerting")[1].status, "failed");

@@ -70,7 +70,6 @@ export async function configureAlerting(
   let inspection: AlertingInspection | undefined;
   let inspectionFailure: AlertingDetail | undefined;
   const contactPointsUrl = `${options.stackUrl.replace(/\/$/, "")}/alerting/notifications`;
-  const policiesUrl = `${options.stackUrl.replace(/\/$/, "")}/alerting/routes`;
   if (!ctx.get().auth.error) {
     ctx.update({ alertingPhase: "inspecting" });
     const [candidate] = await ctx.wait(
@@ -84,11 +83,7 @@ export async function configureAlerting(
         ctx.signal.throwIfAborted();
         inspectionFailure = {
           text: "Couldn't read alerting contact points.",
-          error: `${apiErrorMessage(
-            error,
-            "Permission denied. Ask a stack administrator to grant access to read alerting contact points.",
-          )} Review contact points at`,
-          href: contactPointsUrl,
+          error: apiErrorMessage(error, "Permission denied to read alerting contact points."),
         };
       }
     }
@@ -139,11 +134,7 @@ export async function configureAlerting(
       const resource = configuringPolicy ? "notification policies" : "alerting contact points";
       detail.push({
         text: `Couldn't configure ${resource}.`,
-        error: `${apiErrorMessage(
-          error,
-          `Permission denied. Ask a stack administrator to grant access to manage ${resource}.`,
-        )} Review ${resource} at`,
-        href: configuringPolicy ? policiesUrl : contactPointsUrl,
+        error: apiErrorMessage(error, `Permission denied to manage ${resource}.`),
       });
     }
   } else

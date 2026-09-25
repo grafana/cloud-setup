@@ -207,11 +207,13 @@ for (const columns of [64, 120])
       else assert.match(stepDetail, /✗ (first|third) - London · failed/);
       assert.doesNotMatch(progress, /Permission denied|administrator|access denied/);
       assert.equal(
-        frame.replace(/\s+/g, " ").match(/Permission denied\./g)?.length,
+        frame.replace(/\s+/g, " ").match(/Permission denied/g)?.length,
         failure === "combined" ? 2 : 1,
         frame,
       );
-      assert.match(footer, /Setup incomplete\. Permission denied\./);
+      if (failure === "alerting")
+        assert.match(footer, /Setup incomplete\. Permission denied to manage alerting contact points\./);
+      else assert.match(footer, /Setup incomplete\. Permission denied\./);
       assert.match(footer, /After resolving the issue, run `npx @grafana\/cloud-setup synthetics` again\./);
       assert.doesNotMatch(footer, /Review the failed steps|Couldn't configure/);
       for (const line of frame
@@ -220,9 +222,8 @@ for (const columns of [64, 120])
         .filter((line) => line.trim()))
         assert.match(line, /^ \S/, frame);
       if (alertingFailure) {
-        assert.match(footer, /manage alerting contact points/);
-        assert.match(footer, /https:\/\/example.grafana.net\/alerting\/notifications/);
-        assert.doesNotMatch(progress, /alerting\/notifications/);
+        assert.match(footer, /Permission denied to manage alerting contact points\./);
+        assert.doesNotMatch(frame, /Review contact points|alerting\/notifications/);
       }
       if (!alertingFailure || failure === "combined") assert.match(footer, /Synthetic Monitoring write access/);
       if (failure !== "creation") {
