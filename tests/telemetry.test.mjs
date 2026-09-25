@@ -499,7 +499,12 @@ for (const [scenario, outcome, code, message, failedStep] of [
     assert.ok(output.includes(message), output);
     if (failedStep) {
       assert.ok(output.includes("Setup incomplete."), output);
-      assert.ok(output.includes("Resolve the issue, then run"), output);
+      assert.ok(
+        output.includes(
+          scenario.startsWith("synthetics") ? "After resolving the issue, run" : "Resolve the issue, then run",
+        ),
+        output,
+      );
       assert.ok(events.some((event) => event.step === failedStep && event.status === "failed"));
       assert.ok(!output.includes("Cool, we're done!"));
     }

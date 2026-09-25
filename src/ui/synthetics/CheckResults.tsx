@@ -3,13 +3,13 @@ import Spinner from "ink-spinner";
 import { COLORS, ICONS } from "../../theme.js";
 import { Link } from "../shared.js";
 import type { CreationItem } from "./model.js";
+import { StepDetail } from "./StepDetail.js";
 
 export function CheckResults({ items }: { items: CreationItem[] }) {
   return (
     <Box flexDirection="column">
       {items.map((item) => (
-        <Text key={item.candidate.key}>
-          {"     "}
+        <StepDetail key={item.candidate.key}>
           <Text
             color={
               item.status === "failed"
@@ -37,7 +37,7 @@ export function CheckResults({ items }: { items: CreationItem[] }) {
             - {item.probes.join(", ")}
             {item.detail ? ` · ${item.detail}` : ""}
           </Text>
-        </Text>
+        </StepDetail>
       ))}
     </Box>
   );

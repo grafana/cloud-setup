@@ -28,6 +28,7 @@ export function SyntheticsApp({ initialBaseUrl, initialTargetUrl, initialStackUr
     cwd: process.cwd(),
   };
   const { controller, state } = useWorkflow(() => createSyntheticsController(options), exit);
+  const setupFailed = Boolean(state.failureSummary) || (state.done && state.outcome === "incomplete");
   useWorkflowInput(
     controller,
     state,
@@ -65,22 +66,15 @@ export function SyntheticsApp({ initialBaseUrl, initialTargetUrl, initialStackUr
           depend on prompt (like CommonStepBody's auth text) would render
           unchanged but suddenly hugging the row above for that one frame. */}
           <Box marginTop={1} flexDirection="column">
-            {state.failureSummary ? (
+            {state.failureSummary || state.done ? (
               <>
-                <Text color={COLORS.BAD}>Setup incomplete. {state.failureSummary}</Text>
-                <Text color={COLORS.MUTED}>
-                  Resolve the issue, then run `npx @grafana/cloud-setup synthetics` again.
-                </Text>
-              </>
-            ) : state.done ? (
-              <>
-                {state.outcome === "incomplete" && (
-                  <Text color={COLORS.BAD}>Setup incomplete. Review the failed steps above.</Text>
+                {setupFailed && <Text color={COLORS.BAD}>Setup incomplete. Review the failed steps above.</Text>}
+                {(!state.failureSummary || state.records.length > 0) && (
+                  <ChecksSummary items={state.records} stackUrl={initialStackUrl} />
                 )}
-                <ChecksSummary items={state.records} stackUrl={initialStackUrl} />
-                {state.outcome === "incomplete" && (
+                {setupFailed && (
                   <Text color={COLORS.MUTED}>
-                    Resolve the issue, then run `npx @grafana/cloud-setup synthetics` again.
+                    After resolving the issue, run `npx @grafana/cloud-setup synthetics` again.
                   </Text>
                 )}
               </>
@@ -124,7 +118,7 @@ export async function runSyntheticsUI(
     { exitOnCtrlC: false },
   );
   // Ink rejects this promise for an error exit, but that error's message is
-  // already on screen (the "Setup incomplete" text) and hardExit already
+  // already on screen in the failed step and hardExit already
   // owns the real process.exit(code) below — letting the rejection reach
   // main()'s own catch would just print the same message a second time.
   await app.waitUntilExit().catch(() => {});
