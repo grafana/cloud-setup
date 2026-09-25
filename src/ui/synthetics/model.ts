@@ -33,10 +33,12 @@ export interface NextStepLog {
   label: string;
   status: StepStatus;
   detail?: string;
+  error?: string;
   items?: CreationItem[];
 }
 export interface AlertingDetail {
   text: string;
+  error?: string;
   href?: string;
 }
 export interface Session {

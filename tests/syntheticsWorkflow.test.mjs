@@ -420,10 +420,14 @@ for (const [operation, resource, href] of [
     const state = controller.getSnapshot();
     assert.equal(state.outcome, "incomplete");
     assert.equal(state.records.length, 1);
-    assert.match(state.alertingDetail[0].text, /Permission denied.*stack administrator/);
-    assert.ok(state.alertingDetail[0].text.includes(resource));
+    assert.match(
+      state.alertingDetail[0].text,
+      /^Couldn't (read|configure) (alerting contact points|notification policies)\.$/,
+    );
+    assert.match(state.alertingDetail[0].error, /Permission denied.*stack administrator/);
+    assert.ok(state.alertingDetail[0].error.includes(resource));
     assert.equal(state.alertingDetail[0].href, `https://example.grafana.net${href}`);
-    assert.doesNotMatch(state.alertingDetail[0].text, /ACE320|alert.provisioning|\{"|Alerts go to/);
+    assert.doesNotMatch(state.alertingDetail[0].error, /ACE320|alert.provisioning|\{"|Alerts go to/);
     assert.equal(calls.at(-1), operation);
     assert.equal(events.find(([step]) => step === "alerting")[1].status, "failed");
   });
@@ -437,8 +441,9 @@ test("denied check alerts explain Synthetic Monitoring write access", async () =
   controller.answer("nextAction", "finish");
   await tick();
   assert.equal(controller.getSnapshot().outcome, "incomplete");
-  assert.match(controller.getSnapshot().alertingDetail[0].text, /administrator.*Synthetic Monitoring write access/);
-  assert.doesNotMatch(controller.getSnapshot().alertingDetail[0].text, /plugin proxy/);
+  assert.equal(controller.getSnapshot().alertingDetail[0].text, "Couldn't enable alerts on 1 check.");
+  assert.match(controller.getSnapshot().alertingDetail[0].error, /administrator.*Synthetic Monitoring write access/);
+  assert.doesNotMatch(controller.getSnapshot().alertingDetail[0].error, /plugin proxy/);
 });
 
 test("failed alerts remain incomplete after a successful later pass and export", async () => {
@@ -462,7 +467,7 @@ test("failed alerts remain incomplete after a successful later pass and export",
   assert.equal(state.outcome, "incomplete");
   assert.equal(state.results.alerting.status, "ok", "the later pass did succeed");
   assert.deepEqual([...state.failedSteps], ["alerting"], "the earlier failure must remain visible");
-  assert.match(state.alertingDetail[0].text, /alerts failed/);
+  assert.match(state.alertingDetail[0].error, /alerts failed/);
   assert.deepEqual(
     events.filter(([step]) => step === "alerting").map(([, result]) => result.status),
     ["failed", "ok"],
@@ -481,7 +486,8 @@ test("a failure in a later alerting pass is reported and retains the checks", as
   await tick();
   controller.answer("selection", ["second"]);
   await tick();
-  assert.match(controller.getSnapshot().nextStepsLog[0].detail, /later alert failure/);
+  assert.equal(controller.getSnapshot().nextStepsLog[0].detail, "Couldn't enable alerts on 1 check.");
+  assert.match(controller.getSnapshot().nextStepsLog[0].error, /later alert failure/);
   controller.answer("nextAction", "finish");
   await tick();
   assert.equal(controller.getSnapshot().outcome, "incomplete");

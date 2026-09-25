@@ -37,7 +37,7 @@ export function SyntheticsProgress({ state }: { state: SyntheticsState }) {
                 <StepDetail key={index}>
                   <Text color={COLORS.MUTED}>
                     {line.text}
-                    {line.href && (
+                    {line.href && !line.error && (
                       <>
                         {" "}
                         <Link>{line.href}</Link>
@@ -46,11 +46,6 @@ export function SyntheticsProgress({ state }: { state: SyntheticsState }) {
                   </Text>
                 </StepDetail>
               ))}
-            {!additionalPass && step === state.currentStep && state.failureSummary && (
-              <StepDetail>
-                <Text color={COLORS.MUTED}>{state.failureSummary}</Text>
-              </StepDetail>
-            )}
           </>
         )}
       />
@@ -108,11 +103,6 @@ export function SyntheticsProgress({ state }: { state: SyntheticsState }) {
             )}
           </Text>
           <CheckResults items={state.items} />
-          {state.failureSummary && (
-            <StepDetail>
-              <Text color={COLORS.MUTED}>{state.failureSummary}</Text>
-            </StepDetail>
-          )}
         </Box>
       )}
       {state.exporting && (

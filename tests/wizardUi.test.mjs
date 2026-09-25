@@ -117,9 +117,10 @@ test("Synthetics accepts b and q in URL/token fields, then q finishes the menu",
 });
 
 for (const columns of [64, 120])
-  for (const failure of ["creation", "alerting", "additional"])
-    test(`Synthetics keeps ${failure} errors in their step with aligned details at ${columns} columns`, async (t) => {
+  for (const failure of ["creation", "alerting", "additional", "combined"])
+    test(`Synthetics summarizes ${failure} failures in steps and explains them below the check count at ${columns} columns`, async (t) => {
       const exits = [];
+      const alertingFailure = failure === "alerting" || failure === "combined";
       const candidate = (key) => ({
         key,
         label: key,
@@ -137,7 +138,10 @@ for (const columns of [64, 120])
             throw new SmApiError("POST check/add failed", 403, '{"message":"plugin proxy route access denied"}');
           return { id: payload.job === "first" ? 101 : 202 };
         },
-        putCheckAlerts: async () => {},
+        putCheckAlerts: async () => {
+          if (failure === "combined")
+            throw new SmApiError("PUT alerts failed", 403, '{"message":"plugin proxy route access denied"}');
+        },
       };
       stub(t, syntheticsServices, {
         ensureAssistantAuth: async () => ({ stackId: 123 }),
@@ -169,7 +173,7 @@ for (const columns of [64, 120])
       await term.send("\r");
       await term.send("\r");
       await term.send("\r");
-      if (failure === "alerting") {
+      if (alertingFailure) {
         await term.send("\r");
         await term.send("\r");
         await term.send("q");
@@ -188,24 +192,46 @@ for (const columns of [64, 120])
       const step =
         failure === "creation"
           ? "Create synthetic checks"
-          : failure === "alerting"
+          : alertingFailure
             ? "Configure alerts"
             : "Find additional synthetic checks";
       const lines = progress.split("\n");
       const row = lines.findIndex((line) => line.trim() === `✗ ${step}`);
       assert.ok(row >= 0, frame);
-      const next = lines.findIndex((line, index) => index > row && /^ {2}\S/.test(line));
+      const next = lines.findIndex((line, index) => index > row && (!line.trim() || /^ {2}\S/.test(line)));
       const details = lines.slice(row + 1, next < 0 ? undefined : next).filter((line) => line.trim());
-      assert.ok(details.length > 1, "the step must have multiple detail lines");
+      assert.ok(details.length > 0, frame);
       for (const line of details) assert.match(line, /^ {6}\S/, frame);
-      assert.match(details.map((line) => line.trim()).join(" "), /Permission denied\./);
-      assert.equal(frame.replace(/\s+/g, " ").match(/Permission denied\./g)?.length, 1, frame);
-      assert.match(footer, /Setup incomplete\. Review the failed steps above\./);
+      const stepDetail = details.map((line) => line.trim()).join(" ");
+      if (alertingFailure) assert.match(stepDetail, /Couldn't configure alerting contact points\./);
+      else assert.match(stepDetail, /✗ (first|third) - London · failed/);
+      assert.doesNotMatch(progress, /Permission denied|administrator|access denied/);
+      assert.equal(
+        frame.replace(/\s+/g, " ").match(/Permission denied\./g)?.length,
+        failure === "combined" ? 2 : 1,
+        frame,
+      );
+      assert.match(footer, /Setup incomplete\. Permission denied\./);
       assert.match(footer, /After resolving the issue, run `npx @grafana\/cloud-setup synthetics` again\./);
-      assert.doesNotMatch(footer, /Permission denied|administrator|Couldn't/);
-      if (failure === "additional") assert.match(footer, /2 checks created\./);
+      assert.doesNotMatch(footer, /Review the failed steps|Couldn't configure/);
+      for (const line of frame
+        .slice(footerStart)
+        .split("\n")
+        .filter((line) => line.trim()))
+        assert.match(line, /^ \S/, frame);
+      if (alertingFailure) {
+        assert.match(footer, /manage alerting contact points/);
+        assert.match(footer, /https:\/\/example.grafana.net\/alerting\/notifications/);
+        assert.doesNotMatch(progress, /alerting\/notifications/);
+      }
+      if (!alertingFailure || failure === "combined") assert.match(footer, /Synthetic Monitoring write access/);
+      if (failure !== "creation") {
+        assert.ok(progress.includes("2 checks created."), frame);
+        assert.ok(progress.includes("View checks:"), frame);
+        assert.doesNotMatch(footer, /checks created|View checks/);
+      }
       assert.equal(exits.length, 1);
-      if (failure === "alerting") assert.deepEqual(exits[0], [undefined, "incomplete"]);
+      if (alertingFailure) assert.deepEqual(exits[0], [undefined, "incomplete"]);
       else assert.ok(exits[0][0] instanceof Error);
     });
 

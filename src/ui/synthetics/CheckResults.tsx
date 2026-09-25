@@ -35,7 +35,7 @@ export function CheckResults({ items }: { items: CreationItem[] }) {
           <Text color={COLORS.MUTED}>
             {" "}
             - {item.probes.join(", ")}
-            {item.detail ? ` · ${item.detail}` : ""}
+            {item.status === "failed" ? " · failed" : item.detail ? ` · ${item.detail}` : ""}
           </Text>
         </StepDetail>
       ))}

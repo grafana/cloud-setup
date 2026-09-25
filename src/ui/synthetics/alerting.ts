@@ -15,6 +15,13 @@ import type { SyntheticsServices } from "./services.js";
 
 const NO_EMAIL_DETAIL = { text: "No email set. Alerts go to the stack's default contact point." };
 
+function failedCheckAlerts(result: Awaited<ReturnType<typeof applyCheckAlerts>>): AlertingDetail {
+  return {
+    text: `Couldn't enable alerts on ${result.failed} check${result.failed === 1 ? "" : "s"}.`,
+    error: result.firstError ?? "Alert configuration failed.",
+  };
+}
+
 export async function configureAlerting(
   ctx: SyntheticsContext,
   services: SyntheticsServices,
@@ -27,15 +34,15 @@ export async function configureAlerting(
   if (prior) {
     ctx.update({ alertingPhase: "applying" });
     const result = await applyCheckAlerts(ctx, targets, prior.presets);
+    const failure = result.failed ? failedCheckAlerts(result) : undefined;
     const pending = ctx.get().pendingNextStepLog;
     if (pending)
       ctx.update({
         pendingNextStepLog: {
           ...pending,
           status: result.failed ? "failed" : "ok",
-          detail: result.failed
-            ? `Couldn't enable alerts on ${result.failed} checks. ${result.firstError ?? ""}`
-            : `Alerts enabled on ${result.alerted} more checks.`,
+          detail: failure?.text ?? `Alerts enabled on ${result.alerted} more checks.`,
+          error: failure?.error,
         },
       });
     return {
@@ -50,9 +57,7 @@ export async function configureAlerting(
     ctx.update({ alertingChoice: { presets, outcome: "rules_only" }, alertingPhase: "applying" });
     const result = await applyCheckAlerts(ctx, targets, presets);
     ctx.update({
-      alertingDetail: result.failed
-        ? [{ text: `Couldn't enable alerts on ${result.failed} checks. ${result.firstError ?? ""}` }]
-        : [NO_EMAIL_DETAIL],
+      alertingDetail: result.failed ? [failedCheckAlerts(result)] : [NO_EMAIL_DETAIL],
     });
     return {
       status: result.failed ? "failed" : "declined",
@@ -78,7 +83,8 @@ export async function configureAlerting(
       } catch (error) {
         ctx.signal.throwIfAborted();
         inspectionFailure = {
-          text: `Couldn't read alerting contact points. ${apiErrorMessage(
+          text: "Couldn't read alerting contact points.",
+          error: `${apiErrorMessage(
             error,
             "Permission denied. Ask a stack administrator to grant access to read alerting contact points.",
           )} Review contact points at`,
@@ -112,8 +118,7 @@ export async function configureAlerting(
   );
   const detail: AlertingDetail[] = [];
   if (result.preserved) detail.push({ text: `${result.preserved} checks already had alerts, left as they were.` });
-  if (result.failed)
-    detail.push({ text: `Couldn't enable alerts on ${result.failed} checks. ${result.firstError ?? ""}` });
+  if (result.failed) detail.push(failedCheckAlerts(result));
   let contactPoint: StepProperties["contact_point"];
   let notificationRoute: StepProperties["notification_route"];
   // Declined sign-in intentionally uses the stack's default routing. A failed
@@ -133,7 +138,8 @@ export async function configureAlerting(
       notificationsFailed = true;
       const resource = configuringPolicy ? "notification policies" : "alerting contact points";
       detail.push({
-        text: `Couldn't configure ${resource}. ${apiErrorMessage(
+        text: `Couldn't configure ${resource}.`,
+        error: `${apiErrorMessage(
           error,
           `Permission denied. Ask a stack administrator to grant access to manage ${resource}.`,
         )} Review ${resource} at`,
@@ -144,7 +150,14 @@ export async function configureAlerting(
     detail.push(
       client
         ? NO_EMAIL_DETAIL
-        : (inspectionFailure ?? { text: "Couldn't set an email. Add a contact point at", href: contactPointsUrl }),
+        : (inspectionFailure ??
+            (notificationsFailed
+              ? {
+                  text: "Couldn't set an email.",
+                  error: "Automatic email setup is unavailable. Add a contact point at",
+                  href: contactPointsUrl,
+                }
+              : { text: "Couldn't set an email. Add a contact point at", href: contactPointsUrl })),
     );
   const outcome = !client ? "unavailable" : addresses && !notificationsFailed ? "configured" : "rules_only";
   ctx.update({ alertingDetail: detail, alertingChoice: { presets, outcome } });
