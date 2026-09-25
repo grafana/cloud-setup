@@ -473,6 +473,7 @@ for (const [scenario, outcome, code, message, failedStep] of [
   ["frontend-declined", "ok", 0, "Setup skipped."],
   ["synthetics-success", "ok", 0, "1 check created."],
   ["synthetics-alerts", "incomplete", 1, "alerts unavailable", "alerting"],
+  ["synthetics-403", "error", 1, "Synthetic Monitoring write access", "create"],
 ])
   test(`${scenario}: rendered result, telemetry, and process exit agree`, () => {
     const child = spawnSync(
@@ -509,6 +510,15 @@ for (const [scenario, outcome, code, message, failedStep] of [
       );
       assert.ok(output.includes("2 checks created."), output);
       assert.equal(events.find((event) => event.step === "next-steps").status, "ok");
+    }
+    if (scenario === "synthetics-403") {
+      assert.equal(child.stderr, "", "the CLI must not print the rendered failure again");
+      assert.doesNotMatch(output, /plugin proxy|\{"message"/);
+      assert.equal(events.filter((event) => event.step === "create").length, 1);
+      assert.equal(
+        events.some((event) => event.step === "alerting"),
+        false,
+      );
     }
     if (scenario === "frontend-declined") {
       assert.equal(events.find((event) => event.step === "pick-app").status, "declined");

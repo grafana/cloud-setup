@@ -25,7 +25,7 @@ export function CheckResults({ items }: { items: CreationItem[] }) {
               ICONS.OK
             ) : item.status === "failed" ? (
               ICONS.FAIL
-            ) : item.status === "skipped" ? (
+            ) : item.status === "skipped" || item.status === "not-run" ? (
               ICONS.SKIPPED
             ) : (
               ICONS.PENDING

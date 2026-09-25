@@ -1,9 +1,10 @@
-import { K6_V2_CHANNEL, SmApiError, type Probe } from "../../products/syntheticMonitoring/api.js";
+import { K6_V2_CHANNEL, type Probe } from "../../products/syntheticMonitoring/api.js";
 import type { Candidate } from "../../products/syntheticMonitoring/discover.js";
 import type { SyntheticConfig } from "../../products/syntheticMonitoring/types.js";
 import type { StepProperties } from "../../telemetry.js";
 import { MIN_SPINNER_MS } from "../shared.js";
 import { connect } from "./connect.js";
+import { apiErrorMessage, isAuthorizationError, SM_WRITE_DENIED } from "./errors.js";
 import { unhandledCandidates, type CreationItem, type SyntheticsContext, type SyntheticsOptions } from "./model.js";
 import type { SyntheticsServices } from "./services.js";
 
@@ -71,7 +72,20 @@ export async function createChecks(
     for (const item of items) if (item.id !== undefined) records.set(item.candidate.key, item);
     ctx.update({ items, records: [...records.values()] });
   };
-  const plan = await ctx.wait(services.buildPlan(config, session.client));
+  let plan;
+  try {
+    plan = await ctx.wait(services.buildPlan(config, session.client));
+  } catch (error) {
+    ctx.signal.throwIfAborted();
+    ctx.update({ items: items.map((item) => ({ ...item, status: "not-run", detail: "not attempted" })) });
+    throw new Error(
+      apiErrorMessage(
+        error,
+        "Permission denied. Ask a stack administrator for access to read synthetic checks and probes.",
+      ),
+      { cause: error },
+    );
+  }
   for (const action of plan.actions) {
     const candidate = selected.find((candidate) => candidate.label === action.name);
     if (!candidate) continue;
@@ -92,10 +106,19 @@ export async function createChecks(
       );
       updateItem(candidate.key, { status: action.kind === "create" ? "created" : "updated", id: remote.id });
     } catch (error) {
+      ctx.signal.throwIfAborted();
       updateItem(candidate.key, {
         status: "failed",
-        detail: error instanceof SmApiError ? error.body : error instanceof Error ? error.message : String(error),
+        detail: isAuthorizationError(error) ? "access denied" : apiErrorMessage(error),
       });
+      if (isAuthorizationError(error)) {
+        ctx.update({
+          items: items.map((item) =>
+            item.status === "pending" ? { ...item, status: "not-run", detail: "not attempted" } : item,
+          ),
+        });
+        throw new Error(apiErrorMessage(error, SM_WRITE_DENIED), { cause: error });
+      }
     }
   }
   const failed = items.find((item) => item.status === "failed");

@@ -1,5 +1,5 @@
-import { SmApiError } from "../../products/syntheticMonitoring/api.js";
 import { alertsForCheck, type AlertPresetName } from "../../products/syntheticMonitoring/checkAlerts.js";
+import { apiErrorMessage, SM_WRITE_DENIED } from "./errors.js";
 import type { CreationItem, SyntheticsContext } from "./model.js";
 
 export async function applyCheckAlerts(ctx: SyntheticsContext, targets: CreationItem[], presets: AlertPresetName[]) {
@@ -24,7 +24,7 @@ export async function applyCheckAlerts(ctx: SyntheticsContext, targets: Creation
     } catch (error) {
       ctx.signal.throwIfAborted();
       failed++;
-      firstError ??= error instanceof SmApiError ? error.body : error instanceof Error ? error.message : String(error);
+      firstError ??= apiErrorMessage(error, SM_WRITE_DENIED);
     }
   }
   return { alerted, preserved, failed, firstError };

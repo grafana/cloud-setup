@@ -9,6 +9,7 @@ import {
 import type { StepProperties } from "../../telemetry.js";
 import { MIN_SPINNER_MS } from "../shared.js";
 import { applyCheckAlerts } from "./checkAlerts.js";
+import { apiErrorMessage } from "./errors.js";
 import type { AlertingDetail, SyntheticsContext, SyntheticsOptions } from "./model.js";
 import type { SyntheticsServices } from "./services.js";
 
@@ -62,6 +63,9 @@ export async function configureAlerting(
   }
   let client: AlertingClient | undefined;
   let inspection: AlertingInspection | undefined;
+  let inspectionFailure: AlertingDetail | undefined;
+  const contactPointsUrl = `${options.stackUrl.replace(/\/$/, "")}/alerting/notifications`;
+  const policiesUrl = `${options.stackUrl.replace(/\/$/, "")}/alerting/routes`;
   if (!ctx.get().auth.error) {
     ctx.update({ alertingPhase: "inspecting" });
     const [candidate] = await ctx.wait(
@@ -71,8 +75,15 @@ export async function configureAlerting(
       try {
         inspection = await ctx.wait(candidate.inspect());
         client = candidate;
-      } catch {
+      } catch (error) {
         ctx.signal.throwIfAborted();
+        inspectionFailure = {
+          text: `Couldn't read alerting contact points. ${apiErrorMessage(
+            error,
+            "Permission denied. Ask a stack administrator to grant access to read alerting contact points.",
+          )} Review contact points at`,
+          href: contactPointsUrl,
+        };
       }
     }
   }
@@ -103,15 +114,16 @@ export async function configureAlerting(
   if (result.preserved) detail.push({ text: `${result.preserved} checks already had alerts, left as they were.` });
   if (result.failed)
     detail.push({ text: `Couldn't enable alerts on ${result.failed} checks. ${result.firstError ?? ""}` });
-  const href = `${options.stackUrl.replace(/\/$/, "")}/alerting/notifications`;
   let contactPoint: StepProperties["contact_point"];
   let notificationRoute: StepProperties["notification_route"];
   // Declined sign-in intentionally uses the stack's default routing. A failed
   // lookup after signing in means requested notification setup did not finish.
   let notificationsFailed = !ctx.get().auth.error && !client;
   if (client && addresses) {
+    let configuringPolicy = false;
     try {
       contactPoint = await ctx.wait(client.ensureContactPoint(addresses));
+      configuringPolicy = true;
       notificationRoute = await ctx.wait(client.ensureRoute());
       // No trailing period — right after an email address it reads as
       // part of it, same reason "Wrote to <path>" doesn't get one either.
@@ -119,12 +131,21 @@ export async function configureAlerting(
     } catch (error) {
       ctx.signal.throwIfAborted();
       notificationsFailed = true;
+      const resource = configuringPolicy ? "notification policies" : "alerting contact points";
       detail.push({
-        text: `Couldn't set an email (${error instanceof Error ? error.message : String(error)}). Add a contact point at`,
-        href,
+        text: `Couldn't configure ${resource}. ${apiErrorMessage(
+          error,
+          `Permission denied. Ask a stack administrator to grant access to manage ${resource}.`,
+        )} Review ${resource} at`,
+        href: configuringPolicy ? policiesUrl : contactPointsUrl,
       });
     }
-  } else detail.push(client ? NO_EMAIL_DETAIL : { text: "Couldn't set an email. Add a contact point at", href });
+  } else
+    detail.push(
+      client
+        ? NO_EMAIL_DETAIL
+        : (inspectionFailure ?? { text: "Couldn't set an email. Add a contact point at", href: contactPointsUrl }),
+    );
   const outcome = !client ? "unavailable" : addresses && !notificationsFailed ? "configured" : "rules_only";
   ctx.update({ alertingDetail: detail, alertingChoice: { presets, outcome } });
   return {
