@@ -80,7 +80,6 @@ export async function configureAlerting(
   if (client && inspection) {
     ctx.update({
       emailInput: inspection.existingAddresses ?? inspection.userEmail ?? "",
-      reusingAddresses: inspection.existingAddresses !== undefined,
       emailError: undefined,
     });
     for (;;) {
@@ -114,6 +113,8 @@ export async function configureAlerting(
     try {
       contactPoint = await ctx.wait(client.ensureContactPoint(addresses));
       notificationRoute = await ctx.wait(client.ensureRoute());
+      // No trailing period — right after an email address it reads as
+      // part of it, same reason "Wrote to <path>" doesn't get one either.
       detail.push({ text: `Alerts go to ${parseAddresses(addresses).join(", ")}` });
     } catch (error) {
       ctx.signal.throwIfAborted();

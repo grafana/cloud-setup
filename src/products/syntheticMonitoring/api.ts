@@ -1,8 +1,26 @@
 import type { CheckAlert } from "./checkAlerts.js";
 
+// The k6 channel every browser-settings check (SSL, broken-links) here is
+// assigned to on create/update — see toPayload in reconcile.ts — and the
+// one eligibleProbes (create.ts) checks probes support before assigning
+// them to one of those checks.
+export const K6_V2_CHANNEL = "v2";
+
 export interface Probe {
   id: number;
   name: string;
+  // Older probes predating the k6-based check runner report these — they
+  // can't run scripted or browser checks (SSL/broken-links here both use
+  // `settings.browser`, i.e. a k6 script) even though they're otherwise
+  // healthy and returned by probe/list. See eligibleProbes in create.ts.
+  capabilities?: { disableScriptedChecks?: boolean; disableBrowserChecks?: boolean };
+  // Per-k6-channel version support, keyed by channel id (e.g. "v1", "v2").
+  // A channel present with value `null` means the probe reported k6
+  // versions but none satisfy that channel; "unknown" means it hasn't
+  // reported any version yet (the API itself allows this case by
+  // default); an absent key means this install has no such channel.
+  // Only `null` actually means "not eligible" — see eligibleProbes.
+  k6Versions?: Record<string, string | null>;
 }
 
 export interface RemoteCheck {
@@ -18,6 +36,7 @@ export interface RemoteCheck {
   probes: number[];
   labels: { name: string; value: string }[];
   settings: Record<string, unknown>;
+  channels?: { k6?: { id: string } } | null;
   created: number;
   modified: number;
 }
@@ -45,6 +64,20 @@ export type SmTransport =
   | { mode: "direct"; baseUrl: string; token: string }
   | { mode: "proxy"; proxyBase: string; datasourceUid: string; accessToken: string };
 
+// 502/503/504 are the standard gateway-can't-reach-origin statuses; 522/524
+// are Cloudflare's own timeout variants of the same thing (probe/list has
+// been seen failing setup outright on a 522 that would have succeeded a
+// couple seconds later). Retried only for GET — a lost response to a
+// mutation (create/update/delete) might mean it actually landed, and
+// retrying could double it up.
+const RETRYABLE_STATUSES = new Set([502, 503, 504, 522, 524]);
+const MAX_ATTEMPTS = 3;
+const RETRY_DELAY_MS = 500;
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 export class SmClient {
   constructor(private transport: SmTransport) {}
 
@@ -65,17 +98,23 @@ export class SmClient {
     // gcx's identical use of this header on the same proxy route).
     if (this.transport.mode === "proxy") headers["X-Client-Id"] = "grafana-synthetics-cli";
 
-    const res = await fetch(this.urlFor(smPath), {
-      method,
-      headers,
-      body: body !== undefined ? JSON.stringify(body) : undefined,
-    });
+    for (let attempt = 1; ; attempt++) {
+      const res = await fetch(this.urlFor(smPath), {
+        method,
+        headers,
+        body: body !== undefined ? JSON.stringify(body) : undefined,
+      });
 
-    const text = await res.text();
-    if (!res.ok) {
-      throw new SmApiError(`${method} ${smPath} failed with status ${res.status}`, res.status, text);
+      const text = await res.text();
+      if (!res.ok) {
+        if (method === "GET" && RETRYABLE_STATUSES.has(res.status) && attempt < MAX_ATTEMPTS) {
+          await sleep(RETRY_DELAY_MS * attempt);
+          continue;
+        }
+        throw new SmApiError(`${method} ${smPath} failed with status ${res.status}`, res.status, text);
+      }
+      return text ? (JSON.parse(text) as T) : (undefined as T);
     }
-    return text ? (JSON.parse(text) as T) : (undefined as T);
   }
 
   listChecks(): Promise<RemoteCheck[]> {

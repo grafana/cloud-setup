@@ -169,7 +169,11 @@ if (command === "frontend") {
       await answer("\r", "These are the additional synthetic checks");
       await answer(" ", "[x] second");
       await answer("\r", "Next actions");
-      // The later alerting pass succeeds and the export finishes the menu.
+      // The later alerting pass succeeds. Next actions still has
+      // "Configure agent skills" left (getSkillStatus above reports no path,
+      // so it logs as failed but doesn't affect the run's outcome) - picking
+      // it is what actually empties the menu and finishes it.
+      await answer("\r", "Next actions");
       await answer("\r");
     } else await answer("q");
   }

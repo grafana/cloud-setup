@@ -38,7 +38,12 @@ export function FrontendPrompts({
             ]}
             onSelect={(key) => controller.answer("app", state.apps[Number(key)])}
           />
-          <EnterHint />
+          {/* Same marginTop={1} gap the synthetics wizard's own SelectMenu/
+          CheckboxList prompts use before their hint — a plain y/n confirm
+          doesn't get one, but a menu to navigate does. */}
+          <Box marginTop={1}>
+            <EnterHint />
+          </Box>
         </Box>
       );
     case "createApp":
@@ -87,7 +92,10 @@ export function FrontendPrompts({
             ]}
             onSelect={(key) => controller.answer("masking", key as ReplayMasking)}
           />
-          <EnterHint />
+          {/* Same marginTop={1} gap as the "app" prompt above. */}
+          <Box marginTop={1}>
+            <EnterHint />
+          </Box>
         </Box>
       );
     default:

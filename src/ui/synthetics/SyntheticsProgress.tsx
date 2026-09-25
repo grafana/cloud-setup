@@ -1,6 +1,7 @@
 import { Box, Text } from "ink";
-import { COLORS, ICONS } from "../../theme.js";
-import { Link } from "../shared.js";
+import Spinner from "ink-spinner";
+import { ANIMATE, COLORS, ICONS } from "../../theme.js";
+import { Link, Working } from "../shared.js";
 import { StepList } from "../workflow/StepList.js";
 import { CheckResults } from "./CheckResults.js";
 import { SYNTHETICS_STEPS, type SyntheticsState } from "./model.js";
@@ -12,6 +13,7 @@ export function SyntheticsProgress({ state }: { state: SyntheticsState }) {
       <StepList
         labels={SYNTHETICS_STEPS}
         state={state}
+        hidden={["next-steps"]}
         detail={(step) => (
           <>
             {step === "gcx" && state.gcx.error && <Text color={COLORS.MUTED}> {state.gcx.error}</Text>}
@@ -23,10 +25,13 @@ export function SyntheticsProgress({ state }: { state: SyntheticsState }) {
               </Text>
             )}
             {step === "create" && <CheckResults items={firstPass} />}
+            {/* Same 5-space indent CheckResults uses above — these are
+            result lines for the alerting step, not a caveat/error aside
+            like the gcx/auth ones above them. */}
             {step === "alerting" &&
               state.alertingDetail.map((line, index) => (
                 <Text key={index} color={COLORS.MUTED}>
-                  {" "}
+                  {"     "}
                   {line.text}
                   {line.href && (
                     <>
@@ -39,14 +44,30 @@ export function SyntheticsProgress({ state }: { state: SyntheticsState }) {
           </>
         )}
       />
+      {/* Each finished next-step action lands as its own standalone row,
+      formatted exactly like a fixed step row (StepList) rather than nested
+      under one — it's a completed item in the same list, not a detail of
+      something else. */}
       {state.nextStepsLog.map((entry) => (
         <Box key={entry.key} flexDirection="column">
           <Text>
             {" "}
-            {entry.status === "failed" && <Text color={COLORS.BAD}>{ICONS.FAIL} </Text>}
+            {entry.status === "failed" ? (
+              <Text color={COLORS.BAD}>{ICONS.FAIL}</Text>
+            ) : (
+              <Text color={COLORS.OK}>{ICONS.OK}</Text>
+            )}{" "}
             {entry.label}
           </Text>
-          {entry.detail && <Text color={COLORS.MUTED}> {entry.detail}</Text>}
+          {/* Same 5-space indent CheckResults uses for its own result rows
+          (create step, above) — this is a result line too, just without
+          items to itemize, and should nest under its row the same way. */}
+          {entry.detail && (
+            <Text color={COLORS.MUTED}>
+              {"     "}
+              {entry.detail}
+            </Text>
+          )}
           {entry.items && <CheckResults items={entry.items} />}
         </Box>
       ))}
@@ -54,12 +75,43 @@ export function SyntheticsProgress({ state }: { state: SyntheticsState }) {
         <Box flexDirection="column">
           <Text>
             {" "}
-            Find additional synthetic checks{state.currentStep === "analyze" ? `: ${state.analyzeProgress}%` : ""}
+            {/* ICONS.WAITING (not the spinner) while a question is actually
+            pending, same as StepList's own active row — the spinner alone
+            would look like idle progress rather than something waiting on
+            the user. */}
+            {state.prompt ? (
+              <Text color={COLORS.ACCENT}>{ICONS.WAITING}</Text>
+            ) : ANIMATE ? (
+              <Text color={COLORS.ACCENT}>
+                <Spinner type="dots" />
+              </Text>
+            ) : (
+              "…"
+            )}{" "}
+            <Text bold>Find additional synthetic checks</Text>
+            {/* Muted, same as StepList's own inline suffix (e.g. Frontend's
+            "Instrument project with Faro SDK 45%") — a live percent reads
+            as secondary to the label, not part of it. A colon only ever
+            separates a percent from extra context (FrontendApp's instrument
+            step: "45%: src/main.tsx"), never a label from its own percent,
+            so this is a plain space. */}
+            {state.currentStep === "analyze" && <Text color={COLORS.MUTED}> {state.analyzeProgress}%</Text>}
           </Text>
           <CheckResults items={state.items} />
         </Box>
       )}
-      {state.exporting && <Text> Exporting checks as Terraform…</Text>}
+      {state.exporting && (
+        <Text>
+          {" "}
+          <Working label="Exporting checks as Terraform" />
+        </Text>
+      )}
+      {state.configuringSkills && (
+        <Text>
+          {" "}
+          <Working label="Configuring agent skills" />
+        </Text>
+      )}
     </Box>
   );
 }

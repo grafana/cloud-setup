@@ -9,10 +9,9 @@ import type { StepContext, WorkflowState } from "../workflow/controller.js";
 export const SYNTHETICS_STEPS = {
   gcx: "Install Grafana Cloud CLI (gcx)",
   auth: "Authenticate with OAuth",
-  skills: "Configure skills",
   analyze: "Analyze target",
   create: "Create synthetic checks",
-  alerting: "Configure alerting",
+  alerting: "Configure alerts",
   "next-steps": "Next steps",
 };
 export type SyntheticsStep = keyof typeof SYNTHETICS_STEPS;
@@ -52,7 +51,7 @@ export interface SyntheticsInputs extends CommonInputs {
   token: string;
   alerting: boolean;
   email: string;
-  nextAction: "browser-discovery" | "export" | "finish";
+  nextAction: "browser-discovery" | "export" | "configure-skills" | "finish";
 }
 export interface SyntheticsState extends WorkflowState<SyntheticsStep>, CommonState {
   candidates: Candidate[];
@@ -73,10 +72,10 @@ export interface SyntheticsState extends WorkflowState<SyntheticsStep>, CommonSt
   alertingDetail: AlertingDetail[];
   emailInput: string;
   emailError?: string;
-  reusingAddresses: boolean;
   nextStepsLog: NextStepLog[];
   pendingNextStepLog?: NextStepLog;
   exporting: boolean;
+  configuringSkills: boolean;
 }
 export interface SyntheticsOptions {
   stackUrl: string;
@@ -89,6 +88,7 @@ export type SyntheticsContext = StepContext<SyntheticsState, SyntheticsInputs>;
 export const NEXT_ACTIONS = [
   { key: "browser-discovery", label: "Find additional synthetic checks" },
   { key: "export", label: "Export checks as Terraform" },
+  { key: "configure-skills", label: "Configure agent skills" },
 ];
 export function availableActions(state: SyntheticsState) {
   return NEXT_ACTIONS.filter((option) => !state.nextStepsLog.some((entry) => entry.key === option.key));
@@ -96,7 +96,4 @@ export function availableActions(state: SyntheticsState) {
 export function unhandledCandidates(state: SyntheticsState) {
   const handled = new Set(state.records.filter((item) => item.id !== undefined).map((item) => item.candidate.key));
   return state.candidates.filter((candidate) => !handled.has(candidate.key));
-}
-export function canGoBack(state: SyntheticsState) {
-  return state.currentStep === "create" && state.createPhase !== "reviewing" && state.createPhase !== "creating";
 }

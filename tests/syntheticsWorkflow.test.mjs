@@ -85,6 +85,111 @@ async function firstPass(controller) {
   assert.equal(controller.getSnapshot().prompt, "nextAction");
 }
 
+test("the configure-skills next action records where a fresh install landed, relative to cwd", async () => {
+  const { controller } = setup({
+    getSkillStatus: async () => ({ installed: false, agents: [] }),
+    installSkill: async () => ({
+      installed: true,
+      agents: ["Claude Code", "Cursor"],
+      path: "/project/.agents/skills/synthetic-monitoring-checks",
+    }),
+  });
+  await firstPass(controller);
+  controller.answer("nextAction", "configure-skills");
+  await tick();
+  const entry = controller.getSnapshot().nextStepsLog.find((e) => e.key === "configure-skills");
+  assert.equal(entry.detail, "Wrote to .agents/skills/synthetic-monitoring-checks");
+  assert.equal(controller.getSnapshot().prompt, "nextAction");
+  controller.dispose();
+});
+
+test("an already-installed skill reads its path from getSkillStatus, not installSkill", async () => {
+  const { controller } = setup({
+    getSkillStatus: async () => ({
+      installed: true,
+      agents: ["Windsurf"],
+      path: "/project/.agents/skills/synthetic-monitoring-checks",
+    }),
+    installSkill: async () => assert.fail("already installed — should not reinstall"),
+  });
+  await firstPass(controller);
+  controller.answer("nextAction", "configure-skills");
+  await tick();
+  const entry = controller.getSnapshot().nextStepsLog.find((e) => e.key === "configure-skills");
+  assert.equal(entry.detail, "Wrote to .agents/skills/synthetic-monitoring-checks");
+  controller.dispose();
+});
+
+test("a browser-type check skips probes that can't run k6, but keeps every capable one", async () => {
+  const browserCandidate = {
+    ...first,
+    key: "ssl",
+    label: "ssl",
+    settings: { browser: { script: "" } },
+    probeCount: 3,
+  };
+  const probes = [
+    { id: 1, name: "Legacy", capabilities: { disableBrowserChecks: true } },
+    { id: 2, name: "NoV2", k6Versions: { v2: null } },
+    { id: 3, name: "Unreported", k6Versions: { v2: "unknown" } },
+    { id: 4, name: "London" },
+    { id: 5, name: "Paris", k6Versions: { v2: "2.3.1" } },
+  ];
+  const client = {
+    createCheck: async () => ({ id: 1 }),
+    updateCheck: () => assert.fail("unexpected update"),
+    getCheckAlerts: async () => [],
+    putCheckAlerts: async () => {},
+  };
+  const { controller } = setup({
+    candidatesFor: async () => [browserCandidate],
+    tryAutoSmSession: async () => ({ client, apiUrl: "https://sm.example", probes }),
+  });
+  await start(controller);
+  controller.answer("selection", ["ssl"]);
+  await tick();
+  await tick();
+  assert.deepEqual(controller.getSnapshot().records[0].probes, ["Unreported", "London", "Paris"]);
+  controller.dispose();
+});
+
+test("checks selected together draw probes from one shared, consistently filtered pool", async () => {
+  const uptimeCandidate = { ...first, key: "uptime", label: "uptime", probeCount: 3 };
+  const sslCandidate = {
+    ...second,
+    key: "ssl",
+    label: "ssl",
+    settings: { browser: { script: "" } },
+    probeCount: 1,
+  };
+  const probes = [
+    { id: 1, name: "Incapable", capabilities: { disableBrowserChecks: true } },
+    { id: 2, name: "London" },
+    { id: 3, name: "Paris" },
+    { id: 4, name: "Tokyo" },
+  ];
+  const client = {
+    createCheck: async () => ({ id: 1 }),
+    updateCheck: () => assert.fail("unexpected update"),
+    getCheckAlerts: async () => [],
+    putCheckAlerts: async () => {},
+  };
+  const { controller } = setup({
+    candidatesFor: async () => [uptimeCandidate, sslCandidate],
+    tryAutoSmSession: async () => ({ client, apiUrl: "https://sm.example", probes }),
+  });
+  await start(controller);
+  controller.answer("selection", ["uptime", "ssl"]);
+  await tick();
+  await tick();
+  const records = new Map(controller.getSnapshot().records.map((r) => [r.candidate.key, r]));
+  // ssl's single pick is the first of uptime's three, not some other probe
+  // it landed on only because it filters differently.
+  assert.deepEqual(records.get("uptime").probes, ["London", "Paris", "Tokyo"]);
+  assert.deepEqual(records.get("ssl").probes, ["London"]);
+  controller.dispose();
+});
+
 for (const prompt of ["baseUrl", "token"])
   test(`Back from ${prompt} returns to a working selection prompt and preserves the submitted selection`, async () => {
     const { controller, mutations } = setup({ tryAutoSmSession: () => assert.fail("auth was declined") });
@@ -143,6 +248,8 @@ test("export retains exact configurations and remote IDs from both creation pass
   assert.equal(controller.getSnapshot().prompt, "nextAction");
   controller.answer("nextAction", "export");
   await tick();
+  controller.answer("nextAction", "finish");
+  await tick();
   assert.equal(controller.getSnapshot().done, true);
   assert.deepEqual(mutations, ["first", "second"]);
   assert.deepEqual(Object.keys(exports[0][0]), ["first", "second"]);
@@ -173,6 +280,8 @@ for (const variant of ["empty", "declined", "failed"])
     controller.answer("browser", variant !== "declined");
     await tick();
     controller.answer("nextAction", "export");
+    await tick();
+    controller.answer("nextAction", "finish");
     await tick();
     assert.deepEqual([...exports[0][2]], [["first", 101]]);
     assert.deepEqual(Object.keys(exports[0][0]), ["first"]);
@@ -210,6 +319,8 @@ test("failed alerts remain incomplete after a successful later pass and export",
   controller.answer("selection", ["second"]);
   await tick();
   controller.answer("nextAction", "export");
+  await tick();
+  controller.answer("nextAction", "finish");
   await tick();
   const state = controller.getSnapshot();
   assert.equal(state.done, true);
@@ -311,6 +422,8 @@ test("a failed requested export survives returning from discovery", async () => 
   await tick();
   controller.answer("browser", false);
   await tick();
+  controller.answer("nextAction", "finish");
+  await tick();
   assert.equal(controller.getSnapshot().done, true);
   assert.equal(controller.getSnapshot().outcome, "incomplete");
   assert.deepEqual(events.at(-1), ["next-steps", { status: "failed" }]);
@@ -330,9 +443,12 @@ test("optional skill and discovery failures do not fail successful check setup",
   await tick();
   controller.answer("browser", true);
   await tick();
+  controller.answer("nextAction", "configure-skills");
+  await tick();
   controller.answer("nextAction", "finish");
   await tick();
   assert.equal(controller.getSnapshot().outcome, "ok");
-  assert.equal(events.find(([step]) => step === "skills")[1].status, "failed");
+  const skillEntry = controller.getSnapshot().nextStepsLog.find((entry) => entry.key === "configure-skills");
+  assert.equal(skillEntry.status, "failed");
   assert.equal(events.filter(([step]) => step === "analyze").at(-1)[1].status, "failed");
 });

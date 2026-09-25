@@ -23,6 +23,7 @@ export function createFrontendController(
       done: false,
       outcome: "incomplete",
       apps: [],
+      replayMaskingKnown: false,
       progress: 0,
     },
     {

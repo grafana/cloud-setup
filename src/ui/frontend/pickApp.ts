@@ -2,6 +2,7 @@ import path from "node:path";
 import { debugLog } from "../../debug.js";
 import type { StepProperties } from "../../telemetry.js";
 import { MIN_SPINNER_MS } from "../shared.js";
+import type { ReplayMasking } from "../../products/frontendO11y/instrument.js";
 import type { FrontendContext, FrontendOptions } from "./model.js";
 import type { FrontendServices } from "./services.js";
 
@@ -95,13 +96,22 @@ export async function pickApp(
   ctx.update({ instrumentation: { ...instrumentation, samplingRate } });
   await transition();
   const sessionReplay = await ctx.ask("replay");
-  ctx.update({ instrumentation: { ...instrumentation, samplingRate, sessionReplay } });
-  let replayMasking = ctx.get().instrumentation!.replayMasking;
+  // Reveal "enabled"/"disabled" right away — that much is genuinely decided
+  // — but replayMaskingKnown stays false, since `instrumentation.
+  // replayMasking` is still its placeholder default here, not a real
+  // choice. Without that flag the render would show "enabled (balanced)"
+  // before the user has actually been asked, or answered, the masking
+  // question below.
+  ctx.update({ instrumentation: { ...instrumentation, samplingRate, sessionReplay }, replayMaskingKnown: false });
+  let replayMasking: ReplayMasking = instrumentation.replayMasking;
   if (sessionReplay) {
     await transition();
     replayMasking = await ctx.ask("masking");
   }
-  ctx.update({ instrumentation: { ...instrumentation, samplingRate, sessionReplay, replayMasking } });
+  ctx.update({
+    instrumentation: { ...instrumentation, samplingRate, sessionReplay, replayMasking },
+    replayMaskingKnown: true,
+  });
   return {
     status: "ok",
     app_resolution: resolution,

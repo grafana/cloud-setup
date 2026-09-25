@@ -125,7 +125,12 @@ function revert(full: string, before: string | undefined): void {
 
 export interface NextjsInstrumentResult {
   componentFile?: string;
+  // Whether componentFile/layoutFile didn't exist before this run — read
+  // off the pre-run snapshots taken below, rather than assumed, since a
+  // re-run can find either already in place.
+  componentCreated?: boolean;
   layoutFile?: string;
+  layoutCreated?: boolean;
   detail?: string;
   // Whether instrumentation finished, which here means the component got
   // wired into a root layout.
@@ -258,5 +263,11 @@ export async function instrumentNextjs(
     }
   }
 
-  return { componentFile, layoutFile, complete: layoutFile !== undefined };
+  return {
+    componentFile,
+    componentCreated: componentSnapshots.get(componentFile) === undefined,
+    layoutFile,
+    layoutCreated: layoutFile !== undefined && layoutSnapshots.get(layoutFile) === undefined,
+    complete: layoutFile !== undefined,
+  };
 }

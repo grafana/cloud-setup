@@ -48,30 +48,52 @@ export function FrontendApp({ initialStackUrl, forceGcxInstall, initialAppName, 
           <StepList
             labels={FRONTEND_STEPS}
             state={state}
+            // Same line as the row's own label, same muted color as the
+            // analogous "Find additional synthetic checks 45%" progress in
+            // the synthetics wizard — a live percent while active. StepList
+            // only renders this while the row is active, so it can't linger
+            // once the step finishes — the file it touched is a result by
+            // then, not a live status, and moves to `detail` below.
+            suffix={(step) => (step === "instrument" && config ? `${state.progress}%` : undefined)}
             detail={(step) => (
               <>
                 {step === "gcx" && state.gcx.error && <Text color={COLORS.MUTED}> {state.gcx.error}</Text>}
                 {step === "auth" && state.auth.error && (
                   <Text color={COLORS.MUTED}> Skipping auto-lookup ({state.auth.error})</Text>
                 )}
+                {/* Result lines (what got picked, what file was touched),
+                not a caveat — same 5-space indent CheckResults uses in the
+                synthetics wizard, not the 1-space gcx/auth caveat offset
+                above. */}
                 {step === "pick-app" && config && (
                   <Text color={COLORS.MUTED}>
-                    {" "}
-                    app: {config.name}
-                    {"\n"} sampling: {Math.round((config.samplingRate ?? 1) * 100)}%{"\n"} replay:{" "}
-                    {config.sessionReplay ? `enabled (${config.replayMasking})` : "disabled"}
+                    {"     "}
+                    App: {config.name}
+                    {"\n     "}Sampling: {Math.round((config.samplingRate ?? 1) * 100)}%{"\n     "}Replay:{" "}
+                    {config.sessionReplay
+                      ? `enabled${state.replayMaskingKnown ? ` (${config.replayMasking})` : ""}`
+                      : "disabled"}
                   </Text>
                 )}
-                {step === "instrument" && config && (
-                  <Text color={COLORS.MUTED}>
-                    {" "}
-                    {state.progress}%{state.instrumentedFile ? `: ${state.instrumentedFile}` : ""}
-                  </Text>
-                )}
+                {/* One file per line rather than joined on one — a
+                Next.js run can touch two (component + layout), and
+                cramming both onto one line runs long fast. */}
+                {step === "instrument" &&
+                  state.instrumentedFiles?.map(({ file, created }) => (
+                    <Text key={file} color={COLORS.MUTED}>
+                      {"     "}
+                      {created ? "Created" : "Edited"} {file}
+                    </Text>
+                  ))}
               </>
             )}
           />
-          <Box marginTop={state.prompt || state.done || state.failureSummary ? 1 : 0} flexDirection="column">
+          {/* Always 1, not state.prompt ? 1 : 0 — controller.answer()
+          clears prompt synchronously, one render before the resumed step's
+          own update (e.g. auth's subPhase) catches up. A body that doesn't
+          depend on prompt (like CommonStepBody's auth text) would render
+          unchanged but suddenly hugging the row above for that one frame. */}
+          <Box marginTop={1} flexDirection="column">
             {state.failureSummary ? (
               <>
                 <Text color={COLORS.BAD}>Setup incomplete. {state.failureSummary}</Text>
@@ -137,5 +159,9 @@ export async function runFrontendUI(
     </SetupUrls>,
     { exitOnCtrlC: false },
   );
-  await app.waitUntilExit();
+  // Ink rejects this promise for an error exit, but that error's message is
+  // already on screen (the "Setup incomplete" text) and hardExit already
+  // owns the real process.exit(code) below — letting the rejection reach
+  // main()'s own catch would just print the same message a second time.
+  await app.waitUntilExit().catch(() => {});
 }

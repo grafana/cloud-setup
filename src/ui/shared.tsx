@@ -117,7 +117,11 @@ export function useHardExit(command: Command, stackUrl: string): HardExit {
     // The screen already rendered failures. Passing an Error to Ink would
     // reject waitUntilExit(), causing cli.ts to print it again and exit early.
     exit();
-    if (typeof errorOrMessage === "string") console.log(errorOrMessage);
+    // Ink leaves the cursor wherever the last frame's content ended, not
+    // necessarily at column 0 of a fresh line — without the leading "\n"
+    // this message can land glued onto the tail of the last rendered line
+    // instead of its own line.
+    if (typeof errorOrMessage === "string") console.log(`\n${errorOrMessage}`);
 
     recordRun(command, currentStackUrl.current, outcome, Date.now() - startedAt.current);
 
@@ -157,18 +161,21 @@ export function useHardExit(command: Command, stackUrl: string): HardExit {
   return hardExit;
 }
 
-// The one "press enter to continue" phrasing, shared by the intro
-// screens, every y/n confirm (with the "or n to skip" suffix), and the
-// select step's footer — spelling out the actual key rather than a bare
-// "(Y/n)" reads more like an instruction than a notation to decode.
-export function EnterHint({ suffix }: { suffix?: string } = {}) {
+// The one "press enter to ..." phrasing, shared by the intro screens,
+// every y/n confirm (with the "or n to skip" suffix), the select step's
+// footer, and free-text fields (which pass action="submit" — Enter there
+// submits the typed value, it doesn't just move past the screen) —
+// spelling out the actual key rather than a bare "(Y/n)" reads more like
+// an instruction than a notation to decode.
+export function EnterHint({ suffix, action = "continue" }: { suffix?: string; action?: string } = {}) {
   return (
     <Text color={COLORS.MUTED}>
       press{" "}
       <Text color={COLORS.ACCENT} bold>
         {ICONS.ENTER} enter
       </Text>{" "}
-      to continue{suffix ? `, ${suffix}` : ""}
+      to {action}
+      {suffix ? `, ${suffix}` : ""}
     </Text>
   );
 }
@@ -186,6 +193,9 @@ export function Link({ children }: { children: ReactNode }) {
   );
 }
 
+// `label` shouldn't add its own trailing "…" — the spinner (or its static
+// "…" fallback) in front already signals "in progress"; one at both ends
+// just doubles up on the same signal.
 export function Working({ label }: { label: string }) {
   return (
     <Text>
