@@ -192,6 +192,49 @@ test("checks selected together draw probes from one shared, consistently filtere
   controller.dispose();
 });
 
+for (const automatic of [true, false])
+  test(`regional probe selection reaches check creation with ${automatic ? "automatic" : "manual"} connection`, async () => {
+    const uptime = { ...first, probeCount: 3 };
+    const ssl = { ...second, settings: { browser: { script: "" } } };
+    const apiUrl = "https://synthetic-monitoring-api-eu-west-2.grafana.net";
+    const probes = [
+      { id: 1, name: "London", region: "EMEA", latitude: 51.51, longitude: -0.13 },
+      { id: 2, name: "Paris", region: "EMEA", latitude: 48.86, longitude: 2.35 },
+      { id: 3, name: "Tokyo", region: "APAC", latitude: 35.68, longitude: 139.65 },
+      { id: 4, name: "Frankfurt", region: "EMEA", latitude: 50.11, longitude: 8.68, k6Versions: { v2: null } },
+      { id: 5, name: "NewYork", region: "AMER", latitude: 40.71, longitude: -74.01 },
+    ];
+    const client = {
+      listProbes: async () => probes,
+      createCheck: async () => ({ id: 1 }),
+      getCheckAlerts: async () => [],
+      putCheckAlerts: async () => {},
+    };
+    let planned;
+    const { controller } = setup({
+      candidatesFor: async () => [uptime, ssl],
+      tryAutoSmSession: async () => ({ client, apiUrl, probes }),
+      createClient: () => client,
+      buildPlan: async (config) => {
+        planned = config;
+        return { actions: Object.keys(config).map((name) => ({ kind: "create", name, payload: { job: name } })) };
+      },
+    });
+    await start(controller, automatic);
+    controller.answer("selection", ["first", "second"]);
+    await tick();
+    if (!automatic) {
+      controller.answer("baseUrl", apiUrl);
+      await tick();
+      controller.answer("token", "test-token");
+    }
+    await tick();
+    assert.deepEqual(planned.first.probes, ["Paris", "NewYork", "Tokyo"]);
+    assert.deepEqual(planned.second.probes, ["Paris"]);
+    assert.deepEqual(controller.getSnapshot().records[0].probes, planned.first.probes);
+    controller.dispose();
+  });
+
 for (const prompt of ["baseUrl", "token"])
   test(`Back from ${prompt} returns to a working selection prompt and preserves the submitted selection`, async () => {
     const { controller, mutations } = setup({ tryAutoSmSession: () => assert.fail("auth was declined") });

@@ -9,6 +9,9 @@ export const K6_V2_CHANNEL = "v2";
 export interface Probe {
   id: number;
   name: string;
+  region?: string;
+  latitude?: number;
+  longitude?: number;
   // Older probes predating the k6-based check runner report these — they
   // can't run scripted or browser checks (SSL/broken-links here both use
   // `settings.browser`, i.e. a k6 script) even though they're otherwise

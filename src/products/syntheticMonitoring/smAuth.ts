@@ -4,8 +4,8 @@ import { SmClient, type Probe } from "./api.js";
 export interface AutoSmSession {
   client: SmClient;
   probes: Probe[];
-  // Best-effort real SM API URL, for display and the Terraform export's
-  // `sm_url` field only — never used to build requests in proxy mode.
+  // Best-effort real SM API URL, for probe location preferences, display,
+  // and Terraform export. Never used to build requests in proxy mode.
   apiUrl?: string;
 }
 
@@ -25,9 +25,9 @@ async function discoverDatasourceUid(proxyBase: string, accessToken: string): Pr
 
 // Mirrors gcx's own discoverSMURL (github.com/grafana/gcx
 // internal/providers/synth/provider.go) — reads the real SM API base URL
-// out of the SM plugin's own settings. Best-effort and display-only: a
-// failure here never blocks check creation, only means the Terraform
-// export's sm_url field is left for the user to fill in.
+// out of the SM plugin's own settings. A failure never blocks check creation:
+// probe selection falls back to region diversity and Terraform's sm_url is
+// left for the user to fill in.
 async function discoverApiUrl(proxyBase: string, accessToken: string): Promise<string | undefined> {
   try {
     const res = await fetch(`${proxyBase}/api/plugins/grafana-synthetic-monitoring-app/settings`, {

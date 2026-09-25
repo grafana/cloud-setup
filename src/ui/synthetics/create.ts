@@ -1,5 +1,6 @@
 import { K6_V2_CHANNEL, type Probe } from "../../products/syntheticMonitoring/api.js";
 import type { Candidate } from "../../products/syntheticMonitoring/discover.js";
+import { orderProbes } from "../../products/syntheticMonitoring/probes.js";
 import type { SyntheticConfig } from "../../products/syntheticMonitoring/types.js";
 import type { StepProperties } from "../../telemetry.js";
 import { MIN_SPINNER_MS } from "../shared.js";
@@ -34,7 +35,7 @@ function supportsK6Channel(probe: Probe): boolean {
 // Only fall back to the full set if filtering would leave none at all (a
 // check with zero probes is a worse outcome than one that might not run on
 // every probe it was told to try).
-function orderedProbes(probes: Probe[], selected: Candidate[]): Probe[] {
+function eligibleProbes(probes: Probe[], selected: Candidate[]): Probe[] {
   if (!selected.some((candidate) => candidate.settings.browser)) return probes;
   const capable = probes.filter((probe) => !probe.capabilities?.disableBrowserChecks && supportsK6Channel(probe));
   return capable.length ? capable : probes;
@@ -52,7 +53,7 @@ export async function createChecks(
   ctx.update({ createPhase: "creating" });
   const selected = unhandledCandidates(ctx.get()).filter((candidate) => chosen.includes(candidate.key));
   if (!session.probes.length) throw new Error("No probes are available on this tenant.");
-  const probePool = orderedProbes(session.probes, selected);
+  const probePool = orderProbes(eligibleProbes(session.probes, selected), session.url);
   let items: CreationItem[] = selected.map((candidate) => {
     const probes = probePool.slice(0, candidate.probeCount).map((probe) => probe.name);
     return {
