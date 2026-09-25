@@ -78,7 +78,9 @@ export function SyntheticsApp({ initialBaseUrl, initialTargetUrl, initialStackUr
             {state.failureSummary || state.done ? (
               <>
                 {(!state.failureSummary || state.records.length > 0) && (
-                  <ChecksSummary items={state.records} stackUrl={initialStackUrl} />
+                  <Box flexDirection="column" marginBottom={setupFailed ? 1 : 0}>
+                    <ChecksSummary items={state.records} stackUrl={initialStackUrl} />
+                  </Box>
                 )}
                 {setupFailed && (
                   <>
