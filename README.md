@@ -1,6 +1,7 @@
 # 🦕 @grafana/cloud-setup
 
-> **⚠️ Important:** This is a development preview and may change in future releases.
+> [!IMPORTANT]
+> This tool is in _public preview_ and may change in future releases.
 
 Grafana Cloud's interactive setup wizard, powered by Grafana Assistant.
 
