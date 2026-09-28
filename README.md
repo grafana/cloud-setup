@@ -11,6 +11,7 @@ Sets up **Synthetics** or **Frontend Observability** in your project, installing
 
 - Node.js >= 22.6.0
 - A Grafana Cloud stack (e.g. `https://my-team.grafana.net`)
+  - Don't have one? [Sign up for free](https://grafana.com/auth/sign-up/create-user)
 
 ### Usage
 
