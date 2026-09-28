@@ -1,9 +1,9 @@
 import { Box, render, Text } from "ink";
-import { GCX_INSTALL_COMMAND } from "../gcx.js";
 import { COLORS } from "../theme.js";
 import { SetupUrls } from "./SetupUrls.js";
 import { EnterHint, Header, Link, requireInteractiveTerminal, type HardExit } from "./shared.js";
 import { CommonStepBody } from "./workflow/CommonStepBody.js";
+import { GcxInstallFailure } from "./workflow/GcxInstallFailure.js";
 import { StepList } from "./workflow/StepList.js";
 import { useWorkflow } from "./workflow/useWorkflow.js";
 import { useWorkflowInput } from "./workflow/useWorkflowInput.js";
@@ -58,19 +58,11 @@ export function FrontendApp({ initialStackUrl, forceGcxInstall, initialAppName, 
             suffix={(step) => (step === "instrument" && config ? `${state.progress}%` : undefined)}
             detail={(step) => (
               <>
-                {step === "gcx" && state.gcx.error && (
-                  <>
-                    <Text color={COLORS.MUTED}> {state.gcx.error}</Text>
-                    <Text color={COLORS.MUTED}> Retry later: {GCX_INSTALL_COMMAND}</Text>
-                  </>
-                )}
+                {step === "gcx" && state.gcx.error && <GcxInstallFailure error={state.gcx.error} />}
                 {step === "auth" && state.auth.error && (
                   <Text color={COLORS.MUTED}> Skipping auto-lookup ({state.auth.error})</Text>
                 )}
-                {/* Result lines (what got picked, what file was touched),
-                not a caveat — same 5-space indent CheckResults uses in the
-                synthetics wizard, not the 1-space gcx/auth caveat offset
-                above. */}
+                {/* Result lines use the same five-space indent as other step details. */}
                 {step === "pick-app" && config && (
                   <Text color={COLORS.MUTED}>
                     {"     "}
