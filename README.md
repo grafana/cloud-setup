@@ -1,6 +1,7 @@
 # 🦕 @grafana/cloud-setup
 
-> **⚠️ Important:** This is a development preview and may change in future releases.
+> [!IMPORTANT]
+> This tool is in _public preview_ and may change in future releases.
 
 Grafana Cloud's interactive setup wizard, powered by Grafana Assistant.
 
@@ -10,6 +11,7 @@ Sets up **Synthetics** or **Frontend Observability** in your project, installing
 
 - Node.js >= 22.6.0
 - A Grafana Cloud stack (e.g. `https://my-team.grafana.net`)
+  - Don't have one? [Sign up for free](https://grafana.com/auth/sign-up/create-user)
 
 ### Usage
 
@@ -17,7 +19,7 @@ Sets up **Synthetics** or **Frontend Observability** in your project, installing
 npx @grafana/cloud-setup <command> # e.g. synthetics
 ```
 
-<img alt="Screenshot 2026-09-21 at 12 03 22" src="https://github.com/user-attachments/assets/50cb5a9c-41d9-48b4-b213-7ba537704ca5" />
+<img src="/media/screenshot.png" />
 
 ### How is this different from `gcx`?
 
@@ -59,17 +61,9 @@ npx @grafana/cloud-setup frontend --stack my-team
 | `--folder <path>` | Project directory to set up (default: `.`)                                 |
 | `--debug`         | Log raw Assistant tool calls/responses to a temp file, for troubleshooting |
 
-## Development
-
-```sh
-npm install
-npm run build
-npm link
-```
-
 ## Telemetry
 
-Reports anonymous usage statistics by default. Set `CLOUD_SETUP_TELEMETRY=disabled` or `DO_NOT_TRACK=1` to opt out.
+Set `CLOUD_SETUP_TELEMETRY=disabled` or `DO_NOT_TRACK=1` to opt out from anonymous usage statistics.
 
 See `src/telemetry.ts` for what's collected.
 
@@ -79,4 +73,4 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the development setup and toolchain.
 
 ## License
 
-Apache-2.0
+[Apache-2.0](./LICENSE)
