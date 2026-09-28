@@ -86,11 +86,10 @@ export const ALERT_PRESETS: AlertPreset[] = [
     name: "TLSTargetCertificateCloseToExpiring",
     threshold: 30,
     usesPeriod: false,
-    // http and tcp only, so this does not attach to the wizard's own "SSL"
-    // candidate, which is a k6 browser check. Not a gap worth routing
-    // around: sslCheckScript already sets failOnNearExpiry with
-    // warnDays: 30, so an expiring cert fails the check and probe failures
-    // fire at the same threshold.
+    // http and tcp only — this is what covers a soon-to-expire certificate
+    // on the wizard's own https "Uptime and SSL" candidate (discover.ts),
+    // which is a plain http check rather than a dedicated browser-script
+    // SSL check.
     checkTypes: ["http", "tcp"],
     requiresCertificate: true,
   },
