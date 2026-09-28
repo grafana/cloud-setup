@@ -1,5 +1,6 @@
 import { Box, Text } from "ink";
 import Spinner from "ink-spinner";
+import { GCX_INSTALL_COMMAND } from "../../gcx.js";
 import { ANIMATE, COLORS, ICONS } from "../../theme.js";
 import { Link, Working } from "../shared.js";
 import { StepList } from "../workflow/StepList.js";
@@ -20,9 +21,14 @@ export function SyntheticsProgress({ state }: { state: SyntheticsState }) {
           <>
             {step === "create" && <CheckResults items={firstPass} />}
             {step === "gcx" && state.gcx.error && (
-              <StepDetail>
-                <Text color={COLORS.MUTED}>{state.gcx.error}</Text>
-              </StepDetail>
+              <>
+                <StepDetail>
+                  <Text color={COLORS.MUTED}>{state.gcx.error}</Text>
+                </StepDetail>
+                <StepDetail>
+                  <Text color={COLORS.MUTED}>Retry later: {GCX_INSTALL_COMMAND}</Text>
+                </StepDetail>
+              </>
             )}
             {step === "auth" && state.auth.error && (
               <StepDetail>
