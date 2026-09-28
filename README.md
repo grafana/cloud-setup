@@ -60,14 +60,6 @@ npx @grafana/cloud-setup frontend --stack my-team
 | `--folder <path>` | Project directory to set up (default: `.`)                                 |
 | `--debug`         | Log raw Assistant tool calls/responses to a temp file, for troubleshooting |
 
-## Development
-
-```sh
-npm install
-npm run build
-npm link
-```
-
 ## Telemetry
 
 Set `CLOUD_SETUP_TELEMETRY=disabled` or `DO_NOT_TRACK=1` to opt out from anonymous usage statistics.
