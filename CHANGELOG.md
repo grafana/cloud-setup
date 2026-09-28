@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.4.0](https://github.com/grafana/cloud-setup/compare/v0.3.0...v0.4.0) (2026-09-28)
+
+
+### Features
+
+* Select synthetic probes by stack region ([#71](https://github.com/grafana/cloud-setup/issues/71)) ([3a375fd](https://github.com/grafana/cloud-setup/commit/3a375fd92a1f75494495072554be6f6dcd33b17c))
+
+
+### Bug Fixes
+
+* Drop the standalone SSL check, cover certs via the Uptime check's alert ([#77](https://github.com/grafana/cloud-setup/issues/77)) ([e9bfce3](https://github.com/grafana/cloud-setup/commit/e9bfce3a7b5f9223ef6117e6a43af73dba383d4c))
+* Explain permission failures during synthetics setup ([#70](https://github.com/grafana/cloud-setup/issues/70)) ([448f3f7](https://github.com/grafana/cloud-setup/commit/448f3f7e352ea20c40e7d481fe083c2c3b656978))
+* Improve Terraform export's import script and README ([#75](https://github.com/grafana/cloud-setup/issues/75)) ([c3518f6](https://github.com/grafana/cloud-setup/commit/c3518f6a315b78291bc8a4b1dd1531aa0c03c47b))
+* readme improvements ([#76](https://github.com/grafana/cloud-setup/issues/76)) ([04d1927](https://github.com/grafana/cloud-setup/commit/04d19270ed34766d0024fc053771aea3491297ed))
+* Show retry guidance after gcx installation fails ([#74](https://github.com/grafana/cloud-setup/issues/74)) ([7f73626](https://github.com/grafana/cloud-setup/commit/7f73626d03ce5f9bdf409ddf54a964ab6172afe9))
+
 ## [0.3.0](https://github.com/grafana/cloud-setup/compare/v0.2.0...v0.3.0) (2026-09-25)
 
 
