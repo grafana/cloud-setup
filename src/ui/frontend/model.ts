@@ -22,6 +22,7 @@ export interface FrontendState extends WorkflowState<FrontendStep>, CommonState 
   target?: Exclude<FrontendTarget, { kind: "unsupported" }>;
   apps: FaroApp[];
   appUrl?: string;
+  collectorUrlInput?: { value: string; error?: string };
   instrumentation?: FaroInstrumentation;
   // instrumentation.replayMasking is set the moment sessionReplay is known
   // (still holding its placeholder default), so its own presence can't

@@ -49,7 +49,7 @@ function linkCheckScript(url: string): string {
     "export default async function () {",
     "  const page = await browser.newPage();",
     "  try {",
-    `    await page.goto('${url}', { waitUntil: 'load' });`,
+    `    await page.goto(${JSON.stringify(url)}, { waitUntil: 'load' });`,
     "    await checkLinks(page);",
     "  } finally {",
     "    await page.close();",

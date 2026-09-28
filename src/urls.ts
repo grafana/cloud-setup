@@ -2,6 +2,24 @@ export type UrlKind = "target" | "stack";
 
 export type UrlResult = { url: string; error?: never } | { url?: never; error: string };
 
+// Collector URLs are copied from the app's setup page. Require the full
+// endpoint rather than guessing a scheme or repairing malformed input.
+export function validateCollectorUrl(value: string): UrlResult {
+  const raw = value.trim();
+  const invalid = { error: "Enter a valid Faro collector URL starting with http:// or https://." };
+  if (!/^https?:\/\/[^/]/i.test(raw) || /[\s\\]/.test(raw)) return invalid;
+  let parsed: URL;
+  try {
+    parsed = new URL(raw);
+  } catch {
+    return invalid;
+  }
+  if (!parsed.hostname) return invalid;
+  if (parsed.username || parsed.password) return { error: "Enter a collector URL without a username or password." };
+  // Keep the supplied path, query, and escaping unchanged.
+  return { url: raw };
+}
+
 // Validate before URL's permissive parser can repair malformed schemes or
 // backslashes. A missing scheme is fine, but an incomplete one is a typo.
 export function validateSetupUrl(value: string, kind: UrlKind): UrlResult {

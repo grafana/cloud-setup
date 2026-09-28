@@ -57,7 +57,16 @@ export function FrontendPrompts({
         </Box>
       );
     case "collectorUrl":
-      return <PromptInput label="Faro collector URL" onSubmit={(value) => controller.answer("collectorUrl", value)} />;
+      return (
+        <Box flexDirection="column">
+          {state.collectorUrlInput?.error && <Text color={COLORS.BAD}>{state.collectorUrlInput.error}</Text>}
+          <PromptInput
+            label="Faro collector URL"
+            initialValue={state.collectorUrlInput?.value}
+            onSubmit={(value) => controller.answer("collectorUrl", value)}
+          />
+        </Box>
+      );
     case "sampling":
       return (
         <PromptInput
