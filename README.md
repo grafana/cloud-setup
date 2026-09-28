@@ -73,4 +73,4 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the development setup and toolchain.
 
 ## License
 
-Apache-2.0
+[Apache-2.0](./LICENSE)
