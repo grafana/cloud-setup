@@ -63,7 +63,7 @@ test("missing and malformed URLs cannot be normalized into accepted setup inputs
     "https://example.com\\path",
     "https://test-user@example.com",
   ]) {
-    for (const kind of ["target", "stack"]) {
+    for (const kind of ["target", "stack", "collector"]) {
       assert.equal(typeof validateSetupUrl(raw, kind).error, "string", `${kind}: ${JSON.stringify(raw)}`);
     }
   }

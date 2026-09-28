@@ -1,6 +1,5 @@
 import path from "node:path";
 import { debugLog } from "../../debug.js";
-import { validateCollectorUrl } from "../../urls.js";
 import type { StepProperties } from "../../telemetry.js";
 import { MIN_SPINNER_MS } from "../shared.js";
 import type { ReplayMasking } from "../../products/frontendO11y/instrument.js";
@@ -75,15 +74,7 @@ export async function pickApp(
     } else {
       name = appName ?? services.readPkgName(cwd) ?? path.basename(cwd);
       services.openFrontendO11ySetupPage(stackUrl);
-      for (;;) {
-        const value = await ctx.ask("collectorUrl");
-        const result = validateCollectorUrl(value);
-        ctx.update({ collectorUrlInput: { value, error: result.error } });
-        if (result.url !== undefined) {
-          collectorUrl = result.url;
-          break;
-        }
-      }
+      collectorUrl = await ctx.ask("collectorUrl");
     }
   } catch (error) {
     ctx.update({ error: error instanceof Error ? error.message : String(error) });

@@ -2,6 +2,7 @@ import { Box, Text } from "ink";
 import type { ReplayMasking } from "../../products/frontendO11y/instrument.js";
 import { COLORS } from "../../theme.js";
 import { SelectMenu } from "../SelectMenu.js";
+import { UrlInput } from "../UrlInput.js";
 import { EnterHint, Link } from "../shared.js";
 import { PromptInput } from "../workflow/PromptInput.js";
 import type { WorkflowController } from "../workflow/controller.js";
@@ -57,16 +58,7 @@ export function FrontendPrompts({
         </Box>
       );
     case "collectorUrl":
-      return (
-        <Box flexDirection="column">
-          {state.collectorUrlInput?.error && <Text color={COLORS.BAD}>{state.collectorUrlInput.error}</Text>}
-          <PromptInput
-            label="Faro collector URL"
-            initialValue={state.collectorUrlInput?.value}
-            onSubmit={(value) => controller.answer("collectorUrl", value)}
-          />
-        </Box>
-      );
+      return <UrlInput kind="collector" onSubmit={(url) => controller.answer("collectorUrl", url)} />;
     case "sampling":
       return (
         <PromptInput
