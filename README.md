@@ -70,7 +70,7 @@ npm link
 
 ## Telemetry
 
-Reports anonymous usage statistics by default. Set `CLOUD_SETUP_TELEMETRY=disabled` or `DO_NOT_TRACK=1` to opt out.
+Set `CLOUD_SETUP_TELEMETRY=disabled` or `DO_NOT_TRACK=1` to opt out from anonymous usage statistics.
 
 See `src/telemetry.ts` for what's collected.
 
