@@ -16,7 +16,7 @@ export function UrlInput({
 }: {
   label: string;
   question: string;
-  hint: string;
+  hint?: string;
   validate: (value: string) => UrlResult;
   initialValue?: string;
   onSubmit: (url: string) => void;
@@ -37,7 +37,7 @@ export function UrlInput({
         </Text>
       )}
       <Text>{question}</Text>
-      <Text color={COLORS.MUTED}>{hint}</Text>
+      {hint && <Text color={COLORS.MUTED}>{hint}</Text>}
       <Box>
         <Text>{label}: </Text>
         <EditableTextInput initialValue={initialValue} onSubmit={handleSubmit} />

@@ -63,7 +63,6 @@ export function FrontendPrompts({
         <UrlInput
           label="Faro collector URL"
           question="What's the Faro collector URL from your app's setup page?"
-          hint="You can omit https://, but include the full collector path and app key."
           validate={(value) => validateUrl(value, "collector")}
           onSubmit={(url) => controller.answer("collectorUrl", url)}
         />
