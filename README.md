@@ -5,7 +5,7 @@
 
 Grafana Cloud's interactive setup wizard, powered by Grafana Assistant.
 
-Sets up **Synthetics** or **Frontend Observability** in your project, installing `gcx` and agent skills along the way.
+Sets up **Synthetics** or **Frontend Observability** in your project, installing [gcx](https://grafana.com/docs/grafana-cloud/ai-tools/gcx/overview/) and agent skills along the way.
 
 ### Requirements
 
