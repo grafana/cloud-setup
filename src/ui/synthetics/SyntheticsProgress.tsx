@@ -3,8 +3,9 @@ import Spinner from "ink-spinner";
 import { ANIMATE, COLORS, ICONS } from "../../theme.js";
 import { Link, Working } from "../shared.js";
 import { StepList } from "../workflow/StepList.js";
+import { GcxInstallFailure } from "../workflow/GcxInstallFailure.js";
+import { StepDetail } from "../workflow/StepDetail.js";
 import { CheckResults } from "./CheckResults.js";
-import { StepDetail } from "./StepDetail.js";
 import { SYNTHETICS_STEPS, type SyntheticsState } from "./model.js";
 
 export function SyntheticsProgress({ state }: { state: SyntheticsState }) {
@@ -19,11 +20,7 @@ export function SyntheticsProgress({ state }: { state: SyntheticsState }) {
         detail={(step) => (
           <>
             {step === "create" && <CheckResults items={firstPass} />}
-            {step === "gcx" && state.gcx.error && (
-              <StepDetail>
-                <Text color={COLORS.MUTED}>{state.gcx.error}</Text>
-              </StepDetail>
-            )}
+            {step === "gcx" && state.gcx.error && <GcxInstallFailure error={state.gcx.error} />}
             {step === "auth" && state.auth.error && (
               <StepDetail>
                 <Text color={COLORS.MUTED}>

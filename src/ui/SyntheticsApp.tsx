@@ -10,7 +10,7 @@ import { unhandledCandidates } from "./synthetics/model.js";
 import { ChecksSummary } from "./synthetics/CheckResults.js";
 import { SyntheticsPrompts } from "./synthetics/SyntheticsPrompts.js";
 import { SyntheticsProgress } from "./synthetics/SyntheticsProgress.js";
-import { WrappedText } from "./synthetics/StepDetail.js";
+import { WrappedText } from "./workflow/StepDetail.js";
 
 interface Props {
   initialBaseUrl?: string;

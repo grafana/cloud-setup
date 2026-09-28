@@ -3,7 +3,7 @@ import Spinner from "ink-spinner";
 import { COLORS, ICONS } from "../../theme.js";
 import { Link } from "../shared.js";
 import type { CreationItem } from "./model.js";
-import { StepDetail } from "./StepDetail.js";
+import { StepDetail } from "../workflow/StepDetail.js";
 
 export function CheckResults({ items }: { items: CreationItem[] }) {
   return (
