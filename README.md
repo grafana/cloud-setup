@@ -17,7 +17,7 @@ Sets up **Synthetics** or **Frontend Observability** in your project, installing
 npx @grafana/cloud-setup <command> # e.g. synthetics
 ```
 
-<img src="https://github.com/user-attachments/assets/50cb5a9c-41d9-48b4-b213-7ba537704ca5" />
+<img src="/media/screenshot.png" />
 
 ### How is this different from `gcx`?
 
