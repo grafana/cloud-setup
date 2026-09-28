@@ -5,7 +5,7 @@ import { test } from "node:test";
 import { stripVTControlCharacters } from "node:util";
 import React from "react";
 import { render } from "ink";
-import { validateSetupUrl } from "../dist/urls.js";
+import { validateUrl } from "../dist/urls.js";
 import { createFrontendController } from "../dist/ui/frontend/controller.js";
 import { frontendServices } from "../dist/ui/frontend/services.js";
 import { FrontendApp } from "../dist/ui/FrontendApp.js";
@@ -30,7 +30,7 @@ const invalidUrls = [
 ];
 for (const value of invalidUrls)
   test(`rejects invalid collector URL ${JSON.stringify(value)}`, () => {
-    const result = validateSetupUrl(value, "collector");
+    const result = validateUrl(value, "collector");
     assert.ok(result.error);
     assert.equal(result.url, undefined);
   });
@@ -42,7 +42,7 @@ for (const value of [
   "https://[::1]:1234/collect/key",
 ])
   test(`preserves valid collector URL ${value}`, () => {
-    assert.deepEqual(validateSetupUrl(`  ${value}  `, "collector"), { url: value });
+    assert.deepEqual(validateUrl(`  ${value}  `, "collector"), { url: value });
   });
 
 test("collector URLs use the same HTTPS default and normalization as target URLs", () => {
@@ -56,8 +56,8 @@ test("collector URLs use the same HTTPS default and normalization as target URLs
     ],
     ["collector.example/collect/ключ", "https://collector.example/collect/%D0%BA%D0%BB%D1%8E%D1%87"],
   ]) {
-    assert.deepEqual(validateSetupUrl(input, "collector"), { url: expected });
-    assert.deepEqual(validateSetupUrl(input, "collector"), validateSetupUrl(input, "target"));
+    assert.deepEqual(validateUrl(input, "collector"), { url: expected });
+    assert.deepEqual(validateUrl(input, "collector"), validateUrl(input, "target"));
   }
 });
 
@@ -108,7 +108,7 @@ test("invalid collector submissions keep the workflow at the prompt until correc
     await term.send("\r");
     const state = controller.getSnapshot();
     assert.equal(state.prompt, "collectorUrl");
-    assert.ok(term.frame().includes(validateSetupUrl(value, "collector").error));
+    assert.ok(term.frame().includes(validateUrl(value, "collector").error));
     assert.ok(term.frame().includes(`Faro collector URL: ${value}`.trimEnd()), JSON.stringify(value));
     assert.equal(state.instrumentation, undefined);
   }

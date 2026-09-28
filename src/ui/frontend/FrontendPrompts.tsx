@@ -1,6 +1,7 @@
 import { Box, Text } from "ink";
 import type { ReplayMasking } from "../../products/frontendO11y/instrument.js";
 import { COLORS } from "../../theme.js";
+import { validateUrl } from "../../urls.js";
 import { SelectMenu } from "../SelectMenu.js";
 import { UrlInput } from "../UrlInput.js";
 import { EnterHint, Link } from "../shared.js";
@@ -58,7 +59,15 @@ export function FrontendPrompts({
         </Box>
       );
     case "collectorUrl":
-      return <UrlInput kind="collector" onSubmit={(url) => controller.answer("collectorUrl", url)} />;
+      return (
+        <UrlInput
+          label="Faro collector URL"
+          question="What's the Faro collector URL from your app's setup page?"
+          hint="You can omit https://, but include the full collector path and app key."
+          validate={(value) => validateUrl(value, "collector")}
+          onSubmit={(url) => controller.answer("collectorUrl", url)}
+        />
+      );
     case "sampling":
       return (
         <PromptInput

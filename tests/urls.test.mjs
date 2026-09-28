@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { test } from "node:test";
-import { validateSetupUrl } from "../dist/urls.js";
+import { validateUrl } from "../dist/urls.js";
 import { parseCommandOptions } from "../dist/commands/shared.js";
 
 test("setup URLs accept HTTP(S), bare hostnames, ports, and IPv6", () => {
@@ -18,28 +18,28 @@ test("setup URLs accept HTTP(S), bare hostnames, ports, and IPv6", () => {
     ["example.com/api/health?ready=1", "target", "https://example.com/api/health?ready=1"],
     ["https://example.com/a%20b", "target", "https://example.com/a%20b"],
   ]) {
-    assert.deepEqual(validateSetupUrl(raw, kind), { url: expected });
+    assert.deepEqual(validateUrl(raw, kind), { url: expected });
   }
 });
 
 test("stack slugs, hostnames, and URLs resolve to the same canonical URL", () => {
   for (const raw of ["my-team", " MY-Team ", "my-team.grafana.net", "https://my-team.grafana.net/"]) {
-    assert.deepEqual(validateSetupUrl(raw, "stack"), { url: "https://my-team.grafana.net" });
+    assert.deepEqual(validateUrl(raw, "stack"), { url: "https://my-team.grafana.net" });
   }
   for (const raw of ["a", "team42", "42", "a".repeat(63)]) {
-    assert.deepEqual(validateSetupUrl(raw, "stack"), { url: `https://${raw}.grafana.net` });
+    assert.deepEqual(validateUrl(raw, "stack"), { url: `https://${raw}.grafana.net` });
   }
 });
 
 test("invalid stack slugs cannot fall through to single-label URLs", () => {
   for (const raw of ["my_team", "my team", "-my-team", "my-team-", "a".repeat(64), "my-team/", "my-team?orgId=1"]) {
-    assert.ok(validateSetupUrl(raw, "stack").error, raw);
+    assert.ok(validateUrl(raw, "stack").error, raw);
   }
 });
 
 test("slug expansion applies only to stack input", () => {
-  assert.deepEqual(validateSetupUrl("my-team", "target"), { url: "https://my-team/" });
-  assert.deepEqual(validateSetupUrl("my-team", "stack"), { url: "https://my-team.grafana.net" });
+  assert.deepEqual(validateUrl("my-team", "target"), { url: "https://my-team/" });
+  assert.deepEqual(validateUrl("my-team", "stack"), { url: "https://my-team.grafana.net" });
 });
 
 test("missing and malformed URLs cannot be normalized into accepted setup inputs", () => {
@@ -64,7 +64,7 @@ test("missing and malformed URLs cannot be normalized into accepted setup inputs
     "https://test-user@example.com",
   ]) {
     for (const kind of ["target", "stack", "collector"]) {
-      assert.equal(typeof validateSetupUrl(raw, kind).error, "string", `${kind}: ${JSON.stringify(raw)}`);
+      assert.equal(typeof validateUrl(raw, kind).error, "string", `${kind}: ${JSON.stringify(raw)}`);
     }
   }
 });
@@ -72,8 +72,8 @@ test("missing and malformed URLs cannot be normalized into accepted setup inputs
 test("stack URLs must identify the base URL, while targets can include paths and queries", () => {
   for (const suffix of ["/a/grafana-synthetic-monitoring-app", "?orgId=1", "#home"]) {
     const url = `https://example.grafana.net${suffix}`;
-    assert.ok(validateSetupUrl(url, "stack").error);
-    assert.ok(validateSetupUrl(url, "target").url);
+    assert.ok(validateUrl(url, "stack").error);
+    assert.ok(validateUrl(url, "target").url);
   }
 });
 

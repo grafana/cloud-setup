@@ -4,7 +4,7 @@ export type UrlResult = { url: string; error?: never } | { url?: never; error: s
 
 // Validate before URL's permissive parser can repair malformed schemes or
 // backslashes. A missing scheme is fine, but an incomplete one is a typo.
-export function validateSetupUrl(value: string, kind: UrlKind): UrlResult {
+export function validateUrl(value: string, kind: UrlKind): UrlResult {
   const raw = value.trim();
   const { example, label } = {
     target: { example: "https://example.com", label: "target URL" },
