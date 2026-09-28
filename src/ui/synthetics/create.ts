@@ -20,7 +20,7 @@ function supportsK6Channel(probe: Probe): boolean {
 
 // One shared, ordered probe list for the whole pass rather than each
 // candidate re-filtering session.probes on its own — otherwise a plain
-// HTTP check (no capability needs) and a browser check (SSL/broken-links,
+// HTTP check (no capability needs) and a browser check (broken-links,
 // needs k6 v2) can end up drawing from different-looking slices of the
 // same list, so a check asking for 1 probe might land on a different
 // location than the first of another check's 3, which reads as arbitrary.
@@ -28,10 +28,10 @@ function supportsK6Channel(probe: Probe): boolean {
 // candidate's `probeCount` is just a prefix of this same list — a smaller
 // pick is always among a bigger one's.
 //
-// SSL and broken-links checks both run as a k6 script (settings.browser),
-// assigned to the v2 channel (see reconcile.ts's toPayload) — probes
-// predating the k6 runner, or whose k6 version doesn't satisfy that
-// channel, would otherwise still get slotted in and just fail to execute.
+// A broken-links check runs as a k6 script (settings.browser), assigned
+// to the v2 channel (see reconcile.ts's toPayload) — probes predating the
+// k6 runner, or whose k6 version doesn't satisfy that channel, would
+// otherwise still get slotted in and just fail to execute.
 // Only fall back to the full set if filtering would leave none at all (a
 // check with zero probes is a worse outcome than one that might not run on
 // every probe it was told to try).

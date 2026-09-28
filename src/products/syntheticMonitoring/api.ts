@@ -1,6 +1,6 @@
 import type { CheckAlert } from "./checkAlerts.js";
 
-// The k6 channel every browser-settings check (SSL, broken-links) here is
+// The k6 channel every browser-settings check (broken-links) here is
 // assigned to on create/update — see toPayload in reconcile.ts — and the
 // one eligibleProbes (create.ts) checks probes support before assigning
 // them to one of those checks.
@@ -13,7 +13,7 @@ export interface Probe {
   latitude?: number;
   longitude?: number;
   // Older probes predating the k6-based check runner report these — they
-  // can't run scripted or browser checks (SSL/broken-links here both use
+  // can't run scripted or browser checks (broken-links here uses
   // `settings.browser`, i.e. a k6 script) even though they're otherwise
   // healthy and returned by probe/list. See eligibleProbes in create.ts.
   capabilities?: { disableScriptedChecks?: boolean; disableBrowserChecks?: boolean };
