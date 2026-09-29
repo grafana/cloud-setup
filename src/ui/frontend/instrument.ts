@@ -17,7 +17,7 @@ export async function instrument(
   const progress = services.startFakeProgress(
     (value) => ctx.update({ progress: value }),
     () => ctx.signal.aborted,
-    45_000,
+    60_000,
   );
   ctx.onCleanup(() => progress.stop());
   let complete = false;

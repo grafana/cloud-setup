@@ -38,9 +38,12 @@ function stringArg(input: Record<string, unknown>, key: string, fallback?: strin
 
 function listDir(cwd: string, input: Record<string, unknown>): string {
   const full = resolveSafe(cwd, stringArg(input, "path", "."));
-  return readdirSync(full)
-    .map((name) => (statSync(path.join(full, name)).isDirectory() ? `${name}/` : name))
-    .join("\n");
+  const entries = readdirSync(full).map((name) => (statSync(path.join(full, name)).isDirectory() ? `${name}/` : name));
+  // An empty string result is indistinguishable from "no answer yet" to the
+  // remote Assistant, which then re-issues the same list_dir call forever
+  // instead of treating the directory as confirmed-empty (see grep's
+  // "(no matches)" fallback below for the same pattern).
+  return entries.length > 0 ? entries.join("\n") : "(empty directory)";
 }
 
 function readFile(cwd: string, input: Record<string, unknown>): string {
