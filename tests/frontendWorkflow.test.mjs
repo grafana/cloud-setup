@@ -42,6 +42,9 @@ test("session replay isn't shown enabled with a masking level before masking is 
   assert.equal(controller.getSnapshot().prompt, "collectorUrl");
   controller.answer("collectorUrl", "https://collector.example/abc");
   await tick();
+  assert.equal(controller.getSnapshot().prompt, "defaults");
+  controller.answer("defaults", false);
+  await tick();
   assert.equal(controller.getSnapshot().prompt, "sampling");
   controller.answer("sampling", "100");
   await tick();
@@ -60,5 +63,30 @@ test("session replay isn't shown enabled with a masking level before masking is 
   assert.equal(controller.getSnapshot().instrumentation.sessionReplay, true);
   assert.equal(controller.getSnapshot().instrumentation.replayMasking, "strict");
   assert.equal(controller.getSnapshot().replayMaskingKnown, true);
+  controller.dispose();
+});
+
+test("accepting recommended defaults skips the sampling/replay/masking questions", async () => {
+  const { controller } = setup();
+  controller.start();
+  await tick();
+  controller.answer("authenticate", false);
+  await tick();
+  controller.answer("createApp", true);
+  await tick();
+  controller.answer("collectorUrl", "https://collector.example/abc");
+  await tick();
+  assert.equal(controller.getSnapshot().prompt, "defaults");
+  controller.answer("defaults", true);
+  await tick();
+  assert.equal(controller.getSnapshot().prompt, undefined);
+  const state = controller.getSnapshot();
+  assert.equal(state.instrumentation.samplingRate, 1);
+  assert.equal(state.instrumentation.sessionReplay, true);
+  assert.equal(state.instrumentation.replayMasking, "balanced");
+  assert.equal(state.samplingKnown, true);
+  assert.equal(state.replayKnown, true);
+  assert.equal(state.replayMaskingKnown, true);
+  assert.equal(state.results["pick-app"].used_defaults, true);
   controller.dispose();
 });

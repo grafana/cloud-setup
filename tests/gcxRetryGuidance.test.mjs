@@ -60,6 +60,8 @@ const frontend = {
   finish: async (term) => {
     assert.match(term.frame(), /Which Frontend Observability app do you want to use\?/);
     await term.send("\r");
+    assert.match(term.frame(), /Use recommended defaults/);
+    await term.send("n");
     assert.match(term.frame(), /Session sampling rate/);
     await term.send("\r");
     await term.send("n");

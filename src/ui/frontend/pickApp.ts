@@ -89,6 +89,26 @@ export async function pickApp(
   };
   ctx.update({ appUrl, instrumentation });
   await transition();
+  if (await ctx.ask("defaults")) {
+    const samplingRate = 1;
+    const sessionReplay = true;
+    const replayMasking: ReplayMasking = "balanced";
+    ctx.update({
+      instrumentation: { ...instrumentation, samplingRate, sessionReplay, replayMasking },
+      samplingKnown: true,
+      replayKnown: true,
+      replayMaskingKnown: true,
+    });
+    return {
+      status: "ok",
+      app_resolution: resolution,
+      used_defaults: true,
+      sampling_rate: Math.round(samplingRate * 100),
+      session_replay: sessionReplay,
+      replay_masking: replayMasking,
+    };
+  }
+  await transition();
   const samplingRate = parseSamplingRateInput(await ctx.ask("sampling"));
   // samplingKnown flips true only now — instrumentation.samplingRate held its
   // placeholder default (1) while the "sampling" question was still on
@@ -120,6 +140,7 @@ export async function pickApp(
   return {
     status: "ok",
     app_resolution: resolution,
+    used_defaults: false,
     sampling_rate: Math.round(samplingRate * 100),
     session_replay: sessionReplay,
     ...(sessionReplay ? { replay_masking: replayMasking } : {}),

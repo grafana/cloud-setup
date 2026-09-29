@@ -157,7 +157,8 @@ if (command === "frontend") {
   else {
     await answer("\r", "Faro collector URL:");
     await answer("https://collector.example/key", "https://collector.example/key");
-    await answer("\r", "Session sampling rate");
+    await answer("\r", "Use recommended defaults");
+    await answer("n", "Session sampling rate");
     await answer("\r", "Enable Session Replay");
     await answer("n");
   }

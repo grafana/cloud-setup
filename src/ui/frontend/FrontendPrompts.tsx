@@ -67,6 +67,19 @@ export function FrontendPrompts({
           onSubmit={(url) => controller.answer("collectorUrl", url)}
         />
       );
+    case "defaults":
+      return (
+        <Box flexDirection="column">
+          <Text>Use recommended defaults: 100% sampling, Session Replay on with balanced masking?</Text>
+          <Text color={COLORS.MUTED}>
+            Session Replay records user sessions, consent may be required. Privacy details:{" "}
+            <Link>
+              https://grafana.com/docs/grafana-cloud/observe-and-act/monitor-applications/frontend-observability/session-replay/data-privacy/
+            </Link>
+          </Text>
+          <EnterHint suffix="or n for advanced configuration" />
+        </Box>
+      );
     case "sampling":
       return (
         <PromptInput
