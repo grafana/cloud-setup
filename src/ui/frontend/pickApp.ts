@@ -39,10 +39,7 @@ export async function pickApp(
       if (chosen) resolution = "named";
     } else {
       const apps = faro ? await ctx.wait(faro.list()) : [];
-      if (apps.length === 1) {
-        chosen = apps[0];
-        resolution = "auto_single";
-      } else if (apps.length > 1) {
+      if (apps.length > 0) {
         ctx.update({ apps });
         chosen = await ctx.ask("app");
         if (chosen) resolution = "picker";
@@ -93,16 +90,24 @@ export async function pickApp(
   ctx.update({ appUrl, instrumentation });
   await transition();
   const samplingRate = parseSamplingRateInput(await ctx.ask("sampling"));
-  ctx.update({ instrumentation: { ...instrumentation, samplingRate } });
+  // samplingKnown flips true only now — instrumentation.samplingRate held its
+  // placeholder default (1) while the "sampling" question was still on
+  // screen, and without this flag the render would show "Sampling: 100%"
+  // before the user had actually answered it.
+  ctx.update({ instrumentation: { ...instrumentation, samplingRate }, samplingKnown: true });
   await transition();
   const sessionReplay = await ctx.ask("replay");
-  // Reveal "enabled"/"disabled" right away — that much is genuinely decided
-  // — but replayMaskingKnown stays false, since `instrumentation.
-  // replayMasking` is still its placeholder default here, not a real
-  // choice. Without that flag the render would show "enabled (balanced)"
-  // before the user has actually been asked, or answered, the masking
-  // question below.
-  ctx.update({ instrumentation: { ...instrumentation, samplingRate, sessionReplay }, replayMaskingKnown: false });
+  // Same idea for "Replay:" itself — replayKnown flips true only now that
+  // sessionReplay is a real answer, not its placeholder default (false).
+  // replayMaskingKnown stays false, since `instrumentation.replayMasking`
+  // is still its placeholder default here, not a real choice. Without that
+  // flag the render would show "enabled (balanced)" before the user has
+  // actually been asked, or answered, the masking question below.
+  ctx.update({
+    instrumentation: { ...instrumentation, samplingRate, sessionReplay },
+    replayKnown: true,
+    replayMaskingKnown: false,
+  });
   let replayMasking: ReplayMasking = instrumentation.replayMasking;
   if (sessionReplay) {
     await transition();

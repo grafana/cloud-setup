@@ -23,10 +23,14 @@ export interface FrontendState extends WorkflowState<FrontendStep>, CommonState 
   apps: FaroApp[];
   appUrl?: string;
   instrumentation?: FaroInstrumentation;
-  // instrumentation.replayMasking is set the moment sessionReplay is known
-  // (still holding its placeholder default), so its own presence can't
-  // tell a real choice apart from the default — this can. False between
-  // answering "replay" and (if enabled) actually answering "masking".
+  // instrumentation is populated with placeholder defaults the moment an app
+  // is chosen, so its fields' own presence can't tell a real answer apart
+  // from the default — these flags can. samplingKnown/replayKnown flip true
+  // only once "sampling"/"replay" are actually answered; replayMaskingKnown
+  // stays false between answering "replay" and (if enabled) actually
+  // answering "masking".
+  samplingKnown: boolean;
+  replayKnown: boolean;
   replayMaskingKnown: boolean;
   progress: number;
   error?: string;

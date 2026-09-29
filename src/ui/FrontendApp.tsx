@@ -67,10 +67,19 @@ export function FrontendApp({ initialStackUrl, forceGcxInstall, initialAppName, 
                   <Text color={COLORS.MUTED}>
                     {"     "}
                     App: {config.name}
-                    {"\n     "}Sampling: {Math.round((config.samplingRate ?? 1) * 100)}%{"\n     "}Replay:{" "}
-                    {config.sessionReplay
-                      ? `enabled${state.replayMaskingKnown ? ` (${config.replayMasking})` : ""}`
-                      : "disabled"}
+                    {state.samplingKnown && (
+                      <>
+                        {"\n     "}Sampling: {Math.round((config.samplingRate ?? 1) * 100)}%
+                      </>
+                    )}
+                    {state.replayKnown && (
+                      <>
+                        {"\n     "}Replay:{" "}
+                        {config.sessionReplay
+                          ? `enabled${state.replayMaskingKnown ? ` (${config.replayMasking})` : ""}`
+                          : "disabled"}
+                      </>
+                    )}
                   </Text>
                 )}
                 {/* One file per line rather than joined on one — a
