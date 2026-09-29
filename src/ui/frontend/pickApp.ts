@@ -71,7 +71,7 @@ export async function pickApp(
     } else {
       name = appName ?? services.readPkgName(cwd) ?? path.basename(cwd);
       services.openFrontendO11ySetupPage(stackUrl);
-      collectorUrl = (await ctx.ask("collectorUrl")).trim();
+      collectorUrl = await ctx.ask("collectorUrl");
     }
   } catch (error) {
     ctx.update({ error: error instanceof Error ? error.message : String(error) });

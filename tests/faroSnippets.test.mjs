@@ -72,7 +72,7 @@ for (const kind of ["javascript", "react"]) {
     const updated = file.read();
     assert.ok(updated.startsWith(prefix));
     assert.ok(updated.endsWith(suffix));
-    assert.match(updated, /version: '2\.0\.0'/);
+    assert.match(updated, /version: "2\.0\.0"/);
     assert.match(updated, /samplingRate: 0\.5/);
     assert.match(updated, /persistent: true/);
     await file.insert({ ...options, version: "2.0.0", samplingRate: 0.5, sessionPersistent: true });
@@ -90,7 +90,7 @@ for (const kind of ["javascript", "react"]) {
       const updated = file.read();
       assert.equal(updated.match(/initializeFaro\(/g)?.length, 1);
       assert.doesNotMatch(updated, /ReplayInstrumentation|faro-instrumentation-replay/);
-      assert.match(updated, /version: '2\.0\.0'/);
+      assert.match(updated, /version: "2\.0\.0"/);
       assert.match(updated, /export const App = \(\) => null/);
       if (endOfLine === "crlf") assert.doesNotMatch(updated, /(?<!\r)\n/);
       await file.insert({ ...options, version: "2.0.0", sessionReplay: false });
