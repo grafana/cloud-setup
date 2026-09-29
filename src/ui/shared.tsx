@@ -197,7 +197,7 @@ export function FeedbackLink() {
   return (
     <Box marginTop={1}>
       <Text color={COLORS.MUTED}>
-        Share feedback: <Link>https://forms.gle/JW2YTSiaepmxAa5w9</Link>
+        Help improve cloud-setup. Share your feedback: <Link>https://forms.gle/JW2YTSiaepmxAa5w9</Link>
       </Text>
     </Box>
   );
