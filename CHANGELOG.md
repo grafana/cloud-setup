@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.5.0](https://github.com/grafana/cloud-setup/compare/v0.4.0...v0.5.0) (2026-09-29)
+
+
+### Features
+
+* Add setup feedback link to final summaries ([#84](https://github.com/grafana/cloud-setup/issues/84)) ([ea875d7](https://github.com/grafana/cloud-setup/commit/ea875d7e81f448d988c48bba8011173980785125))
+
+
+### Bug Fixes
+
+* Always show the app picker and hide sampling/replay until answered ([#81](https://github.com/grafana/cloud-setup/issues/81)) ([00cecea](https://github.com/grafana/cloud-setup/commit/00cecea0a6913a714674b208a718b10640828b0f))
+* list dir empty placeholder ([#83](https://github.com/grafana/cloud-setup/issues/83)) ([4bbd5c1](https://github.com/grafana/cloud-setup/commit/4bbd5c18ca2715fcbae95ba62728a9cdfc8b0f5e))
+* Serialize generated strings and validate collector URLs ([#73](https://github.com/grafana/cloud-setup/issues/73)) ([969c013](https://github.com/grafana/cloud-setup/commit/969c013e83341aa2cb0fc71ea176acba3be3e045))
+* Update feedback link copy to encourage sharing feedback ([#86](https://github.com/grafana/cloud-setup/issues/86)) ([0baee44](https://github.com/grafana/cloud-setup/commit/0baee444ef4f67cd374f885ff41c35e0c9706ae7))
+* Update Session Replay status from beta to public preview ([#85](https://github.com/grafana/cloud-setup/issues/85)) ([be9b800](https://github.com/grafana/cloud-setup/commit/be9b800f7fd5507cbc614d4b151400d22c9cbaeb))
+
 ## [0.4.0](https://github.com/grafana/cloud-setup/compare/v0.3.0...v0.4.0) (2026-09-28)
 
 
