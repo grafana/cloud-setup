@@ -218,6 +218,7 @@ function webSdkSnippet(instrumentation: FaroInstrumentation): string {
     ...(instrumentation.sessionReplay
       ? [
           "    // Public preview: requires Session Replay enabled on this stack, or it's a no-op.",
+          "    // https://grafana.com/docs/grafana-cloud/observe-and-act/monitor-applications/session-replay/#overview",
           ...replayInstrumentationLines(instrumentation.replayMasking, "    "),
         ]
       : []),
