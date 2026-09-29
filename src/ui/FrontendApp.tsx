@@ -126,7 +126,7 @@ export function FrontendApp({ initialStackUrl, forceGcxInstall, initialAppName, 
                 )}
                 {state.outcome === "ok" && config?.sessionReplay && (
                   <Text color={COLORS.MUTED}>
-                    Session Replay is beta and needs to be separately enabled on this stack, or it'll record nothing.
+                    Session Replay is in public preview and needs to be separately enabled on this stack, or it'll record nothing.
                   </Text>
                 )}
               </>

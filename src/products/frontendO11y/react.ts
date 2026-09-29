@@ -46,7 +46,7 @@ function basicInitSnippet(instrumentation: FaroInstrumentation): string {
     "    new TracingInstrumentation(),",
     ...(instrumentation.sessionReplay
       ? [
-          "    // Beta: requires Session Replay enabled on this stack, or it's a no-op.",
+          "    // Public preview: requires Session Replay enabled on this stack, or it's a no-op.",
           ...replayInstrumentationLines(instrumentation.replayMasking, "    "),
         ]
       : []),
