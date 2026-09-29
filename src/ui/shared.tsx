@@ -193,6 +193,16 @@ export function Link({ children }: { children: ReactNode }) {
   );
 }
 
+export function FeedbackLink() {
+  return (
+    <Box marginTop={1}>
+      <Text color={COLORS.MUTED}>
+        Share feedback: <Link>https://forms.gle/JW2YTSiaepmxAa5w9</Link>
+      </Text>
+    </Box>
+  );
+}
+
 // `label` shouldn't add its own trailing "…" — the spinner (or its static
 // "…" fallback) in front already signals "in progress"; one at both ends
 // just doubles up on the same signal.
