@@ -1,7 +1,7 @@
 import { Box, render, Text } from "ink";
 import { COLORS } from "../theme.js";
 import { SetupUrls } from "./SetupUrls.js";
-import { EnterHint, Header, Link, requireInteractiveTerminal, type HardExit } from "./shared.js";
+import { EnterHint, FeedbackLink, Header, Link, requireInteractiveTerminal, type HardExit } from "./shared.js";
 import { CommonStepBody } from "./workflow/CommonStepBody.js";
 import { useWorkflow } from "./workflow/useWorkflow.js";
 import { useWorkflowInput } from "./workflow/useWorkflowInput.js";
@@ -114,6 +114,7 @@ export function SyntheticsApp({ initialBaseUrl, initialTargetUrl, initialStackUr
                 <SyntheticsPrompts key={state.prompt} state={state} options={options} controller={controller} />
               </>
             )}
+            {(state.failureSummary || state.done) && <FeedbackLink />}
           </Box>
         </>
       )}

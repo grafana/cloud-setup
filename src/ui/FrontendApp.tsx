@@ -1,7 +1,7 @@
 import { Box, render, Text } from "ink";
 import { COLORS } from "../theme.js";
 import { SetupUrls } from "./SetupUrls.js";
-import { EnterHint, Header, Link, requireInteractiveTerminal, type HardExit } from "./shared.js";
+import { EnterHint, FeedbackLink, Header, Link, requireInteractiveTerminal, type HardExit } from "./shared.js";
 import { CommonStepBody } from "./workflow/CommonStepBody.js";
 import { GcxInstallFailure } from "./workflow/GcxInstallFailure.js";
 import { StepList } from "./workflow/StepList.js";
@@ -136,6 +136,7 @@ export function FrontendApp({ initialStackUrl, forceGcxInstall, initialAppName, 
                 <FrontendPrompts key={state.prompt} state={state} controller={controller} />
               </>
             )}
+            {(state.failureSummary || state.done) && <FeedbackLink />}
           </Box>
         </>
       )}
