@@ -73,9 +73,7 @@ export function FrontendPrompts({
           <Text>Use recommended defaults: 100% sampling, Session Replay on with balanced masking?</Text>
           <Text color={COLORS.MUTED}>
             Session Replay records user sessions, consent may be required. Privacy details:{" "}
-            <Link>
-              https://grafana.com/docs/grafana-cloud/observe-and-act/monitor-applications/frontend-observability/session-replay/data-privacy/
-            </Link>
+            <Link>https://grafana.com/docs/grafana-cloud/session-replay/data-privacy/</Link>
           </Text>
           <EnterHint suffix="or n for advanced configuration" />
         </Box>
@@ -93,10 +91,7 @@ export function FrontendPrompts({
         <Box flexDirection="column">
           <Text>Enable Session Replay? Records user sessions, consent may be required.</Text>
           <Text color={COLORS.MUTED}>
-            Privacy details:{" "}
-            <Link>
-              https://grafana.com/docs/grafana-cloud/observe-and-act/monitor-applications/frontend-observability/session-replay/data-privacy/
-            </Link>
+            Privacy details: <Link>https://grafana.com/docs/grafana-cloud/session-replay/data-privacy/</Link>
           </Text>
           <EnterHint suffix="or n to skip" />
         </Box>
