@@ -102,6 +102,8 @@ async function configure(controller) {
   await tick();
   controller.answer("collectorUrl", "https://collector.example/key");
   await tick();
+  controller.answer("defaults", false);
+  await tick();
   controller.answer("sampling", "25%");
   await tick();
   controller.answer("replay", true);
@@ -118,6 +120,7 @@ test("manual setup respects declined authentication and records app configuratio
   assert.deepEqual(picked, {
     status: "ok",
     app_resolution: "manual",
+    used_defaults: false,
     sampling_rate: 25,
     session_replay: true,
     replay_masking: "strict",

@@ -14,6 +14,7 @@ export interface FrontendInputs extends CommonInputs {
   app: FaroApp | undefined;
   createApp: boolean;
   collectorUrl: string;
+  defaults: boolean;
   sampling: string;
   replay: boolean;
   masking: ReplayMasking;

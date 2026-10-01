@@ -175,6 +175,7 @@ export interface StepProperties {
 
   // frontend: pick-app
   app_resolution?: "named" | "picker" | "created" | "manual";
+  used_defaults?: boolean;
   session_replay?: boolean;
   replay_masking?: "strict" | "balanced" | "open";
   sampling_rate?: number;

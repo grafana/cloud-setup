@@ -33,6 +33,7 @@ export function FrontendApp({ initialStackUrl, forceGcxInstall, initialAppName, 
     const yes = key.return || input.toLowerCase() === "y";
     if (!yes && input.toLowerCase() !== "n") return;
     if (state.prompt === "createApp") controller.answer("createApp", yes);
+    if (state.prompt === "defaults") controller.answer("defaults", yes);
     if (state.prompt === "replay") controller.answer("replay", yes);
   });
   const config = state.instrumentation;

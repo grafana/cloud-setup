@@ -119,6 +119,9 @@ test("invalid collector submissions keep the workflow at the prompt until correc
   await term.send("\x15");
   await term.send(" collector.example/O'Reilly?key=a%2Fb ");
   await term.send("\r");
+  assert.equal(controller.getSnapshot().prompt, "defaults");
+  controller.answer("defaults", false);
+  await tick();
   const state = controller.getSnapshot();
   assert.equal(state.prompt, "sampling");
   assert.equal(state.instrumentation.collectorUrl, "https://collector.example/O'Reilly?key=a%2Fb");
@@ -171,6 +174,8 @@ test("the collector prompt displays the validation error and keeps its value edi
   for (let i = 0; i < "collector.example/key".length; i++) await send("\x1b[D");
   await send("//");
   await send("\r");
+  assert.match(frame(), /Use recommended defaults/);
+  await send("n");
   assert.match(frame(), /Session sampling rate/);
   assert.doesNotMatch(frame(), /Enter a valid HTTP or HTTPS URL/);
 });
