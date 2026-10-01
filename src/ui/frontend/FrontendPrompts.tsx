@@ -73,7 +73,10 @@ export function FrontendPrompts({
           <Text>Use recommended defaults: 100% sampling, Session Replay on with balanced masking?</Text>
           <EnterHint suffix="or n for advanced configuration" />
           <Box marginTop={1} flexDirection="column">
-            <Text color={COLORS.MUTED}>Session Replay records user sessions, consent may be required.</Text>
+            <Text color={COLORS.MUTED}>
+              By enabling, you confirm compliance with applicable privacy laws (e.g. GDPR, CCPA).
+            </Text>
+            <Text color={COLORS.MUTED}>This includes obtaining consent where required.</Text>
             <Text color={COLORS.MUTED}>
               Privacy details: <Link>https://grafana.com/docs/grafana-cloud/session-replay/data-privacy/</Link>
             </Text>
@@ -91,9 +94,13 @@ export function FrontendPrompts({
     case "replay":
       return (
         <Box flexDirection="column">
-          <Text>Enable Session Replay? Records user sessions, consent may be required.</Text>
+          <Text>Enable Session Replay? Records user sessions.</Text>
           <EnterHint suffix="or n to skip" />
-          <Box marginTop={1}>
+          <Box marginTop={1} flexDirection="column">
+            <Text color={COLORS.MUTED}>
+              By enabling, you confirm compliance with applicable privacy laws (e.g. GDPR, CCPA).
+            </Text>
+            <Text color={COLORS.MUTED}>This includes obtaining consent where required.</Text>
             <Text color={COLORS.MUTED}>
               Privacy details: <Link>https://grafana.com/docs/grafana-cloud/session-replay/data-privacy/</Link>
             </Text>
