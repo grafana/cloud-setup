@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.0](https://github.com/grafana/cloud-setup/compare/v0.5.0...v0.6.0) (2026-10-01)
+
+
+### Features
+
+* show sane defaults after picking a Frontend Observability app ([#87](https://github.com/grafana/cloud-setup/issues/87)) ([bfc16f6](https://github.com/grafana/cloud-setup/commit/bfc16f67fbc6d7a651c9cc51c7d86d05b5bdf4a0))
+
 ## [0.5.0](https://github.com/grafana/cloud-setup/compare/v0.4.0...v0.5.0) (2026-09-29)
 
 
