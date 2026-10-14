@@ -46,7 +46,7 @@ function basicInitSnippet(instrumentation: FaroInstrumentation): string {
     "    new TracingInstrumentation(),",
     ...(instrumentation.sessionReplay
       ? [
-          "    // Public preview: requires Session Replay enabled on this stack, or it's a no-op.",
+          "    // Session Replay is in public preview.",
           "    // https://grafana.com/docs/grafana-cloud/observe-and-act/monitor-applications/session-replay/#overview",
           ...replayInstrumentationLines(instrumentation.replayMasking, "    "),
         ]

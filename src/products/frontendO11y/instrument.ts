@@ -42,10 +42,8 @@ export interface FaroInstrumentation {
   // rather than being baked in as a fixed guess at setup time.
   environmentExpr: string;
   sessionPersistent: boolean;
-  // Opt-in only (--session-replay, or the interactive prompt): Session
-  // Replay is still a beta add-on that Grafana has to manually enable
-  // per-stack (a form submission, no API), so wiring it in by default
-  // would often silently record nothing — see grafana.com/docs/.../session-replay/.
+  // Opt-in only (--session-replay, or the interactive prompt): it records
+  // user sessions, so it's never wired in without an explicit yes.
   sessionReplay: boolean;
   // Only meaningful when sessionReplay is true — which privacy-masking
   // preset the generated ReplayInstrumentation() call uses.
@@ -217,7 +215,7 @@ function webSdkSnippet(instrumentation: FaroInstrumentation): string {
     "    new TracingInstrumentation(),",
     ...(instrumentation.sessionReplay
       ? [
-          "    // Public preview: requires Session Replay enabled on this stack, or it's a no-op.",
+          "    // Session Replay is in public preview.",
           "    // https://grafana.com/docs/grafana-cloud/observe-and-act/monitor-applications/session-replay/#overview",
           ...replayInstrumentationLines(instrumentation.replayMasking, "    "),
         ]
