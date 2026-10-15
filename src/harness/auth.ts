@@ -1,9 +1,9 @@
-import { spawn } from "node:child_process";
 import crypto from "node:crypto";
 import { once } from "node:events";
 import http from "node:http";
 import type { AddressInfo } from "node:net";
 import { z } from "zod";
+import { openBrowser } from "../browser.js";
 import { cancelledPage, successPage } from "./authPage.js";
 
 export interface AssistantTokens {
@@ -37,13 +37,6 @@ const sessionTokens = new Map<string, AssistantTokens>();
 function normalizeStackUrl(stackUrl: string): string {
   const withProtocol = /^https?:\/\//.test(stackUrl) ? stackUrl : `https://${stackUrl}`;
   return withProtocol.endsWith("/") ? withProtocol.slice(0, -1) : withProtocol;
-}
-
-function openBrowser(url: string): void {
-  const platform = process.platform;
-  const cmd = platform === "darwin" ? "open" : platform === "win32" ? "cmd" : "xdg-open";
-  const args = platform === "win32" ? ["/c", "start", '""', url] : [url];
-  spawn(cmd, args, { stdio: "ignore", detached: true }).unref();
 }
 
 interface PKCE {

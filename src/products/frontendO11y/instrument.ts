@@ -1,20 +1,11 @@
-import { execFile, spawn } from "node:child_process";
+import { execFile } from "node:child_process";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { promisify } from "node:util";
+import { openBrowser } from "../../browser.js";
 import { updateFaroSnippet } from "./snippet.js";
 
 const execFileAsync = promisify(execFile);
-
-// Same open-a-browser mechanics as harness/auth.ts's OAuth flow — kept
-// separate rather than shared since this one just needs the plugin's app
-// page, not anything OAuth-specific.
-function openBrowser(url: string): void {
-  const platform = process.platform;
-  const cmd = platform === "darwin" ? "open" : platform === "win32" ? "cmd" : "xdg-open";
-  const args = platform === "win32" ? ["/c", "start", '""', url] : [url];
-  spawn(cmd, args, { stdio: "ignore", detached: true }).unref();
-}
 
 // Opens the Frontend Observability "create a new app" page directly —
 // used when no existing app matches this project, since this tool can't
