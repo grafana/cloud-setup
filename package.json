@@ -1,6 +1,6 @@
 {
   "name": "@grafana/cloud-setup",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "description": "Grafana Cloud's interactive setup wizard, powered by Grafana Assistant.",
   "repository": {
     "type": "git",

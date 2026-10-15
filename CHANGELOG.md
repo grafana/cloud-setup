@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.6.0](https://github.com/grafana/cloud-setup/compare/v0.5.0...v0.6.0) (2026-10-14)
+
+
+### Features
+
+* show sane defaults after picking a Frontend Observability app ([#87](https://github.com/grafana/cloud-setup/issues/87)) ([bfc16f6](https://github.com/grafana/cloud-setup/commit/bfc16f67fbc6d7a651c9cc51c7d86d05b5bdf4a0))
+
+
+### Bug Fixes
+
+* Drop manual-enable note from Session Replay copy ([#94](https://github.com/grafana/cloud-setup/issues/94)) ([68ffb47](https://github.com/grafana/cloud-setup/commit/68ffb4706692f7f1fea165385f75895f9b6f16fc))
+
 ## [0.5.0](https://github.com/grafana/cloud-setup/compare/v0.4.0...v0.5.0) (2026-09-29)
 
 
