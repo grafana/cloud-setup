@@ -542,18 +542,20 @@ for (const hasPolicy of [false, true])
     controller.dispose();
   });
 
-test("unavailable notification setup directs signed-in users to policies without assuming a missing contact point", async () => {
+test("unavailable notification setup directs signed-in users to contact points and policies", async () => {
   const { controller, events } = setup({ tryAlertingClient: async () => undefined });
   await start(controller);
   controller.answer("selection", ["first"]);
   await tick();
   controller.answer("alerting", true);
   await tick();
-  const [detail] = controller.getSnapshot().alertingDetail;
+  const [detail, contactPoints, policies] = controller.getSnapshot().alertingDetail;
   assert.equal(detail.text, "Couldn't configure alert notifications.");
-  assert.match(detail.error, /policy routes namespace=synthetic_monitoring alerts to your intended contact point/);
-  assert.equal(detail.href, "https://example.grafana.net/alerting/routes");
-  assert.doesNotMatch(detail.error, /Add a contact point/);
+  assert.equal(detail.error, "Automatic notification setup is unavailable.");
+  assert.equal(contactPoints.text, "Review or create an email contact point at");
+  assert.equal(contactPoints.href, "https://example.grafana.net/alerting/notifications");
+  assert.match(policies.text, /policy routes namespace=synthetic_monitoring alerts to your intended contact point/);
+  assert.equal(policies.href, "https://example.grafana.net/alerting/routes");
   assert.equal(events.find(([step]) => step === "alerting")[1].status, "failed");
   controller.dispose();
 });

@@ -69,6 +69,7 @@ export async function configureAlerting(
   let client: AlertingClient | undefined;
   let inspection: AlertingInspection | undefined;
   let inspectionFailure: AlertingDetail | undefined;
+  const contactPointsUrl = `${options.stackUrl.replace(/\/$/, "")}/alerting/notifications`;
   const notificationPoliciesUrl = `${options.stackUrl.replace(/\/$/, "")}/alerting/routes`;
   if (!ctx.get().auth.error) {
     ctx.update({ alertingPhase: "inspecting" });
@@ -139,21 +140,20 @@ export async function configureAlerting(
     }
   } else if (client) detail.push(NO_EMAIL_DETAIL);
   else if (inspectionFailure) detail.push(inspectionFailure);
-  else {
-    const guidance =
-      "Check that a policy routes namespace=synthetic_monitoring alerts to your intended contact point at";
-    if (notificationsFailed)
-      detail.push({
-        text: "Couldn't configure alert notifications.",
-        error: `Automatic notification setup is unavailable. ${guidance}`,
+  else
+    detail.push(
+      notificationsFailed
+        ? {
+            text: "Couldn't configure alert notifications.",
+            error: "Automatic notification setup is unavailable.",
+          }
+        : { text: "Without OAuth sign-in, the CLI can't verify or configure alert notifications." },
+      { text: "Review or create an email contact point at", href: contactPointsUrl },
+      {
+        text: "Check that a policy routes namespace=synthetic_monitoring alerts to your intended contact point at",
         href: notificationPoliciesUrl,
-      });
-    else
-      detail.push(
-        { text: "Without OAuth sign-in, the CLI can't verify or configure alert notifications." },
-        { text: guidance, href: notificationPoliciesUrl },
-      );
-  }
+      },
+    );
   const outcome = !client ? "unavailable" : addresses && !notificationsFailed ? "configured" : "rules_only";
   ctx.update({ alertingDetail: detail, alertingChoice: { presets, outcome } });
   return {

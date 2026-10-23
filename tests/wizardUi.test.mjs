@@ -117,6 +117,8 @@ test("Synthetics accepts b and q in URL/token fields, then q finishes the menu",
   assert.match(term.output(), /Next actions/);
   assert.match(term.frame(), /Without OAuth sign-in, the CLI can't verify or configure alert notifications/);
   assert.match(term.frame(), /routes namespace=synthetic_monitoring alerts to your intended contact point/);
+  assert.match(term.frame(), /Review or create an email contact point at/);
+  assert.match(term.frame(), /https:\/\/example.grafana.net\/alerting\/notifications/);
   assert.match(term.frame(), /https:\/\/example.grafana.net\/alerting\/routes/);
   assert.doesNotMatch(term.frame(), /Couldn't set an email|Add a contact point/);
   await term.send("q");
