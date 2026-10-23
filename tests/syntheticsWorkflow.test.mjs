@@ -3,7 +3,11 @@ import { test } from "node:test";
 import { createSyntheticsController } from "../dist/ui/synthetics/controller.js";
 import { syntheticsServices } from "../dist/ui/synthetics/services.js";
 import { SmApiError } from "../dist/products/syntheticMonitoring/api.js";
-import { AlertingApiError } from "../dist/products/syntheticMonitoring/notifications.js";
+import {
+  AlertingApiError,
+  AlertingClient,
+  SM_CONTACT_POINT_NAME,
+} from "../dist/products/syntheticMonitoring/notifications.js";
 
 const tick = () => new Promise((resolve) => setImmediate(resolve));
 const candidate = (key) => ({
@@ -20,7 +24,7 @@ const candidate = (key) => ({
 const first = candidate("first");
 const second = candidate("second");
 
-function setup(overrides = {}) {
+function setup(overrides = {}, options = {}) {
   const events = [];
   const exports = [];
   const mutations = [];
@@ -64,6 +68,7 @@ function setup(overrides = {}) {
       targetUrl: "https://example.com",
       forceGcxInstall: false,
       cwd: "/project",
+      ...options,
     },
     services,
     (...event) => events.push(event),
@@ -189,6 +194,67 @@ test("checks selected together draw probes from one shared, consistently filtere
   // it landed on only because it filters differently.
   assert.deepEqual(records.get("uptime").probes, ["London", "Paris", "Tokyo"]);
   assert.deepEqual(records.get("ssl").probes, ["London"]);
+  controller.dispose();
+});
+
+for (const supplied of [false, true])
+  test(`${supplied ? "supplied" : "prompted"} API hostnames are normalized before probing, connecting, and saving`, async () => {
+    const raw = " synthetic-monitoring-api-eu-west.grafana.net/ ";
+    const expected = "https://synthetic-monitoring-api-eu-west.grafana.net";
+    const probed = [];
+    const connections = [];
+    const credentials = [];
+    const { controller, client } = setup(
+      {
+        probeReachable: async (url) => probed.push(url),
+        createClient: (url, token) => {
+          connections.push({ url, token });
+          return client;
+        },
+        writeCredentials: async (value) => credentials.push(value),
+      },
+      supplied ? { baseUrl: raw } : {},
+    );
+    await start(controller, false);
+    controller.answer("selection", ["first"]);
+    await tick();
+    if (!supplied) {
+      assert.equal(controller.getSnapshot().prompt, "baseUrl");
+      controller.answer("baseUrl", raw);
+      await tick();
+    }
+    assert.equal(controller.getSnapshot().prompt, "token");
+    controller.answer("token", "test-token");
+    await tick();
+    assert.deepEqual(probed, [expected]);
+    assert.deepEqual(connections, [{ url: expected, token: "test-token" }]);
+    assert.equal(credentials[0].baseUrl, expected);
+    assert.equal(controller.getSnapshot().session.url, expected);
+    controller.dispose();
+  });
+
+test("invalid API URLs stay editable and cannot trigger a network probe", async () => {
+  const probed = [];
+  const { controller } = setup({ probeReachable: async (url) => probed.push(url) }, { baseUrl: "https:sm.example" });
+  await start(controller, false);
+  controller.answer("selection", ["first"]);
+  await tick();
+  assert.equal(controller.getSnapshot().baseUrl, "https:sm.example");
+  assert.match(controller.getSnapshot().connectError, /Enter a valid HTTP or HTTPS URL/);
+  for (const raw of ["", "ftp://sm.example", "https:sm.example"]) {
+    assert.equal(controller.getSnapshot().prompt, "baseUrl");
+    controller.answer("baseUrl", raw);
+    await tick();
+    assert.equal(controller.getSnapshot().prompt, "baseUrl");
+    assert.equal(controller.getSnapshot().baseUrl, raw);
+    assert.ok(controller.getSnapshot().connectError);
+    assert.deepEqual(probed, []);
+  }
+  controller.answer("baseUrl", "sm.example");
+  await tick();
+  assert.deepEqual(probed, ["https://sm.example"]);
+  assert.equal(controller.getSnapshot().prompt, "token");
+  assert.equal(controller.getSnapshot().connectError, undefined);
   controller.dispose();
 });
 
@@ -419,6 +485,79 @@ test("a non-permission creation failure keeps its message and still tries other 
     controller.getSnapshot().records.map((item) => item.id),
     [202],
   );
+});
+
+for (const hasPolicy of [false, true])
+  test(`an existing email contact point is reused when its policy is ${hasPolicy ? "present" : "missing"}`, async (t) => {
+    const contactPoint = {
+      uid: "sm-email",
+      name: SM_CONTACT_POINT_NAME,
+      type: "email",
+      settings: { addresses: "ops@example.com", subject: "Custom subject" },
+    };
+    const smRoute = {
+      receiver: SM_CONTACT_POINT_NAME,
+      object_matchers: [["namespace", "=", "synthetic_monitoring"]],
+      group_by: ["grafana_folder", "alertname", "instance", "job"],
+      continue: false,
+    };
+    const otherRoute = { receiver: "on-call", object_matchers: [["team", "=", "ops"]], continue: true };
+    const tree = {
+      receiver: "grafana-default-email",
+      group_wait: "30s",
+      routes: hasPolicy ? [otherRoute, smRoute] : [otherRoute],
+    };
+    const writes = [];
+    t.mock.method(globalThis, "fetch", async (url, init) => {
+      const path = new URL(url).pathname;
+      if (init.method === "GET") {
+        if (path === "/api/v1/provisioning/contact-points") return Response.json([contactPoint]);
+        if (path === "/api/user") return Response.json({ email: "user@example.com" });
+        if (path === "/api/v1/provisioning/policies") return Response.json(tree);
+      }
+      assert.equal(init.method, "PUT", "an existing contact point must not be recreated");
+      assert.equal(path, "/api/v1/provisioning/policies", "the existing contact point must not be modified");
+      writes.push(JSON.parse(init.body));
+      return Response.json({});
+    });
+    const { controller, events } = setup({
+      tryAlertingClient: async () => new AlertingClient("https://stack.example", "test-token"),
+    });
+    await start(controller);
+    controller.answer("selection", ["first"]);
+    await tick();
+    controller.answer("alerting", true);
+    await tick();
+    assert.equal(controller.getSnapshot().prompt, "email");
+    assert.equal(controller.getSnapshot().emailInput, "ops@example.com");
+    controller.answer("email", controller.getSnapshot().emailInput);
+    await tick();
+    assert.equal(controller.getSnapshot().prompt, "nextAction");
+    assert.deepEqual(writes, hasPolicy ? [] : [{ ...tree, routes: [otherRoute, smRoute] }]);
+    assert.equal(controller.getSnapshot().alertingDetail[0].text, "Alerts go to ops@example.com");
+    const result = events.find(([step]) => step === "alerting")[1];
+    assert.equal(result.status, "ok");
+    assert.equal(result.contact_point, "unchanged");
+    assert.equal(result.notification_route, hasPolicy ? "unchanged" : "created");
+    controller.dispose();
+  });
+
+test("unavailable notification setup directs signed-in users to contact points and policies", async () => {
+  const { controller, events } = setup({ tryAlertingClient: async () => undefined });
+  await start(controller);
+  controller.answer("selection", ["first"]);
+  await tick();
+  controller.answer("alerting", true);
+  await tick();
+  const [detail, contactPoints, policies] = controller.getSnapshot().alertingDetail;
+  assert.equal(detail.text, "Couldn't configure alert notifications.");
+  assert.equal(detail.error, "Automatic notification setup is unavailable.");
+  assert.equal(contactPoints.text, "Review or create an email contact point at");
+  assert.equal(contactPoints.href, "https://example.grafana.net/alerting/notifications");
+  assert.match(policies.text, /policy routes namespace=synthetic_monitoring alerts to your intended contact point/);
+  assert.equal(policies.href, "https://example.grafana.net/alerting/routes");
+  assert.equal(events.find(([step]) => step === "alerting")[1].status, "failed");
+  controller.dispose();
 });
 
 for (const [operation, resource] of [
