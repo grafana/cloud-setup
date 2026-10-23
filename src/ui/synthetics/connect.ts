@@ -27,7 +27,7 @@ export async function connect(
       ctx.update({ createPhase: "base-url-input" });
       candidateUrl = await ctx.ask("baseUrl");
     }
-    const validated = validateUrl(candidateUrl, "synthetics");
+    const validated = validateUrl(candidateUrl, "sm-api");
     if (validated.error !== undefined) {
       ctx.update({ baseUrl: candidateUrl, connectError: validated.error });
       candidateUrl = undefined;
