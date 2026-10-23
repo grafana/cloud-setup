@@ -19,21 +19,54 @@ const SM_ROUTE_GROUP_BY = ["grafana_folder", "alertname", "instance", "job"];
 // or newline (grafana/grafana pkg/util/split_email.go).
 const ADDRESS_SEPARATOR = ";";
 
-interface ContactPoint {
+interface ReceiverIntegration {
   uid?: string;
-  name: string;
   type: string;
-  settings?: { addresses?: string };
+  version: string;
+  settings: { addresses?: string; [key: string]: unknown };
   disableResolveMessage?: boolean;
+  secureFields?: Record<string, boolean>;
+  [key: string]: unknown;
 }
 
-// Read, amended and PUT back whole, so fields this doesn't model still
-// have to survive the round trip — dropping one would silently
-// reconfigure the user's routing. Hence the index signature.
+// These resources are read, amended and PUT back whole. Keep fields this
+// client doesn't model, including provenance and stored-secret references.
+interface ResourceMetadata {
+  name?: string;
+  namespace?: string;
+  resourceVersion?: string;
+  [key: string]: unknown;
+}
+
+interface Receiver {
+  metadata: ResourceMetadata;
+  spec: {
+    title: string;
+    integrations: ReceiverIntegration[];
+    [key: string]: unknown;
+  };
+  [key: string]: unknown;
+}
+
+interface ReceiverList {
+  metadata?: { continue?: string };
+  items: Receiver[];
+}
+
 interface Route {
   receiver?: string;
-  object_matchers?: [string, string, string][];
+  matchers?: { label: string; type: string; value: string }[];
   routes?: Route[];
+  [key: string]: unknown;
+}
+
+interface RoutingTree {
+  metadata: ResourceMetadata;
+  spec: {
+    defaults: { receiver: string; [key: string]: unknown };
+    routes: Route[];
+    [key: string]: unknown;
+  };
   [key: string]: unknown;
 }
 
@@ -64,7 +97,7 @@ export function isEmailish(address: string): boolean {
 function smRoute(): Route {
   return {
     receiver: SM_CONTACT_POINT_NAME,
-    object_matchers: [["namespace", "=", SM_NAMESPACE_LABEL]],
+    matchers: [{ label: "namespace", type: "=", value: SM_NAMESPACE_LABEL }],
     group_by: SM_ROUTE_GROUP_BY,
     // Stops here rather than also reaching the root receiver, which on a
     // fresh stack is an undeliverable placeholder address.
@@ -73,17 +106,17 @@ function smRoute(): Route {
 }
 
 function routesSmNamespace(route: Route): boolean {
-  // The older string `matchers` form isn't checked: a route written that
-  // way would mean one redundant route, not a broken one.
-  return (route.object_matchers ?? []).some(
-    ([label, op, value]) => label === "namespace" && (op === "=" || op === "=~") && value === SM_NAMESPACE_LABEL,
+  return (route.matchers ?? []).some(
+    ({ label, type, value }) =>
+      label === "namespace" && (type === "=" || type === "=~") && value === SM_NAMESPACE_LABEL,
   );
 }
 
-// Marked deprecated in favour of /apis for Grafana 13+, but still
-// functional, and what the SM API itself calls against live stacks
-// (github.com/grafana/synthetic-monitoring-api internal/hg/client.go).
-const PROVISIONING_BASE = "/api/v1/provisioning";
+const NOTIFICATIONS_API_VERSION = "notifications.alerting.grafana.app/v1beta1";
+// SM rules use the default policy tree. An additional named tree would not
+// receive their alerts without changing the rules' notification settings.
+const DEFAULT_ROUTING_TREE_NAME = "user-defined";
+const MAX_WRITE_ATTEMPTS = 3;
 
 export class AlertingApiError extends Error {
   constructor(
@@ -96,6 +129,8 @@ export class AlertingApiError extends Error {
 }
 
 export class AlertingClient {
+  private namespace?: Promise<string>;
+
   constructor(
     private proxyBase: string,
     private accessToken: string,
@@ -108,16 +143,7 @@ export class AlertingClient {
         Authorization: `Bearer ${this.accessToken}`,
         // Mirrors the same header the SM and Faro clients set on this proxy.
         "X-Client-Id": "grafana-synthetics-cli",
-        ...(body !== undefined
-          ? {
-              "Content-Type": "application/json",
-              // Required, not an optimisation: without it these writes are
-              // stamped with API provenance, which makes the contact point
-              // and the whole notification policy tree read-only in the
-              // Grafana UI. Granted to the Admin and Editor basic roles.
-              "X-Disable-Provenance": "true",
-            }
-          : {}),
+        ...(body !== undefined ? { "Content-Type": "application/json" } : {}),
       },
       body: body !== undefined ? JSON.stringify(body) : undefined,
       signal: AbortSignal.timeout(10000),
@@ -132,12 +158,62 @@ export class AlertingClient {
     return text ? (JSON.parse(text) as T) : (undefined as T);
   }
 
-  private listContactPoints(): Promise<ContactPoint[]> {
-    return this.request("GET", `${PROVISIONING_BASE}/contact-points`);
+  private getNamespace(): Promise<string> {
+    // Use Grafana's namespace, just as its frontend does. Neither a stack ID
+    // nor an organization ID is itself an API namespace.
+    return (this.namespace ??= this.request<{ namespace?: string }>("GET", "/api/frontend/settings").then(
+      ({ namespace }) => {
+        if (typeof namespace !== "string" || !namespace.trim()) {
+          throw new Error("Grafana did not return an API namespace");
+        }
+        return namespace;
+      },
+    ));
   }
 
-  private getPolicyTree(): Promise<Route> {
-    return this.request("GET", `${PROVISIONING_BASE}/policies`);
+  private async resourcePath(resource: string): Promise<string> {
+    return `/apis/${NOTIFICATIONS_API_VERSION}/namespaces/${encodeURIComponent(await this.getNamespace())}/${resource}`;
+  }
+
+  private async findContactPoint(): Promise<Receiver | undefined> {
+    const path = await this.resourcePath("receivers");
+    let cursor: string | undefined;
+    do {
+      const page: ReceiverList = await this.request(
+        "GET",
+        cursor ? `${path}?continue=${encodeURIComponent(cursor)}` : path,
+      );
+      const receiver = page.items.find((item) => item.spec.title === SM_CONTACT_POINT_NAME);
+      if (receiver) return receiver;
+      cursor = page.metadata?.continue;
+    } while (cursor);
+    return undefined;
+  }
+
+  private async getPolicyTree(): Promise<RoutingTree> {
+    return this.request("GET", await this.resourcePath(`routingtrees/${DEFAULT_ROUTING_TREE_NAME}`));
+  }
+
+  private async updateResource(resource: string, value: Receiver | RoutingTree): Promise<void> {
+    const { name, resourceVersion } = value.metadata;
+    if (!name || !resourceVersion) {
+      throw new Error(`Grafana Alerting ${resource} resource is missing a name or resource version`);
+    }
+    await this.request("PUT", await this.resourcePath(`${resource}/${encodeURIComponent(name)}`), value);
+  }
+
+  private async retryOnConflict<T>(operation: () => Promise<T>): Promise<T> {
+    for (let attempt = 1; ; attempt++) {
+      try {
+        return await operation();
+      } catch (error) {
+        if (!(error instanceof AlertingApiError) || error.status !== 409 || attempt >= MAX_WRITE_ATTEMPTS) {
+          throw error;
+        }
+        // Reread and merge into the latest resource instead of resending a
+        // stale snapshot that could discard a concurrent edit.
+      }
+    }
   }
 
   // Best-effort: a failure only costs the input its prefill.
@@ -153,46 +229,58 @@ export class AlertingClient {
   // Read up front so the email prompt can be prefilled, and so a failure
   // here rules out the whole notification half before anything is written.
   async inspect(): Promise<AlertingInspection> {
-    const [contactPoints, userEmail] = await Promise.all([this.listContactPoints(), this.currentUserEmail()]);
-    const own = contactPoints.find((cp) => cp.name === SM_CONTACT_POINT_NAME);
-    return { existingAddresses: own?.settings?.addresses?.trim() || undefined, userEmail };
+    const [receiver, userEmail] = await Promise.all([this.findContactPoint(), this.currentUserEmail()]);
+    const email = receiver?.spec.integrations.find((integration) => integration.type === "email");
+    return { existingAddresses: email?.settings.addresses?.trim() || undefined, userEmail };
   }
 
   async ensureContactPoint(addresses: string): Promise<"created" | "updated" | "unchanged"> {
-    const existing = (await this.listContactPoints()).find((cp) => cp.name === SM_CONTACT_POINT_NAME);
-    if (!existing) {
-      await this.request("POST", `${PROVISIONING_BASE}/contact-points`, {
-        name: SM_CONTACT_POINT_NAME,
+    return this.retryOnConflict(async () => {
+      const existing = await this.findContactPoint();
+      const email: ReceiverIntegration = {
         type: "email",
+        version: "v1",
         settings: { addresses },
         disableResolveMessage: false,
+      };
+      if (!existing) {
+        await this.request("POST", await this.resourcePath("receivers"), {
+          apiVersion: NOTIFICATIONS_API_VERSION,
+          kind: "Receiver",
+          // Grafana assigns metadata.name. In this API, omitting provenance
+          // leaves new receivers editable. Updates retain existing metadata.
+          metadata: { namespace: await this.getNamespace() },
+          spec: { title: SM_CONTACT_POINT_NAME, integrations: [email] },
+        });
+        return "created";
+      }
+      const index = existing.spec.integrations.findIndex((integration) => integration.type === "email");
+      const current = existing.spec.integrations[index];
+      if (current?.settings.addresses?.trim() === addresses) return "unchanged";
+      const integrations = [...existing.spec.integrations];
+      if (current) integrations[index] = { ...current, settings: { ...current.settings, addresses } };
+      else integrations.push(email);
+      await this.updateResource("receivers", {
+        ...existing,
+        spec: { ...existing.spec, integrations },
       });
-      return "created";
-    }
-    if (existing.settings?.addresses?.trim() === addresses) return "unchanged";
-    // Nothing to address the update at. Surfaced rather than reported as
-    // "unchanged", which would be a lie for addresses that differ.
-    if (!existing.uid) {
-      throw new Error(`Contact point "${SM_CONTACT_POINT_NAME}" already exists but has no UID to update`);
-    }
-    // Spread so settings this doesn't model (a custom subject, say)
-    // survive the update.
-    await this.request("PUT", `${PROVISIONING_BASE}/contact-points/${existing.uid}`, {
-      ...existing,
-      settings: { ...existing.settings, addresses },
+      return "updated";
     });
-    return "updated";
   }
 
   async ensureRoute(): Promise<"created" | "unchanged"> {
-    const tree = await this.getPolicyTree();
-    const routes = tree.routes ?? [];
-    if (routes.some((r) => r.receiver === SM_CONTACT_POINT_NAME && routesSmNamespace(r))) return "unchanged";
-    // Appended rather than prepended, so it never takes precedence over a
-    // route someone wrote themselves. The rest of the tree, root receiver
-    // included, passes straight back through.
-    await this.request("PUT", `${PROVISIONING_BASE}/policies`, { ...tree, routes: [...routes, smRoute()] });
-    return "created";
+    return this.retryOnConflict(async () => {
+      const tree = await this.getPolicyTree();
+      const routes = tree.spec.routes;
+      if (routes.some((r) => r.receiver === SM_CONTACT_POINT_NAME && routesSmNamespace(r))) return "unchanged";
+      // Appended so existing policies keep their precedence. Preserve the
+      // default receiver, nested policies, metadata and resource version.
+      await this.updateResource("routingtrees", {
+        ...tree,
+        spec: { ...tree.spec, routes: [...routes, smRoute()] },
+      });
+      return "created";
+    });
   }
 }
 

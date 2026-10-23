@@ -20,8 +20,9 @@ for (const [name, createClient, write, ErrorType] of [
 ])
   test(`${name} preserves HTTP status and response body without exposing raw JSON in the UI`, async (t) => {
     const body = JSON.stringify({ accessErrorId: "ACE3209940705", message: "Access denied" });
-    t.mock.method(globalThis, "fetch", async (_url, options) => {
-      if (options.method === "GET") return new Response("[]");
+    t.mock.method(globalThis, "fetch", async (url, options) => {
+      if (url.endsWith("/api/frontend/settings")) return Response.json({ namespace: "stacks-test" });
+      if (options.method === "GET") return Response.json({ items: [] });
       return new Response(body, { status: 403 });
     });
     await assert.rejects(write(createClient()), (error) => {
