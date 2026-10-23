@@ -17,6 +17,13 @@ test("setup URLs accept HTTP(S), bare hostnames, ports, and IPv6", () => {
     ["[::1]:3000", "stack", "https://[::1]:3000"],
     ["example.com/api/health?ready=1", "target", "https://example.com/api/health?ready=1"],
     ["https://example.com/a%20b", "target", "https://example.com/a%20b"],
+    [
+      " synthetic-monitoring-api-eu-west.grafana.net/ ",
+      "synthetics",
+      "https://synthetic-monitoring-api-eu-west.grafana.net/",
+    ],
+    ["HTTP://LOCALHOST:4030/", "synthetics", "http://localhost:4030/"],
+    ["https://sm.example/proxy/", "synthetics", "https://sm.example/proxy/"],
   ]) {
     assert.deepEqual(validateUrl(raw, kind), { url: expected });
   }
@@ -63,7 +70,7 @@ test("missing and malformed URLs cannot be normalized into accepted setup inputs
     "https://example.com\\path",
     "https://test-user@example.com",
   ]) {
-    for (const kind of ["target", "stack", "collector"]) {
+    for (const kind of ["target", "stack", "collector", "synthetics"]) {
       assert.equal(typeof validateUrl(raw, kind).error, "string", `${kind}: ${JSON.stringify(raw)}`);
     }
   }

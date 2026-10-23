@@ -80,6 +80,7 @@ test("Synthetics accepts b and q in URL/token fields, then q finishes the menu",
       },
     ],
     tryAutoSmSession: () => assert.fail("declined sign-in must not be retried"),
+    tryAlertingClient: () => assert.fail("declined sign-in cannot inspect or configure notifications"),
     probeReachable: async () => {},
     createClient: () => client,
     writeCredentials: async (value) => {
@@ -100,6 +101,8 @@ test("Synthetics accepts b and q in URL/token fields, then q finishes the menu",
   await term.send("n");
   await term.send("\r");
   assert.match(term.output(), /Synthetic Monitoring API URL:/);
+  assert.match(term.frame(), /Configuration > General, copy "Your backend address"/);
+  assert.match(term.frame(), /https:\/\/example.grafana.net\/a\/grafana-synthetic-monitoring-app\/config/);
   await term.send("bq");
   assert.match(term.output(), /Synthetic Monitoring API URL: bq/);
   assert.equal(exits.length, 0);
@@ -109,9 +112,13 @@ test("Synthetics accepts b and q in URL/token fields, then q finishes the menu",
   assert.equal(exits.length, 0);
   await term.send("\r");
   assert.equal(credentials[0].token, "bq");
-  assert.equal(credentials[0].baseUrl, "bq");
-  await term.send("n");
+  assert.equal(credentials[0].baseUrl, "https://bq");
+  await term.send("\r");
   assert.match(term.output(), /Next actions/);
+  assert.match(term.frame(), /Without OAuth sign-in, the CLI can't verify or configure alert notifications/);
+  assert.match(term.frame(), /routes namespace=synthetic_monitoring alerts to your intended contact point/);
+  assert.match(term.frame(), /https:\/\/example.grafana.net\/alerting\/routes/);
+  assert.doesNotMatch(term.frame(), /Couldn't set an email|Add a contact point/);
   await term.send("q");
   assert.deepEqual(exits, [[undefined, "ok"]]);
 });

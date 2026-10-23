@@ -1,4 +1,5 @@
 import { MIN_SPINNER_MS } from "../shared.js";
+import { validateUrl } from "../../urls.js";
 import type { SyntheticsContext, SyntheticsOptions, Session } from "./model.js";
 import type { SyntheticsServices } from "./services.js";
 
@@ -24,15 +25,21 @@ export async function connect(
   for (;;) {
     if (!candidateUrl) {
       ctx.update({ createPhase: "base-url-input" });
-      candidateUrl = (await ctx.ask("baseUrl")).trim().replace(/\/$/, "");
-      ctx.update({ baseUrl: candidateUrl, connectError: undefined });
+      candidateUrl = await ctx.ask("baseUrl");
     }
-    ctx.update({ createPhase: "connecting" });
+    const validated = validateUrl(candidateUrl, "synthetics");
+    if (validated.error !== undefined) {
+      ctx.update({ baseUrl: candidateUrl, connectError: validated.error });
+      candidateUrl = undefined;
+      continue;
+    }
+    candidateUrl = validated.url.replace(/\/$/, "");
+    ctx.update({ createPhase: "connecting", baseUrl: candidateUrl, connectError: undefined });
     try {
       await ctx.wait(Promise.all([services.probeReachable(candidateUrl), services.sleep(MIN_SPINNER_MS)]));
       break;
     } catch (error) {
-      ctx.update({ connectError: error instanceof Error ? error.message : String(error), baseUrl: undefined });
+      ctx.update({ connectError: error instanceof Error ? error.message : String(error) });
       candidateUrl = undefined;
     }
   }
