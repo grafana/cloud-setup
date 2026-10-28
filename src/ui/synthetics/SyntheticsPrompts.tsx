@@ -77,7 +77,13 @@ export function SyntheticsPrompts({
       body = (
         <Box flexDirection="column">
           {state.connectError && <Text color={COLORS.BAD}>{state.connectError}</Text>}
-          <PromptInput label="Synthetic Monitoring API URL" onSubmit={(value) => controller.answer("baseUrl", value)} />
+          <Text>In Synthetic Monitoring &gt; Configuration &gt; General, copy "Your backend address":</Text>
+          <Link>{options.stackUrl.replace(/\/$/, "")}/a/grafana-synthetic-monitoring-app/config</Link>
+          <PromptInput
+            label="Synthetic Monitoring API URL"
+            initialValue={state.baseUrl}
+            onSubmit={(value) => controller.answer("baseUrl", value)}
+          />
         </Box>
       );
       break;

@@ -1,4 +1,4 @@
-export type UrlKind = "target" | "stack" | "collector";
+export type UrlKind = "target" | "stack" | "collector" | "sm-api";
 
 export type UrlResult = { url: string; error?: never } | { url?: never; error: string };
 
@@ -10,6 +10,10 @@ export function validateUrl(value: string, kind: UrlKind): UrlResult {
     target: { example: "https://example.com", label: "target URL" },
     stack: { example: "https://my-team.grafana.net", label: "Grafana Cloud stack slug or URL" },
     collector: { example: "https://collector.example/collect/key", label: "Faro collector URL" },
+    "sm-api": {
+      example: "https://synthetic-monitoring-api.example",
+      label: "Synthetic Monitoring API URL",
+    },
   }[kind];
   const invalid = {
     error:
