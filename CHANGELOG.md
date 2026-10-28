@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.1](https://github.com/grafana/cloud-setup/compare/v0.6.0...v0.6.1) (2026-10-28)
+
+
+### Bug Fixes
+
+* **synthetics:** Improve manual API setup and notification guidance ([#96](https://github.com/grafana/cloud-setup/issues/96)) ([f08ffe1](https://github.com/grafana/cloud-setup/commit/f08ffe159d52f2552b9a5875466f1c13403d3d46))
+
 ## [0.6.0](https://github.com/grafana/cloud-setup/compare/v0.5.0...v0.6.0) (2026-10-14)
 
 
